@@ -341,11 +341,11 @@ pub mod hackathon_betting {
             (num / den) as u64
         };
 
-        // Mutate state.
+        // Mutate state — total_pool is NOT decremented here because it is the
+        // fixed snapshot of T used in the payout formula.  All claimers use the
+        // same T so the full pool is correctly distributed.  The escrow token
+        // balance naturally depletes as payouts are transferred.
         ctx.accounts.user_stake.is_claimed = true;
-        ctx.accounts.hackathon.total_pool  = total_pool
-            .checked_sub(payout)
-            .ok_or(BettingError::Overflow)?;
 
         // Transfer payout: escrow → user (hackathon PDA signs).
         let bump_arr = [hbump];
@@ -591,10 +591,7 @@ pub struct FinalizeResolve<'info> {
 pub struct Claim<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
-    #[account(
-        mut,
-        constraint = hackathon.is_resolved @ BettingError::NotResolved,
-    )]
+    #[account(constraint = hackathon.is_resolved @ BettingError::NotResolved)]
     pub hackathon: Account<'info, HackathonState>,
     #[account(has_one = hackathon)]
     pub project: Account<'info, ProjectAccount>,
