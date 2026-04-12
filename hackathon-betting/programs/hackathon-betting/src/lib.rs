@@ -40,6 +40,12 @@ pub enum BettingError {
     ZeroAmount,
     #[msg("Arithmetic overflow")]
     Overflow,
+    #[msg("Results timestamp has not arrived yet")]
+    ResultsNotYet,
+    #[msg("Results timestamp must be in the future")]
+    InvalidTimestamp,
+    #[msg("url_hash must equal SHA-256(github_url)")]
+    InvalidUrlHash,
 }
 
 // ── Pure helpers ───────────────────────────────────────────────────────────
@@ -71,14 +77,15 @@ fn isqrt(n: u64) -> u64 {
 ///
 /// R_total_scaled = Σ r_scaled(rank_k, C_k, rpc)
 /// payout = stake × R_claim × T  /  (S_i × R_total_scaled)
-fn r_scaled(rank: u8, c_i: u64, rest_project_count: u16) -> u64 {
+fn r_scaled(rank: u8, c_i: u64, rest_project_count: u16) -> Result<u64> {
     let rpc = rest_project_count.max(1) as u64;
-    match rank {
-        1 => 55_u64.saturating_mul(c_i).saturating_mul(rpc),
-        2 => 30_u64.saturating_mul(c_i).saturating_mul(rpc),
-        3 => 10_u64.saturating_mul(c_i).saturating_mul(rpc),
-        _ =>  5_u64.saturating_mul(c_i),
-    }
+    let result = match rank {
+        1 => 55_u64.checked_mul(c_i).and_then(|v| v.checked_mul(rpc)),
+        2 => 30_u64.checked_mul(c_i).and_then(|v| v.checked_mul(rpc)),
+        3 => 10_u64.checked_mul(c_i).and_then(|v| v.checked_mul(rpc)),
+        _ =>  5_u64.checked_mul(c_i),
+    };
+    result.ok_or(error!(BettingError::Overflow))
 }
 
 // ── Program ────────────────────────────────────────────────────────────────
@@ -93,6 +100,8 @@ pub mod hackathon_betting {
         ctx: Context<InitializeHackathon>,
         results_timestamp: i64,
     ) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        require!(results_timestamp > now, BettingError::InvalidTimestamp);
         let h = &mut ctx.accounts.hackathon;
         h.admin              = ctx.accounts.admin.key();
         h.usdc_mint          = ctx.accounts.usdc_mint.key();
@@ -114,8 +123,13 @@ pub mod hackathon_betting {
     pub fn register_project(
         ctx: Context<RegisterProject>,
         github_url: String,
+        url_hash: [u8; 32],
     ) -> Result<()> {
         require!(github_url.len() <= ProjectAccount::MAX_URL, BettingError::UrlTooLong);
+        // Enforce url_hash == SHA-256(github_url) so the PDA address is always
+        // deterministically derived from the URL content.
+        let expected = anchor_lang::solana_program::hash::hash(github_url.as_bytes()).to_bytes();
+        require!(url_hash == expected, BettingError::InvalidUrlHash);
         let p = &mut ctx.accounts.project;
         p.hackathon     = ctx.accounts.hackathon.key();
         p.github_url    = github_url;
@@ -252,6 +266,8 @@ pub mod hackathon_betting {
     /// Sets the rank on a single ProjectAccount.  Call once per project.
     /// After all ranks are set, call finalize_resolve.
     pub fn resolve(ctx: Context<Resolve>, rank: u8) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        require!(now >= ctx.accounts.hackathon.results_timestamp, BettingError::ResultsNotYet);
         require!(rank >= 1, BettingError::InvalidRank);
         ctx.accounts.project.rank = rank;
         Ok(())
@@ -264,6 +280,8 @@ pub mod hackathon_betting {
     ///
     /// remaining_accounts: all registered ProjectAccounts for this hackathon.
     pub fn finalize_resolve(ctx: Context<FinalizeResolve>) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        require!(now >= ctx.accounts.hackathon.results_timestamp, BettingError::ResultsNotYet);
         let hackathon_key = ctx.accounts.hackathon.key();
         let mut rest_count: u16 = 0;
         for acc in ctx.remaining_accounts.iter() {
@@ -289,6 +307,11 @@ pub mod hackathon_betting {
 
     /// Computes and transfers the user's payout.
     ///
+    /// NOTE — integer dust: each payout is floored by integer division, leaving
+    /// at most a few lamports permanently in escrow after all claims.  This dust
+    /// is irrecoverable by design for MVP.  A future `sweep_dust` admin
+    /// instruction could drain the remainder once all UserStakes are claimed.
+    ///
     /// remaining_accounts: all registered ProjectAccounts for this hackathon,
     /// used to compute R_total_scaled.  See Step 6 CU audit — if 20 projects
     /// exceeds 200k CU this will be replaced by a snapshot stored at resolve.
@@ -307,6 +330,7 @@ pub mod hackathon_betting {
         let stake_amount         = ctx.accounts.user_stake.amount;
 
         require!(stake_amount > 0, BettingError::ZeroAmount);
+        require!(project_rank > 0, BettingError::NotResolved); // FIX-7: reject unresolved projects
 
         // Compute R_total_scaled over all project accounts.
         let mut r_total: u64 = 0;
@@ -319,14 +343,17 @@ pub mod hackathon_betting {
             if p.hackathon != hackathon_key {
                 continue;
             }
+            if p.rank == 0 {
+                continue; // FIX-7: skip projects not yet ranked
+            }
             r_total = r_total
-                .checked_add(r_scaled(p.rank, isqrt(p.total_staked), rpc))
+                .checked_add(r_scaled(p.rank, isqrt(p.total_staked), rpc)?) // FIX-6
                 .ok_or(BettingError::Overflow)?;
         }
         require!(r_total > 0, BettingError::Overflow);
 
         // R_i for the project being claimed.
-        let r_claim = r_scaled(project_rank, isqrt(project_total_staked), rpc);
+        let r_claim = r_scaled(project_rank, isqrt(project_total_staked), rpc)?; // FIX-6
 
         // payout = stake × R_claim × T / (S_i × R_total)  — use u128 to avoid overflow.
         let payout: u64 = {
@@ -341,13 +368,8 @@ pub mod hackathon_betting {
             (num / den) as u64
         };
 
-        // Mutate state — total_pool is NOT decremented here because it is the
-        // fixed snapshot of T used in the payout formula.  All claimers use the
-        // same T so the full pool is correctly distributed.  The escrow token
-        // balance naturally depletes as payouts are transferred.
-        ctx.accounts.user_stake.is_claimed = true;
-
         // Transfer payout: escrow → user (hackathon PDA signs).
+        // FIX-1: transfer BEFORE marking claimed — CEI order.
         let bump_arr = [hbump];
         let seeds: &[&[u8]] = &[b"hackathon", admin_key.as_ref(), &bump_arr];
         token::transfer(
@@ -362,6 +384,8 @@ pub mod hackathon_betting {
             ),
             payout,
         )?;
+        // FIX-1: only mark claimed after successful transfer
+        ctx.accounts.user_stake.is_claimed = true;
         Ok(())
     }
 }
@@ -469,7 +493,7 @@ pub struct InitializeHackathon<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(github_url: String)]
+#[instruction(github_url: String, url_hash: [u8; 32])]
 pub struct RegisterProject<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -478,7 +502,7 @@ pub struct RegisterProject<'info> {
         init,
         payer = payer,
         space = ProjectAccount::SPACE,
-        seeds = [b"project", hackathon.key().as_ref(), github_url.as_bytes()],
+        seeds = [b"project", hackathon.key().as_ref(), url_hash.as_ref()],
         bump,
     )]
     pub project:        Account<'info, ProjectAccount>,
@@ -526,7 +550,10 @@ pub struct Stake<'info> {
 pub struct Unstake<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = !hackathon.is_resolved @ BettingError::AlreadyResolved,
+    )]
     pub hackathon: Account<'info, HackathonState>,
     #[account(
         mut,

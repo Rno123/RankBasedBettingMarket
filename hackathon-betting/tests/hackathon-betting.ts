@@ -1,5 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { BN, Program } from "@coral-xyz/anchor";
+import { createHash } from "crypto";
 import { BankrunProvider } from "anchor-bankrun";
 import { startAnchor, Clock, ProgramTestContext } from "solana-bankrun";
 import {
@@ -66,8 +67,9 @@ function escrowPda(hackathon: PublicKey): PublicKey {
     [Buffer.from("escrow"), hackathon.toBuffer()], PROGRAM_ID)[0];
 }
 function projectPda(hackathon: PublicKey, url: string): PublicKey {
+  const urlHash = createHash("sha256").update(url).digest();
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("project"), hackathon.toBuffer(), Buffer.from(url)], PROGRAM_ID)[0];
+    [Buffer.from("project"), hackathon.toBuffer(), urlHash], PROGRAM_ID)[0];
 }
 function stakePda(user: PublicKey, project: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
@@ -163,8 +165,9 @@ async function addProject(
   ctx: ProgramTestContext, program: Program<HackathonBetting>,
   fix: Fix, url: string,
 ): Promise<PublicKey> {
-  const project = projectPda(fix.hackathon, url);
-  await program.methods.registerProject(url)
+  const urlHash  = createHash("sha256").update(url).digest();
+  const project  = projectPda(fix.hackathon, url); // uses hash internally
+  await program.methods.registerProject(url, Array.from(urlHash))
     .accounts({ payer: ctx.payer.publicKey, hackathon: fix.hackathon, project,
                 systemProgram: SystemProgram.programId })
     .signers([ctx.payer]).rpc();
@@ -280,23 +283,23 @@ describe("hackathon-betting — Bankrun suite", () => {
       assert.equal(p.isRegistered, true);
     });
 
-    // NOTE: Solana SDK enforces a 32-byte per-seed limit, which is more
-    // restrictive than the program's 200-char URL check. Any URL > 32 bytes
-    // fails at PDA derivation before reaching the program.
-    it("rejects url > 32 bytes (SDK seed limit)", async () => {
-      // 33 bytes: "https://github.com/xx/yyyyyyyyyyy"
-      const url = "https://github.com/xx/yyyyyyyyyyy"; // 19+3+11 = 33 bytes
-      let threw = false;
+    // FIX-5: URL seed is now SHA-256(url) — always 32 bytes — so real GitHub
+    // URLs (> 32 bytes) are fully supported up to the 200-char program limit.
+    it("accepts real GitHub URLs longer than 32 bytes", async () => {
+      const url = "https://github.com/some-org/some-long-repo-name"; // 47 bytes
+      const project = await addProject(ctx, program, fix, url);
+      const p = await program.account.projectAccount.fetch(project);
+      assert.equal(p.githubUrl, url);
+    });
+
+    it("rejects url > 200 chars (UrlTooLong)", async () => {
+      const url = "a".repeat(201);
       try {
         await addProject(ctx, program, fix, url);
+        assert.fail("should have thrown");
       } catch (e: any) {
-        threw = true;
-        assert.ok(
-          e.message.includes("seed") || e.message.includes("UrlTooLong"),
-          `unexpected error: ${e.message}`,
-        );
+        assert.include(e.message, "UrlTooLong");
       }
-      assert.ok(threw, "should have thrown for URL > 32 bytes");
     });
   });
 
@@ -418,6 +421,7 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
 
     it("sets rank on each project", async () => {
+      setClock(ctx, RESULTS_TS); // FIX-2: resolve only allowed at/after results_timestamp
       await doResolve(program, fix, projects[0], 1);
       await doResolve(program, fix, projects[1], 4);
       await doResolve(program, fix, projects[2], 5);
@@ -443,8 +447,10 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
 
     it("rejects rank = 0", async () => {
+      setClock(ctx, T0); // reset for hackathon creation (results_ts must be future)
       const fix2 = await newHackathon(ctx, program);
       const p = await addProject(ctx, program, fix2, "https://github.com/res/rank0");
+      setClock(ctx, RESULTS_TS); // FIX-2: must be at/after results_timestamp
       try { await doResolve(program, fix2, p, 0); assert.fail(); }
       catch (e: any) { assert.include(e.message, "InvalidRank"); }
     });
@@ -459,6 +465,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       const alice = await newUser(ctx, fix.mint, 1_000);
       const project = await addProject(ctx, program, fix, "https://github.com/tc1/win");
       await doStake(program, fix, alice, project, 1_000);
+      setClock(ctx, RESULTS_TS); // FIX-2
       await doResolve(program, fix, project, 1);
       await doFinalizeResolve(program, fix, [project]);
 
@@ -480,6 +487,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       const alice = await newUser(ctx, fix.mint, 1_000);
       const project = await addProject(ctx, program, fix, "https://github.com/tc2/lose");
       await doStake(program, fix, alice, project, 1_000);
+      setClock(ctx, RESULTS_TS); // FIX-2
       await doResolve(program, fix, project, 4);
       await doFinalizeResolve(program, fix, [project]);
 
@@ -515,6 +523,7 @@ describe("hackathon-betting — Bankrun suite", () => {
         await doStake(program, fix, u, p, Number(STAKE));
         users.push(u); projects.push(p);
       }
+      setClock(ctx, RESULTS_TS); // FIX-2
       for (let i = 0; i < 5; i++) await doResolve(program, fix, projects[i], RANKS[i]);
       await doFinalizeResolve(program, fix, projects);
 
@@ -544,6 +553,43 @@ describe("hackathon-betting — Bankrun suite", () => {
 
     it("sum of payouts == total pool (zero integer dust)", () => {
       assert.equal(payouts.reduce((s, v) => s + v, 0), Number(POOL));
+    });
+  });
+
+  // ── TC3b: asymmetric stakes — sum of payouts ≤ pool (FIX-10) ─────────────
+  //
+  //  TC3 used equal stakes so integer division happened to be exact (zero dust).
+  //  This variant uses unequal stakes to verify the correct guarantee: sum ≤ pool.
+
+  describe("TC3b: asymmetric stakes — sum of payouts <= pool", () => {
+    it("unequal stakes: payouts sum <= pool (exact equality not guaranteed)", async () => {
+      setClock(ctx, T0);
+      const fix = await newHackathon(ctx, program);
+      const STAKES  = [900, 1100, 950, 1050, 1000]; // sum = 5000
+      const RANKS   = [1, 2, 3, 4, 5];
+      const RPC     = 2;
+      const users: User[]     = [];
+      const projects: PublicKey[] = [];
+
+      for (let i = 0; i < 5; i++) {
+        const u = await newUser(ctx, fix.mint, STAKES[i]);
+        const p = await addProject(ctx, program, fix, `https://github.com/tc3b/p${i}`);
+        await doStake(program, fix, u, p, STAKES[i]);
+        users.push(u); projects.push(p);
+      }
+      setClock(ctx, RESULTS_TS);
+      for (let i = 0; i < 5; i++) await doResolve(program, fix, projects[i], RANKS[i]);
+      await doFinalizeResolve(program, fix, projects);
+
+      const pool = BigInt(STAKES.reduce((s, v) => s + v, 0));
+      let totalPayout = 0n;
+      for (let i = 0; i < 5; i++) {
+        const before = await tokenBalance(ctx, users[i].ata);
+        await doClaim(program, fix, users[i], projects[i], projects);
+        totalPayout += await tokenBalance(ctx, users[i].ata) - before;
+      }
+      assert.ok(totalPayout <= pool,
+        `sum of payouts ${totalPayout} should be <= pool ${pool}`);
     });
   });
 
@@ -579,6 +625,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       const whale = await newUser(ctx, fix.mint, Number(WHALE_STAKE));
       await doStake(program, fix, whale, projB, Number(WHALE_STAKE));
 
+      setClock(ctx, RESULTS_TS); // FIX-2
       await doResolve(program, fix, projA, 1);
       await doResolve(program, fix, projB, 2);
       await doFinalizeResolve(program, fix, [projA, projB]);
@@ -634,6 +681,29 @@ describe("hackathon-betting — Bankrun suite", () => {
       const totalOut = sybilPayouts.reduce((s, v) => s + v, 0) + whalePayout;
       assert.ok(totalOut <= Number(SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE));
     });
+
+    // FIX-11: verify end-to-end sybil resistance — the 20-wallet group receives
+    // the same combined payout as a single wallet with equal total stake would.
+    it("sybil group total == single-whale-on-same-project formula (sybil resistance)", () => {
+      const pool   = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
+      const ciA    = isqrt(SYBIL_STAKE * BigInt(SYBIL_N));
+      const rA     = rScaled(1, ciA, 0);
+      const rTotal = rA + rScaled(2, isqrt(WHALE_STAKE), 0);
+      // A single wallet staking all 20 000 on projA would receive exactly P_A:
+      const singleWhaleEquiv = Number(
+        expectedPayout(SYBIL_STAKE * BigInt(SYBIL_N), rA, pool,
+                       SYBIL_STAKE * BigInt(SYBIL_N), rTotal)
+      );
+      const sybilGroupTotal = sybilPayouts.reduce((s, v) => s + v, 0);
+      // Integer truncation per wallet means sybilGroupTotal <= singleWhaleEquiv
+      // with a maximum shortfall of SYBIL_N units (at most 1 lost per wallet).
+      const dust = singleWhaleEquiv - sybilGroupTotal;
+      assert.ok(
+        dust >= 0 && dust <= SYBIL_N,
+        `sybilGroupTotal=${sybilGroupTotal} singleWhaleEquiv=${singleWhaleEquiv} ` +
+        `dust=${dust} must be in [0, ${SYBIL_N}] — sybil splitting must not exceed single-whale payout`,
+      );
+    });
   });
 
   // ── TC5: lightly backed rank-1 vs crowded rank-2 ──────────────────────────
@@ -662,6 +732,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       const whale = await newUser(ctx, fix.mint, Number(WHALE_STAKE));
       await doStake(program, fix, alice, projL, Number(ALICE_STAKE));
       await doStake(program, fix, whale, projH, Number(WHALE_STAKE));
+      setClock(ctx, RESULTS_TS); // FIX-2
       await doResolve(program, fix, projL, 1);
       await doResolve(program, fix, projH, 2);
       await doFinalizeResolve(program, fix, [projL, projH]);
@@ -712,6 +783,50 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
   });
 
+  // ── FIX-8: rest_project_count = 0 (all projects rank 1–3) ────────────────
+  //
+  //  When all projects rank 1-3, finalize_resolve sets rest_project_count = 0.
+  //  The claim formula uses rpc.max(1) = 1.  This path was previously untested.
+
+  describe("FIX-8: rest_project_count = 0 — all projects rank 1-3", () => {
+    it("three top-ranked projects: rest_project_count = 0, payouts match formula at rpc=1", async () => {
+      setClock(ctx, T0);
+      const fix      = await newHackathon(ctx, program);
+      const STAKES   = [1_000, 2_000, 1_500]; // sum = 4_500
+      const RANKS    = [1, 2, 3];
+      const RPC      = 0; // no rest-tier projects
+      const users: User[]      = [];
+      const projects: PublicKey[] = [];
+
+      for (let i = 0; i < 3; i++) {
+        const u = await newUser(ctx, fix.mint, STAKES[i]);
+        const p = await addProject(ctx, program, fix, `https://github.com/fix8/p${i}`);
+        await doStake(program, fix, u, p, STAKES[i]);
+        users.push(u); projects.push(p);
+      }
+      setClock(ctx, RESULTS_TS);
+      for (let i = 0; i < 3; i++) await doResolve(program, fix, projects[i], RANKS[i]);
+      await doFinalizeResolve(program, fix, projects);
+
+      const h = await program.account.hackathonState.fetch(fix.hackathon);
+      assert.equal(h.restProjectCount, 0, "no rest-tier projects");
+
+      const pool   = BigInt(STAKES.reduce((s, v) => s + v, 0));
+      const rTotal = RANKS.reduce(
+        (s, rank, i) => s + rScaled(rank, isqrt(BigInt(STAKES[i])), RPC), 0n,
+      );
+
+      for (let i = 0; i < 3; i++) {
+        const before = await tokenBalance(ctx, users[i].ata);
+        await doClaim(program, fix, users[i], projects[i], projects);
+        const payout = Number(await tokenBalance(ctx, users[i].ata) - before);
+        const rClaim = rScaled(RANKS[i], isqrt(BigInt(STAKES[i])), RPC);
+        const exp    = Number(expectedPayout(BigInt(STAKES[i]), rClaim, pool, BigInt(STAKES[i]), rTotal));
+        assert.equal(payout, exp, `rank-${RANKS[i]} payout at rpc=0 (treated as 1)`);
+      }
+    });
+  });
+
   // ── 11. Error paths ───────────────────────────────────────────────────────
 
   describe("11. error paths — claim", () => {
@@ -731,11 +846,26 @@ describe("hackathon-betting — Bankrun suite", () => {
       const u = await newUser(ctx, fix.mint, 500);
       const p = await addProject(ctx, program, fix, "https://github.com/err/dc");
       await doStake(program, fix, u, p, 500);
+      setClock(ctx, RESULTS_TS); // FIX-2
       await doResolve(program, fix, p, 1);
       await doFinalizeResolve(program, fix, [p]);
       await doClaim(program, fix, u, p, [p]);
       try { await doClaim(program, fix, u, p, [p]); assert.fail(); }
       catch (e: any) { assert.include(e.message, "AlreadyClaimed"); }
+    });
+
+    // FIX-12: rank-0 project (resolve was skipped) must be rejected at claim
+    it("rejects claim when project rank is 0 (resolve was skipped)", async () => {
+      setClock(ctx, T0);
+      const fix = await newHackathon(ctx, program);
+      const u   = await newUser(ctx, fix.mint, 500);
+      const p   = await addProject(ctx, program, fix, "https://github.com/err/rank0claim");
+      await doStake(program, fix, u, p, 500);
+      // intentionally skip doResolve — project stays at rank 0
+      setClock(ctx, RESULTS_TS); // FIX-2: finalize requires results time
+      await doFinalizeResolve(program, fix, [p]);
+      try { await doClaim(program, fix, u, p, [p]); assert.fail(); }
+      catch (e: any) { assert.include(e.message, "NotResolved"); }
     });
   });
 
@@ -759,6 +889,7 @@ describe("hackathon-betting — Bankrun suite", () => {
 
     // Build the claim tx, send it via processTransaction, return CU consumed.
     async function measureClaimCU(nProjects: number): Promise<bigint> {
+      setClock(auditCtx, T0); // reset before each run — clock persists across calls
       const fix = await newHackathon(auditCtx, auditProg);
 
       const users: User[]     = [];
@@ -775,6 +906,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       }
 
       // Assign ranks: first 3 → ranks 1-3, rest → rank 4
+      setClock(auditCtx, RESULTS_TS); // FIX-2
       for (let i = 0; i < nProjects; i++) {
         await doResolve(auditProg, fix, projects[i], i < 3 ? i + 1 : 4);
       }
