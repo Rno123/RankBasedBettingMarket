@@ -738,4 +738,142 @@ describe("hackathon-betting — Bankrun suite", () => {
       catch (e: any) { assert.include(e.message, "AlreadyClaimed"); }
     });
   });
+
+  // ── Step 6: CU audit — claim instruction ─────────────────────────────────
+  //
+  // Measures compute units consumed by `claim` as the number of projects
+  // passed in remaining_accounts grows.  The spec threshold is 200 000 CU
+  // at 20 projects; if exceeded, R_total must be snapshotted at resolve time.
+
+  describe("Step 6: CU audit — claim instruction", () => {
+    // Use a generous CU ceiling so bankrun never kills the tx before we measure.
+    let auditCtx: ProgramTestContext;
+    let auditProg: Program<HackathonBetting>;
+
+    before(async () => {
+      auditCtx = await startAnchor(".", [], [], 1_400_000n);
+      setClock(auditCtx, T0);
+      const prov = new BankrunProvider(auditCtx);
+      auditProg = new anchor.Program<HackathonBetting>(IDL, prov);
+    });
+
+    // Build the claim tx, send it via processTransaction, return CU consumed.
+    async function measureClaimCU(nProjects: number): Promise<bigint> {
+      const fix = await newHackathon(auditCtx, auditProg);
+
+      const users: User[]     = [];
+      const projects: PublicKey[] = [];
+
+      for (let i = 0; i < nProjects; i++) {
+        // Short unique URLs: "g.io/a/0" … "g.io/a/49" (all ≤ 11 bytes)
+        const url = `g.io/a/${i}`;
+        const u = await newUser(auditCtx, fix.mint, 1_000);
+        const p = await addProject(auditCtx, auditProg, fix, url);
+        await doStake(auditProg, fix, u, p, 1_000);
+        users.push(u);
+        projects.push(p);
+      }
+
+      // Assign ranks: first 3 → ranks 1-3, rest → rank 4
+      for (let i = 0; i < nProjects; i++) {
+        await doResolve(auditProg, fix, projects[i], i < 3 ? i + 1 : 4);
+      }
+      await doFinalizeResolve(auditProg, fix, projects);
+
+      // Build claim tx for user[0] (rank-1 project) manually to capture meta
+      const u = users[0];
+      const p = projects[0];
+      const tx = await auditProg.methods
+        .claim()
+        .accounts({
+          user:             u.user.publicKey,
+          hackathon:        fix.hackathon,
+          project:          p,
+          userStake:        stakePda(u.user.publicKey, p),
+          userTokenAccount: u.ata,
+          escrow:           fix.escrow,
+          tokenProgram:     TOKEN_PROGRAM_ID,
+          systemProgram:    SystemProgram.programId,
+        })
+        .remainingAccounts(
+          projects.map(pk => ({ pubkey: pk, isWritable: false, isSigner: false })),
+        )
+        .transaction();
+
+      const [blockhash] = await auditCtx.banksClient.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = u.user.publicKey;
+      tx.sign(u.user);
+
+      const meta = await auditCtx.banksClient.processTransaction(tx);
+      return meta.computeUnitsConsumed;
+    }
+
+    const THRESHOLD = 200_000n;
+    const results: Record<number, bigint> = {};
+
+    for (const n of [5, 10, 20]) {
+      it(`claim @ ${n} projects`, async function () {
+        this.timeout(300_000);
+        const cu = await measureClaimCU(n);
+        results[n] = cu;
+        console.log(`    claim @ ${String(n).padStart(2)} projects: ${cu.toLocaleString()} CU`);
+        assert.ok(cu > 0n, "should consume some CU");
+      });
+    }
+
+    it("claim @ 50 projects — legacy tx size limit", async function () {
+      this.timeout(300_000);
+      // At 50 projects the legacy transaction packet (1 232 bytes max) is
+      // exhausted by account keys alone (50 × 32 = 1 600 bytes) before the
+      // program even runs.  This is a client-side serialisation constraint,
+      // not a CU problem.  Production clients at this scale must use
+      // Address Lookup Tables (ALTs) or batch claim across multiple txs.
+      try {
+        const cu = await measureClaimCU(50);
+        results[50] = cu;
+        console.log(`    claim @ 50 projects: ${cu.toLocaleString()} CU`);
+      } catch (e: any) {
+        // Expected: transaction too large for legacy format
+        const isSizeErr =
+          e.message?.includes("Transaction too large") ||
+          e.message?.includes("invariant") ||
+          e.message?.includes("serialize");
+        if (isSizeErr) {
+          console.log(
+            "    claim @ 50 projects: ✗ legacy tx size exceeded " +
+            "(expected — use ALTs for N>~35)",
+          );
+          // Not a CU failure — mark as known limitation and pass
+          return;
+        }
+        throw e;
+      }
+    });
+
+    it("verdict: 20-project CU vs 200 000 threshold", function () {
+      const cu20 = results[20];
+      if (cu20 === undefined) this.skip();   // guard if run in isolation
+
+      console.log("\n    ── CU audit results ──────────────────────────────");
+      console.log(`    N=5  : ${results[5]?.toLocaleString()} CU`);
+      console.log(`    N=10 : ${results[10]?.toLocaleString()} CU`);
+      console.log(`    N=20 : ${results[20]?.toLocaleString()} CU   ← threshold check`);
+      console.log(`    N=50 : ${results[50]?.toLocaleString()} CU`);
+
+      if (cu20 > THRESHOLD) {
+        console.log(`\n    ⚠️  N=20 exceeds ${THRESHOLD.toLocaleString()} CU`);
+        console.log("    → R_total snapshot required in finalize_resolve");
+        assert.fail(
+          `claim @ 20 projects (${cu20} CU) exceeds 200 000 CU threshold — ` +
+          `implement R_total snapshot in finalize_resolve / claim`,
+        );
+      } else {
+        console.log(
+          `\n    ✓ VERDICT: claim is viable without snapshot at 20 projects ` +
+          `(${cu20} CU < ${THRESHOLD} CU)`,
+        );
+      }
+    });
+  });
 });
