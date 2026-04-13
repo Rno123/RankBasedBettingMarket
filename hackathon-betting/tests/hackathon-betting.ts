@@ -33,6 +33,10 @@ const CUTOFF_TS  = RESULTS_TS - 86_400;    // 29 days after T0
 
 // ── Integer math (mirrors on-chain logic exactly) ─────────────────────────────
 
+const DEFAULT_TIER_PCTS   = [55, 30, 15];
+const DEFAULT_TIER_COUNTS = [1, 0, 0];
+const TIER_COUNT          = DEFAULT_TIER_PCTS.length;
+
 function isqrt(n: bigint): bigint {
   if (n === 0n) return 0n;
   let x = n;
@@ -41,19 +45,61 @@ function isqrt(n: bigint): bigint {
   return x;
 }
 
-function rScaled(rank: number, ci: bigint, rpc: number): bigint {
-  const r = BigInt(Math.max(rpc, 1));
-  if (rank === 1) return 55n * ci * r;
-  if (rank === 2) return 30n * ci * r;
-  if (rank === 3) return 10n * ci * r;
-  return 5n * ci;
+/** Map a 1-based rank to a 0-based tier index. */
+function tierForRank(rank: number, tierCount: number): number {
+  return Math.min(rank - 1, tierCount - 1);
 }
 
-function expectedPayout(
-  stakeAmt: bigint, rClaim: bigint, pool: bigint,
-  totalStaked: bigint, rTotal: bigint,
+/**
+ * Proportional cascade (Option B): tiers with no projects redistribute their
+ * configured pct proportionally to all occupied tiers.
+ * Returns an array of effective basis points (sum ≤ 10_000).
+ */
+function computeEffectivePcts(tierPcts: number[], tierHasProjects: boolean[]): number[] {
+  const n = tierPcts.length;
+  let totalNonEmptyBps = 0;
+  for (let i = 0; i < n; i++) {
+    if (tierHasProjects[i]) totalNonEmptyBps += tierPcts[i] * 100;
+  }
+  const eff = new Array<number>(n).fill(0);
+  if (totalNonEmptyBps === 0) return eff;
+  let allocated = 0;
+  let lastNonEmpty = -1;
+  for (let i = 0; i < n; i++) { if (tierHasProjects[i]) lastNonEmpty = i; }
+  for (let i = 0; i < n; i++) {
+    if (!tierHasProjects[i]) continue;
+    if (i === lastNonEmpty) {
+      eff[i] = 10_000 - allocated;
+    } else {
+      const v = Math.floor(tierPcts[i] * 1_000_000 / totalNonEmptyBps);
+      eff[i] = v;
+      allocated += v;
+    }
+  }
+  return eff;
+}
+
+/** Sum isqrt(stake) for all projects in a given tier. */
+function cTotalForTier(
+  tier: number, tierCount: number,
+  stakes: bigint[], ranks: number[],
 ): bigint {
-  return (stakeAmt * rClaim * pool) / (totalStaked * rTotal);
+  let sum = 0n;
+  for (let i = 0; i < stakes.length; i++) {
+    if (tierForRank(ranks[i], tierCount) === tier) sum += isqrt(stakes[i]);
+  }
+  return sum;
+}
+
+/**
+ * Two-stage payout formula:
+ *   payout = stake × ci × effectivePt × pool / (totalStaked × cTotalTier × 10_000)
+ */
+function expectedPayoutNew(
+  stakeAmt: bigint, ci: bigint, effectivePt: number,
+  pool: bigint, totalStaked: bigint, cTotalTier: bigint,
+): bigint {
+  return (stakeAmt * ci * BigInt(effectivePt) * pool) / (totalStaked * cTotalTier * 10_000n);
 }
 
 // ── PDA helpers ───────────────────────────────────────────────────────────────
@@ -140,13 +186,15 @@ interface User { user: Keypair; ata: PublicKey; }
 async function newHackathon(
   ctx: ProgramTestContext, program: Program<HackathonBetting>,
   resultsTimestamp = RESULTS_TS,
+  tierPcts: number[]   = DEFAULT_TIER_PCTS,
+  tierCounts: number[] = DEFAULT_TIER_COUNTS,
 ): Promise<Fix> {
   const admin = Keypair.generate();
   await fund(ctx, admin.publicKey);
   const mint = await createMint(ctx);
   const hackathon = hackathonPda(admin.publicKey);
   const escrow    = escrowPda(hackathon);
-  await program.methods.initializeHackathon(new BN(resultsTimestamp))
+  await program.methods.initializeHackathon(new BN(resultsTimestamp), Buffer.from(tierPcts), Buffer.from(tierCounts))
     .accounts({ admin: admin.publicKey, hackathon, escrow, usdcMint: mint,
                 tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
     .signers([admin]).rpc();
@@ -226,6 +274,25 @@ async function doClaim(
     .signers([u.user]).rpc();
 }
 
+async function doEnableRefund(
+  program: Program<HackathonBetting>, fix: Fix, project: PublicKey,
+) {
+  await program.methods.enableRefund()
+    .accounts({ admin: fix.admin.publicKey, hackathon: fix.hackathon, project })
+    .signers([fix.admin]).rpc();
+}
+
+async function doRefund(
+  program: Program<HackathonBetting>, fix: Fix, u: User, project: PublicKey,
+) {
+  await program.methods.refund()
+    .accounts({ user: u.user.publicKey, hackathon: fix.hackathon, project,
+                userStake: stakePda(u.user.publicKey, project),
+                userTokenAccount: u.ata, escrow: fix.escrow,
+                tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
+    .signers([u.user]).rpc();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TESTS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -254,8 +321,8 @@ describe("hackathon-betting — Bankrun suite", () => {
       assert.equal(h.cutoffTimestamp.toNumber(), CUTOFF_TS);
       assert.equal(h.totalPool.toNumber(), 0);
       assert.equal(h.isResolved, false);
-      assert.deepEqual(h.judgeWeights, [55, 30, 10, 5]);
-      assert.equal(h.restProjectCount, 0);
+      assert.equal(h.tierCount, 3);
+      assert.deepEqual(Array.from(h.tierPcts).slice(0, 3), [55, 30, 15]);
     });
 
     it("cutoff is exactly 86400 s before results", async () => {
@@ -429,11 +496,14 @@ describe("hackathon-betting — Bankrun suite", () => {
       assert.equal((await program.account.projectAccount.fetch(projects[1])).rank, 4);
     });
 
-    it("finalize sets is_resolved and counts rest-rank projects", async () => {
+    it("finalize sets is_resolved and cascades empty tiers", async () => {
       await doFinalizeResolve(program, fix, projects);
       const h = await program.account.hackathonState.fetch(fix.hackathon);
       assert.equal(h.isResolved, true);
-      assert.equal(h.restProjectCount, 2); // ranks 4 and 5
+      // Projects are ranks 1, 4, 5 → tiers 0, 2, 2 (tier-1 sub-winner is empty)
+      // Tier-1's 30% cascades proportionally to tiers 0 and 2.
+      assert.equal(h.effectiveTierPcts[1], 0, "tier-1 had no projects — cascaded away");
+      assert.ok(h.effectiveTierPcts[0] > 5500, "tier-0 received cascade from tier-1");
     });
 
     it("rejects a second finalize_resolve", async () => {
@@ -499,15 +569,15 @@ describe("hackathon-betting — Bankrun suite", () => {
 
   // ── TC3: five equal projects, rank-ordered payouts ────────────────────────
   //
-  //  5 projects × 1_000 staked each, ranks 1-5, rpc = 2, pool = 5_000
-  //  isqrt(1000) = 31
-  //  r1=3410  r2=1860  r3=620  r4=155  r5=155   R_total=6200
-  //  payouts: 2750 / 1500 / 500 / 125 / 125  (sum == 5000, zero dust)
+  //  5 projects × 1_000 staked each, ranks 1-5, tiers [55%,30%,15%], pool=5_000
+  //  tier-0 (rank 1):  eff=5500 bps, 1 project  → payout = 5500*5000/10000 = 2750
+  //  tier-1 (rank 2):  eff=3000 bps, 1 project  → payout = 3000*5000/10000 = 1500
+  //  tier-2 (rank 3,4,5): eff=1500 bps, 3 equal → each = 1500*5000/(3*10000) = 250
+  //  sum = 2750+1500+250+250+250 = 5000 (zero dust with equal stakes)
 
   describe("TC3: five equal projects, payouts in rank order", () => {
     const STAKE = 1_000n;
     const POOL  = 5_000n;
-    const RPC   = 2;
     const RANKS = [1, 2, 3, 4, 5];
     let payouts: number[];
 
@@ -536,19 +606,22 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
 
     it("each payout matches the formula", () => {
-      const ci = isqrt(STAKE);
-      const rTotal = RANKS.reduce((s, rank) => s + rScaled(rank, ci, RPC), 0n);
+      const stakes = RANKS.map(() => STAKE);
+      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, RANKS.map(r => true));
       for (let i = 0; i < 5; i++) {
-        const exp = expectedPayout(STAKE, rScaled(RANKS[i], ci, RPC), POOL, STAKE, rTotal);
+        const tier   = tierForRank(RANKS[i], TIER_COUNT);
+        const ci     = isqrt(STAKE);
+        const cTotal = cTotalForTier(tier, TIER_COUNT, stakes, RANKS);
+        const exp    = expectedPayoutNew(STAKE, ci, effPcts[tier], POOL, STAKE, cTotal);
         assert.equal(payouts[i], Number(exp), `rank-${RANKS[i]} payout`);
       }
     });
 
-    it("payouts are strictly decreasing by rank (except rank-4 == rank-5)", () => {
+    it("payouts are strictly decreasing by rank tier (rest-tier projects equal)", () => {
       assert.ok(payouts[0] > payouts[1], "rank1 > rank2");
-      assert.ok(payouts[1] > payouts[2], "rank2 > rank3");
-      assert.ok(payouts[2] > payouts[3], "rank3 > rank4");
-      assert.equal(payouts[3], payouts[4],  "rank4 == rank5 (same weight)");
+      assert.ok(payouts[1] > payouts[2], "rank2 > rank3 (tier-1 > tier-2)");
+      assert.equal(payouts[2], payouts[3], "rank3 == rank4 (same rest tier)");
+      assert.equal(payouts[3], payouts[4], "rank4 == rank5 (same rest tier)");
     });
 
     it("sum of payouts == total pool (zero integer dust)", () => {
@@ -567,7 +640,6 @@ describe("hackathon-betting — Bankrun suite", () => {
       const fix = await newHackathon(ctx, program);
       const STAKES  = [900, 1100, 950, 1050, 1000]; // sum = 5000
       const RANKS   = [1, 2, 3, 4, 5];
-      const RPC     = 2;
       const users: User[]     = [];
       const projects: PublicKey[] = [];
 
@@ -597,11 +669,11 @@ describe("hackathon-betting — Bankrun suite", () => {
   //
   //  proj-A rank 1: 20 wallets × 1_000 → total_staked = 20_000
   //  proj-B rank 2: 1 whale   × 20_000 → total_staked = 20_000
-  //  pool = 40_000, rpc = 0 (no rest projects)
+  //  pool = 40_000, tiers [55%,30%,15%], no rest-tier projects
   //
-  //  isqrt(20_000) = 141 for BOTH projects  ← key insight
-  //  r_A = 55*141 = 7755   r_B = 30*141 = 4230   R_total = 11_985
-  //  each sybil payout = 1294    whale payout = 14117
+  //  isqrt(20_000) = 141 for BOTH projects  ← key insight (sybil resistance)
+  //  tier-2 (rest) empty → cascade: eff[0]=6470 bps, eff[1]=3530 bps
+  //  each sybil payout ≈ 1294    whale payout ≈ 14120
 
   describe("TC4: sybil splitting is neutralized by sqrt crowding factor", () => {
     const SYBIL_N     = 20;
@@ -656,24 +728,21 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
 
     it("each sybil payout matches formula", () => {
-      const pool  = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
-      const ciA   = isqrt(SYBIL_STAKE * BigInt(SYBIL_N));
-      const ciB   = isqrt(WHALE_STAKE);
-      const rA    = rScaled(1, ciA, 0);
-      const rB    = rScaled(2, ciB, 0);
-      const rTotal = rA + rB;
-      const exp = expectedPayout(SYBIL_STAKE, rA, pool, SYBIL_STAKE * BigInt(SYBIL_N), rTotal);
+      const pool    = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
+      // tier-2 (rest) empty → cascade proportionally to tiers 0 and 1
+      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
+      const ciA     = isqrt(SYBIL_STAKE * BigInt(SYBIL_N));
+      const exp     = expectedPayoutNew(
+        SYBIL_STAKE, ciA, effPcts[0], pool, SYBIL_STAKE * BigInt(SYBIL_N), ciA,
+      );
       assert.equal(sybilPayouts[0], Number(exp));
     });
 
     it("whale payout matches formula", () => {
-      const pool  = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
-      const ciA   = isqrt(SYBIL_STAKE * BigInt(SYBIL_N));
-      const ciB   = isqrt(WHALE_STAKE);
-      const rA    = rScaled(1, ciA, 0);
-      const rB    = rScaled(2, ciB, 0);
-      const rTotal = rA + rB;
-      const exp = expectedPayout(WHALE_STAKE, rB, pool, WHALE_STAKE, rTotal);
+      const pool    = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
+      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
+      const ciB     = isqrt(WHALE_STAKE);
+      const exp     = expectedPayoutNew(WHALE_STAKE, ciB, effPcts[1], pool, WHALE_STAKE, ciB);
       assert.equal(whalePayout, Number(exp));
     });
 
@@ -685,14 +754,13 @@ describe("hackathon-betting — Bankrun suite", () => {
     // FIX-11: verify end-to-end sybil resistance — the 20-wallet group receives
     // the same combined payout as a single wallet with equal total stake would.
     it("sybil group total == single-whale-on-same-project formula (sybil resistance)", () => {
-      const pool   = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
-      const ciA    = isqrt(SYBIL_STAKE * BigInt(SYBIL_N));
-      const rA     = rScaled(1, ciA, 0);
-      const rTotal = rA + rScaled(2, isqrt(WHALE_STAKE), 0);
-      // A single wallet staking all 20 000 on projA would receive exactly P_A:
+      const pool    = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
+      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
+      const ciA     = isqrt(SYBIL_STAKE * BigInt(SYBIL_N));
+      // A single wallet staking all 20_000 on projA:
       const singleWhaleEquiv = Number(
-        expectedPayout(SYBIL_STAKE * BigInt(SYBIL_N), rA, pool,
-                       SYBIL_STAKE * BigInt(SYBIL_N), rTotal)
+        expectedPayoutNew(SYBIL_STAKE * BigInt(SYBIL_N), ciA, effPcts[0], pool,
+                          SYBIL_STAKE * BigInt(SYBIL_N), ciA),
       );
       const sybilGroupTotal = sybilPayouts.reduce((s, v) => s + v, 0);
       // Integer truncation per wallet means sybilGroupTotal <= singleWhaleEquiv
@@ -710,12 +778,11 @@ describe("hackathon-betting — Bankrun suite", () => {
   //
   //  proj-light rank 1: alice stakes 1_000     → total_staked = 1_000
   //  proj-heavy rank 2: whale stakes 999_000   → total_staked = 999_000
-  //  pool = 1_000_000, rpc = 0
+  //  pool = 1_000_000, tiers [55%,30%,15%], no rest-tier projects
   //
-  //  isqrt(1_000) = 31   isqrt(999_000) = 999
-  //  r_light = 55*31 = 1705    r_heavy = 30*999 = 29_970   R_total = 31_675
-  //  alice payout = 53_827     whale payout = 946_172
-  //  alice per-dollar ≈ 53.8×   whale per-dollar ≈ 0.95×
+  //  tier-2 (rest) empty → cascade: eff[0]=6470 bps, eff[1]=3530 bps
+  //  alice payout = 647_000     whale payout = 353_000
+  //  alice per-dollar = 647×    whale per-dollar ≈ 0.353×
 
   describe("TC5: lightly backed rank-1 vs crowded rank-2", () => {
     const ALICE_STAKE = 1_000n;
@@ -748,20 +815,18 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
 
     it("alice payout matches formula", () => {
-      const pool   = ALICE_STAKE + WHALE_STAKE;
-      const rL     = rScaled(1, isqrt(ALICE_STAKE), 0);
-      const rH     = rScaled(2, isqrt(WHALE_STAKE), 0);
-      const rTotal = rL + rH;
-      const exp = expectedPayout(ALICE_STAKE, rL, pool, ALICE_STAKE, rTotal);
+      const pool    = ALICE_STAKE + WHALE_STAKE;
+      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
+      const ciL     = isqrt(ALICE_STAKE);
+      const exp     = expectedPayoutNew(ALICE_STAKE, ciL, effPcts[0], pool, ALICE_STAKE, ciL);
       assert.equal(alicePayout, Number(exp));
     });
 
     it("whale payout matches formula", () => {
-      const pool   = ALICE_STAKE + WHALE_STAKE;
-      const rL     = rScaled(1, isqrt(ALICE_STAKE), 0);
-      const rH     = rScaled(2, isqrt(WHALE_STAKE), 0);
-      const rTotal = rL + rH;
-      const exp = expectedPayout(WHALE_STAKE, rH, pool, WHALE_STAKE, rTotal);
+      const pool    = ALICE_STAKE + WHALE_STAKE;
+      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
+      const ciH     = isqrt(WHALE_STAKE);
+      const exp     = expectedPayoutNew(WHALE_STAKE, ciH, effPcts[1], pool, WHALE_STAKE, ciH);
       assert.equal(whalePayout, Number(exp));
     });
 
@@ -783,19 +848,18 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
   });
 
-  // ── FIX-8: rest_project_count = 0 (all projects rank 1–3) ────────────────
+  // ── FIX-8: all projects rank 1–3 (no rest tier) ──────────────────────────
   //
-  //  When all projects rank 1-3, finalize_resolve sets rest_project_count = 0.
-  //  The claim formula uses rpc.max(1) = 1.  This path was previously untested.
+  //  When all projects occupy tiers 0-2 and none are in a "rest" position,
+  //  the cascade leaves all effective_tier_pcts at their configured values.
 
-  describe("FIX-8: rest_project_count = 0 — all projects rank 1-3", () => {
-    it("three top-ranked projects: rest_project_count = 0, payouts match formula at rpc=1", async () => {
+  describe("FIX-8: all projects rank 1-3 — no rest tier, payouts match formula", () => {
+    it("three top-ranked projects: effective pcts unchanged, payouts match formula", async () => {
       setClock(ctx, T0);
       const fix      = await newHackathon(ctx, program);
       const STAKES   = [1_000, 2_000, 1_500]; // sum = 4_500
       const RANKS    = [1, 2, 3];
-      const RPC      = 0; // no rest-tier projects
-      const users: User[]      = [];
+      const users: User[]         = [];
       const projects: PublicKey[] = [];
 
       for (let i = 0; i < 3; i++) {
@@ -809,20 +873,25 @@ describe("hackathon-betting — Bankrun suite", () => {
       await doFinalizeResolve(program, fix, projects);
 
       const h = await program.account.hackathonState.fetch(fix.hackathon);
-      assert.equal(h.restProjectCount, 0, "no rest-tier projects");
+      // All 3 tiers occupied → no cascade → effective pcts == configured pcts in bps
+      assert.equal(h.effectiveTierPcts[0], 5500, "tier-0 = 55%");
+      assert.equal(h.effectiveTierPcts[1], 3000, "tier-1 = 30%");
+      assert.equal(h.effectiveTierPcts[2], 1500, "tier-2 = 15%");
 
-      const pool   = BigInt(STAKES.reduce((s, v) => s + v, 0));
-      const rTotal = RANKS.reduce(
-        (s, rank, i) => s + rScaled(rank, isqrt(BigInt(STAKES[i])), RPC), 0n,
-      );
+      const pool    = BigInt(STAKES.reduce((s, v) => s + v, 0));
+      const stakesBN = STAKES.map(BigInt);
+      // Each tier has exactly one project → cTotal = isqrt(stake) for that project
+      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, true]);
 
       for (let i = 0; i < 3; i++) {
-        const before = await tokenBalance(ctx, users[i].ata);
+        const before  = await tokenBalance(ctx, users[i].ata);
         await doClaim(program, fix, users[i], projects[i], projects);
-        const payout = Number(await tokenBalance(ctx, users[i].ata) - before);
-        const rClaim = rScaled(RANKS[i], isqrt(BigInt(STAKES[i])), RPC);
-        const exp    = Number(expectedPayout(BigInt(STAKES[i]), rClaim, pool, BigInt(STAKES[i]), rTotal));
-        assert.equal(payout, exp, `rank-${RANKS[i]} payout at rpc=0 (treated as 1)`);
+        const payout  = Number(await tokenBalance(ctx, users[i].ata) - before);
+        const tier    = tierForRank(RANKS[i], TIER_COUNT);
+        const ci      = isqrt(stakesBN[i]);
+        const cTotal  = cTotalForTier(tier, TIER_COUNT, stakesBN, RANKS);
+        const exp     = Number(expectedPayoutNew(stakesBN[i], ci, effPcts[tier], pool, stakesBN[i], cTotal));
+        assert.equal(payout, exp, `rank-${RANKS[i]} payout`);
       }
     });
   });
@@ -854,18 +923,139 @@ describe("hackathon-betting — Bankrun suite", () => {
       catch (e: any) { assert.include(e.message, "AlreadyClaimed"); }
     });
 
-    // FIX-12: rank-0 project (resolve was skipped) must be rejected at claim
+    // FIX-12: rank-0 project (resolve was skipped) must be rejected at claim.
+    // finalize_resolve requires at least one ranked project (AllTiersEmpty guard),
+    // so we create a second project (p2) with rank 1 to satisfy that requirement.
     it("rejects claim when project rank is 0 (resolve was skipped)", async () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program);
       const u   = await newUser(ctx, fix.mint, 500);
       const p   = await addProject(ctx, program, fix, "https://github.com/err/rank0claim");
       await doStake(program, fix, u, p, 500);
-      // intentionally skip doResolve — project stays at rank 0
-      setClock(ctx, RESULTS_TS); // FIX-2: finalize requires results time
-      await doFinalizeResolve(program, fix, [p]);
-      try { await doClaim(program, fix, u, p, [p]); assert.fail(); }
+      // p2 is ranked so finalize_resolve has at least one occupied tier
+      const u2 = await newUser(ctx, fix.mint, 100);
+      const p2 = await addProject(ctx, program, fix, "https://github.com/err/rank0ranked");
+      await doStake(program, fix, u2, p2, 100);
+      // intentionally skip doResolve for p — p stays at rank 0
+      setClock(ctx, RESULTS_TS);
+      await doResolve(program, fix, p2, 1);
+      await doFinalizeResolve(program, fix, [p, p2]);
+      try { await doClaim(program, fix, u, p, [p, p2]); assert.fail(); }
       catch (e: any) { assert.include(e.message, "NotResolved"); }
+    });
+  });
+
+  // ── Cascade tests ─────────────────────────────────────────────────────────
+
+  describe("Cascade: grand winner not in pool — pool redistributes to lower tiers", () => {
+    it("tier-0 empty → its 55% cascades proportionally to tiers 1 and 2", async () => {
+      setClock(ctx, T0);
+      // Create hackathon with [55,30,15] tiers
+      const fix    = await newHackathon(ctx, program);
+      // Register two projects — neither will be rank-1 (tier-0 stays empty)
+      const pSub   = await addProject(ctx, program, fix, "https://github.com/cas/sub");
+      const pRest  = await addProject(ctx, program, fix, "https://github.com/cas/rest");
+      const uSub   = await newUser(ctx, fix.mint, 3_000);
+      const uRest  = await newUser(ctx, fix.mint, 1_000);
+      await doStake(program, fix, uSub,  pSub,  3_000);
+      await doStake(program, fix, uRest, pRest, 1_000);
+
+      setClock(ctx, RESULTS_TS);
+      // rank 2 = tier-1 (sub-winner), rank 3 = tier-2 (rest) — tier-0 has NO project
+      await doResolve(program, fix, pSub,  2);
+      await doResolve(program, fix, pRest, 3);
+      await doFinalizeResolve(program, fix, [pSub, pRest]);
+
+      const h = await program.account.hackathonState.fetch(fix.hackathon);
+      assert.equal(h.effectiveTierPcts[0], 0,    "tier-0 (grand winner) had no projects");
+      assert.ok(h.effectiveTierPcts[1] > 3000,   "tier-1 received cascade from tier-0");
+      assert.ok(h.effectiveTierPcts[2] > 1500,   "tier-2 received cascade from tier-0");
+      assert.equal(
+        h.effectiveTierPcts[1] + h.effectiveTierPcts[2], 10_000,
+        "effective pcts sum to 10 000",
+      );
+
+      // Verify payouts use cascaded pcts
+      const pool    = 4_000n;
+      const effPcts = computeEffectivePcts([55,30,15], [false, true, true]);
+      const allProjects = [pSub, pRest];
+
+      const subBefore = await tokenBalance(ctx, uSub.ata);
+      await doClaim(program, fix, uSub, pSub, allProjects);
+      const subPayout = Number(await tokenBalance(ctx, uSub.ata) - subBefore);
+
+      const restBefore = await tokenBalance(ctx, uRest.ata);
+      await doClaim(program, fix, uRest, pRest, allProjects);
+      const restPayout = Number(await tokenBalance(ctx, uRest.ata) - restBefore);
+
+      // Each project is alone in its tier → cTotal = isqrt(stake)
+      const expSub  = Number(expectedPayoutNew(3000n, isqrt(3000n), effPcts[1], pool, 3000n, isqrt(3000n)));
+      const expRest = Number(expectedPayoutNew(1000n, isqrt(1000n), effPcts[2], pool, 1000n, isqrt(1000n)));
+      assert.equal(subPayout,  expSub,  "sub-winner payout matches cascaded formula");
+      assert.equal(restPayout, expRest, "rest payout matches cascaded formula");
+      assert.ok(subPayout + restPayout <= 4_000, "total payout <= pool");
+    });
+  });
+
+  // ── Refund tests ──────────────────────────────────────────────────────────
+
+  describe("Refund: admin-authorised exceptional stake recovery", () => {
+    it("staker on refund-enabled project recovers full original stake", async () => {
+      setClock(ctx, T0);
+      const fix = await newHackathon(ctx, program);
+      const u   = await newUser(ctx, fix.mint, 1_000);
+      const p   = await addProject(ctx, program, fix, "https://github.com/ref/happy");
+      await doStake(program, fix, u, p, 1_000);
+
+      // Admin enables refund (project never resolved)
+      await doEnableRefund(program, fix, p);
+      const proj = await program.account.projectAccount.fetch(p);
+      assert.equal(proj.isRefundEnabled, true);
+
+      // Finalize with the project unranked — need at least one ranked project
+      const p2 = await addProject(ctx, program, fix, "https://github.com/ref/other");
+      const u2 = await newUser(ctx, fix.mint, 500);
+      await doStake(program, fix, u2, p2, 500);
+      setClock(ctx, RESULTS_TS);
+      await doResolve(program, fix, p2, 1);
+      await doFinalizeResolve(program, fix, [p, p2]);
+
+      // User calls refund — receives full original stake, no penalty
+      const before = await tokenBalance(ctx, u.ata);
+      await doRefund(program, fix, u, p);
+      const after  = await tokenBalance(ctx, u.ata);
+      assert.equal(Number(after - before), 1_000, "full stake returned");
+
+      const stake = await program.account.userStake.fetch(stakePda(u.user.publicKey, p));
+      assert.equal(stake.isClaimed, true);
+    });
+
+    it("refund blocked if enable_refund not called", async () => {
+      setClock(ctx, T0);
+      const fix = await newHackathon(ctx, program);
+      const u   = await newUser(ctx, fix.mint, 500);
+      const p   = await addProject(ctx, program, fix, "https://github.com/ref/blocked");
+      await doStake(program, fix, u, p, 500);
+      setClock(ctx, RESULTS_TS);
+      await doResolve(program, fix, p, 1);
+      await doFinalizeResolve(program, fix, [p]);
+      try { await doRefund(program, fix, u, p); assert.fail(); }
+      catch (e: any) { assert.include(e.message, "RefundNotEnabled"); }
+    });
+
+    it("refund blocked after already claimed", async () => {
+      setClock(ctx, T0);
+      const fix = await newHackathon(ctx, program);
+      const u   = await newUser(ctx, fix.mint, 500);
+      const p   = await addProject(ctx, program, fix, "https://github.com/ref/dblclaim");
+      await doStake(program, fix, u, p, 500);
+      await doEnableRefund(program, fix, p);
+      setClock(ctx, RESULTS_TS);
+      await doResolve(program, fix, p, 1);
+      await doFinalizeResolve(program, fix, [p]);
+      await doRefund(program, fix, u, p);
+      try { await doRefund(program, fix, u, p); assert.fail(); }
+      catch (e: any) { assert.include(e.message, "AlreadyClaimed"); }
     });
   });
 
