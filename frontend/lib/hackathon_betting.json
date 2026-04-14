@@ -1,0 +1,985 @@
+{
+  "address": "81k4nRYTKkAJmd5Fm9uKktYR82xLUNq4qAiYbuL7RP1o",
+  "metadata": {
+    "name": "hackathon_betting",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "claim",
+      "docs": [
+        "Computes and transfers the user's payout using a two-stage tier formula.",
+        "",
+        "Stage 1 — tier allocation (from effective_tier_pcts set at finalize_resolve):",
+        "P_t = effective_tier_pcts[tier_of(project.rank)]  (basis points)",
+        "",
+        "Stage 2 — within-tier distribution by sqrt crowding:",
+        "C_i       = isqrt(project.total_staked)",
+        "C_total_t = Σ isqrt(S_j) for all projects j in the same tier",
+        "",
+        "User payout:",
+        "payout = stake × C_i × P_t × total_pool / (S_i × C_total_t × 10_000)",
+        "",
+        "remaining_accounts: all registered ProjectAccounts for this hackathon."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "user_stake"
+          ]
+        },
+        {
+          "name": "hackathon",
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "relations": [
+            "user_stake"
+          ]
+        },
+        {
+          "name": "user_stake",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "project"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "enable_refund",
+      "docs": [
+        "Admin marks a project as refund-eligible.  Once set, stakers on this",
+        "project may call `refund` to recover their original stake amount.",
+        "",
+        "Intended for exceptional cases: judging errors, hackathon cancellations,",
+        "or explicit admin override for projects that never received a rank.",
+        "Once enabled, cannot be revoked."
+      ],
+      "discriminator": [
+        5,
+        44,
+        201,
+        151,
+        221,
+        30,
+        170,
+        88
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "hackathon"
+          ]
+        },
+        {
+          "name": "hackathon",
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "finalize_resolve",
+      "docs": [
+        "Computes effective tier percentages with Option B proportional cascade,",
+        "stores them as basis points in `effective_tier_pcts`, then sets",
+        "`is_resolved = true`.",
+        "",
+        "**Cascade rule:** If a tier has no ranked project in remaining_accounts,",
+        "its configured pool percentage is redistributed proportionally among all",
+        "tiers that do have projects.  Zero-staked ranked projects still occupy",
+        "their tier (the cascade is about tier representation, not stake size).",
+        "",
+        "remaining_accounts: all registered ProjectAccounts for this hackathon."
+      ],
+      "discriminator": [
+        195,
+        18,
+        35,
+        61,
+        73,
+        233,
+        251,
+        73
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "hackathon"
+          ]
+        },
+        {
+          "name": "hackathon",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_hackathon",
+      "docs": [
+        "Creates a HackathonState PDA and its USDC escrow token account.",
+        "",
+        "`tier_pcts` defines the pool allocation per winner tier (must sum to 100).",
+        "`tier_expected_counts` is stored for UI/validation only; does not affect math."
+      ],
+      "discriminator": [
+        138,
+        50,
+        155,
+        82,
+        199,
+        81,
+        234,
+        109
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  99,
+                  107,
+                  97,
+                  116,
+                  104,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "admin"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "results_timestamp",
+          "type": "i64"
+        },
+        {
+          "name": "tier_pcts",
+          "type": "bytes"
+        },
+        {
+          "name": "tier_expected_counts",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "refund",
+      "docs": [
+        "Returns the user's original stake to them on a refund-enabled project.",
+        "No penalty is applied — this is an admin-authorised exceptional path.",
+        "Uses CEI order: transfer executes before is_claimed is set."
+      ],
+      "discriminator": [
+        2,
+        96,
+        183,
+        251,
+        63,
+        208,
+        46,
+        46
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "user_stake"
+          ]
+        },
+        {
+          "name": "hackathon",
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "relations": [
+            "user_stake"
+          ]
+        },
+        {
+          "name": "user_stake",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "project"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "register_project",
+      "discriminator": [
+        130,
+        150,
+        121,
+        216,
+        183,
+        225,
+        243,
+        192
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "hackathon"
+        },
+        {
+          "name": "project",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  106,
+                  101,
+                  99,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              },
+              {
+                "kind": "arg",
+                "path": "url_hash"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "github_url",
+          "type": "string"
+        },
+        {
+          "name": "url_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "resolve",
+      "docs": [
+        "Sets the rank on a single ProjectAccount. Call once per project.",
+        "After all ranks are set, call finalize_resolve."
+      ],
+      "discriminator": [
+        246,
+        150,
+        236,
+        206,
+        108,
+        63,
+        58,
+        10
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "hackathon"
+          ]
+        },
+        {
+          "name": "hackathon",
+          "writable": true,
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "rank",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "stake",
+      "discriminator": [
+        206,
+        176,
+        202,
+        18,
+        200,
+        209,
+        179,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "writable": true,
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "writable": true
+        },
+        {
+          "name": "user_stake",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "project"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "unstake",
+      "docs": [
+        "Linear decay penalty:",
+        "penalty_bps = MAX_PENALTY_BPS × (t_now − t_stake) / (t_cutoff − t_stake)",
+        "return_amount = stake × (BPS_DENOM − penalty_bps) / BPS_DENOM",
+        "Penalty stays in the pool; only return_amount leaves the escrow."
+      ],
+      "discriminator": [
+        90,
+        95,
+        107,
+        42,
+        205,
+        124,
+        50,
+        225
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "user_stake"
+          ]
+        },
+        {
+          "name": "hackathon",
+          "writable": true,
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "writable": true,
+          "relations": [
+            "user_stake"
+          ]
+        },
+        {
+          "name": "user_stake",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "project"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "HackathonState",
+      "discriminator": [
+        30,
+        177,
+        153,
+        138,
+        5,
+        200,
+        227,
+        16
+      ]
+    },
+    {
+      "name": "ProjectAccount",
+      "discriminator": [
+        179,
+        110,
+        82,
+        178,
+        208,
+        35,
+        171,
+        116
+      ]
+    },
+    {
+      "name": "UserStake",
+      "discriminator": [
+        102,
+        53,
+        163,
+        107,
+        9,
+        138,
+        87,
+        153
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "CutoffPassed",
+      "msg": "Cutoff has passed — unstaking is no longer allowed"
+    },
+    {
+      "code": 6001,
+      "name": "StakingClosed",
+      "msg": "Staking closed — results timestamp has passed"
+    },
+    {
+      "code": 6002,
+      "name": "NotResolved",
+      "msg": "Hackathon is not yet resolved"
+    },
+    {
+      "code": 6003,
+      "name": "AlreadyResolved",
+      "msg": "Hackathon is already resolved"
+    },
+    {
+      "code": 6004,
+      "name": "AlreadyClaimed",
+      "msg": "Payout already claimed"
+    },
+    {
+      "code": 6005,
+      "name": "StakeCapExceeded",
+      "msg": "Stake exceeds per-wallet cap"
+    },
+    {
+      "code": 6006,
+      "name": "UrlTooLong",
+      "msg": "github_url exceeds 200-character limit"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidRank",
+      "msg": "Rank must be >= 1"
+    },
+    {
+      "code": 6008,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6009,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6010,
+      "name": "ResultsNotYet",
+      "msg": "Results timestamp has not arrived yet"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidTimestamp",
+      "msg": "Results timestamp must be in the future"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidUrlHash",
+      "msg": "url_hash must equal SHA-256(github_url)"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidTierConfig",
+      "msg": "tier_pcts must sum to 100, count 1-8, lengths must match"
+    },
+    {
+      "code": 6014,
+      "name": "RefundNotEnabled",
+      "msg": "Refund is not enabled for this project"
+    },
+    {
+      "code": 6015,
+      "name": "AllTiersEmpty",
+      "msg": "No ranked project found in any tier — cannot finalize"
+    }
+  ],
+  "types": [
+    {
+      "name": "HackathonState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "results_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "cutoff_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "total_pool",
+            "type": "u64"
+          },
+          {
+            "name": "is_resolved",
+            "type": "bool"
+          },
+          {
+            "name": "tier_count",
+            "type": "u8"
+          },
+          {
+            "name": "tier_pcts",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "tier_expected_counts",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "effective_tier_pcts",
+            "type": {
+              "array": [
+                "u16",
+                8
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "escrow_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProjectAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hackathon",
+            "type": "pubkey"
+          },
+          {
+            "name": "github_url",
+            "type": "string"
+          },
+          {
+            "name": "total_staked",
+            "type": "u64"
+          },
+          {
+            "name": "rank",
+            "type": "u8"
+          },
+          {
+            "name": "is_registered",
+            "type": "bool"
+          },
+          {
+            "name": "is_refund_enabled",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserStake",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "project",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "stake_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "is_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

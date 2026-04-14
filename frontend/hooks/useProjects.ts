@@ -1,0 +1,75 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { PublicKey } from "@solana/web3.js";
+import { getReadonlyProgram } from "@/lib/program";
+
+export interface ProjectInfo {
+  pubkey: PublicKey;
+  hackathon: PublicKey;
+  githubUrl: string;
+  totalStaked: bigint;
+  rank: number;
+  isRegistered: boolean;
+  isRefundEnabled: boolean;
+}
+
+export function useProjects(hackathonPubkey: PublicKey | null) {
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!hackathonPubkey) return;
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const program = getReadonlyProgram();
+        const accounts = await (program.account as any).projectAccount.all([
+          {
+            memcmp: {
+              offset: 8, // after discriminator
+              bytes: hackathonPubkey!.toBase58(),
+            },
+          },
+        ]);
+        if (cancelled) return;
+
+        const list: ProjectInfo[] = accounts.map((a: any) => {
+          const d = a.account;
+          return {
+            pubkey: a.publicKey as PublicKey,
+            hackathon: d.hackathon as PublicKey,
+            githubUrl: d.githubUrl as string,
+            totalStaked: BigInt(d.totalStaked.toString()),
+            rank: d.rank as number,
+            isRegistered: d.isRegistered as boolean,
+            isRefundEnabled: d.isRefundEnabled as boolean,
+          };
+        });
+
+        // Sort: ranked first (ascending), unranked at end
+        list.sort((a, b) => {
+          if (a.rank === 0 && b.rank === 0) return 0;
+          if (a.rank === 0) return 1;
+          if (b.rank === 0) return -1;
+          return a.rank - b.rank;
+        });
+
+        setProjects(list);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message ?? "Failed to load projects");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [hackathonPubkey?.toBase58()]);
+
+  return { projects, loading, error, reload: () => {} };
+}
