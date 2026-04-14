@@ -1,8 +1,19 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { useWallet } from "@solana/wallet-adapter-react";
+
+// Wallet button must never render on the server — it reads browser extension
+// state (Phantom, Solflare) which doesn't exist during SSR, causing a
+// hydration mismatch between the server-rendered HTML and the client DOM.
+const WalletMultiButton = dynamic(
+  () =>
+    import("@solana/wallet-adapter-react-ui").then(
+      (mod) => mod.WalletMultiButton,
+    ),
+  { ssr: false },
+);
 
 export default function Navbar() {
   const { publicKey } = useWallet();
