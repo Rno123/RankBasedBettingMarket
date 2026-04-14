@@ -26,7 +26,7 @@ const IDL = require("../target/idl/hackathon_betting.json");
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const PROGRAM_ID = new PublicKey("81k4nRYTKkAJmd5Fm9uKktYR82xLUNq4qAiYbuL7RP1o");
+const PROGRAM_ID = new PublicKey("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd");
 const T0         = 1_000_000_000;          // deterministic base Unix timestamp
 const RESULTS_TS = T0 + 86_400 * 30;       // 30 days later
 const CUTOFF_TS  = RESULTS_TS - 86_400;    // 29 days after T0

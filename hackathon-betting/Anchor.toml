@@ -6,10 +6,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-hackathon_betting = "81k4nRYTKkAJmd5Fm9uKktYR82xLUNq4qAiYbuL7RP1o"
+hackathon_betting = "5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd"
 
 [programs.devnet]
-hackathon_betting = "81k4nRYTKkAJmd5Fm9uKktYR82xLUNq4qAiYbuL7RP1o"
+hackathon_betting = "5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd"
 
 [registry]
 url = "https://api.apr.dev"

@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
-declare_id!("81k4nRYTKkAJmd5Fm9uKktYR82xLUNq4qAiYbuL7RP1o");
+declare_id!("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd");
 
 // ── Protocol constants ─────────────────────────────────────────────────────
 
