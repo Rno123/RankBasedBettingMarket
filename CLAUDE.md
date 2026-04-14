@@ -90,23 +90,31 @@ UserStake {
 5. `resolve` — admin sets ranks on ProjectAccounts, sets is_resolved = true. Does NOT compute payouts.
 6. `claim` — compute full payout math on-chain, transfer to user, mark is_claimed = true
 
-## Critical Architecture Decision (TBD — Step 6)
-The `claim` instruction iterates all ProjectAccounts to compute R_total. This may exceed compute unit limits at scale.
+## Critical Architecture Decision — RESOLVED (Step 6)
+The `claim` instruction iterates all ProjectAccounts to compute R_total.
 
-**Thresholds:**
-- Run CU audit at 5 / 10 / 20 / 50 projects
-- If 20 projects > 200,000 CU: snapshot R_total inside `resolve` and read it in `claim`
+**CU audit results (Bankrun, 2026-04-14):**
+| N projects | Claim CU  |
+|-----------|-----------|
+| 5         | 19,493    |
+| 10        | 23,023    |
+| 20        | 30,349    |
+| 50        | TX size exceeded (legacy tx limit ~35 accounts; use ALTs for N>35) |
 
-This is the single most important feasibility question. Flag immediately if triggered.
+**VERDICT: claim is viable without snapshotting R_total for ≤20 projects.**
+30,349 CU << 200,000 threshold. No `resolve`-time snapshot needed.
+For hackathons with >~35 projects, Address Lookup Tables (ALTs) will be required
+to stay under the 1232-byte legacy transaction size limit.
 
 ## Development Phases
 - [x] Step 1 — Verify environment (Rust, Solana CLI, Anchor, Node)
-- [ ] Step 2 — TypeScript simulation at `simulation/payout.ts` with 5 test cases
-- [ ] Step 3 — Anchor program scaffold (`anchor init hackathon-betting`)
-- [ ] Step 4 — Instructions 4.1–4.6 (one at a time, test before next)
-- [ ] Step 5 — Full test suite with Bankrun
-- [ ] Step 6 — CU audit on claim instruction
-- [ ] Step 7 — Devnet deploy, record program ID
+- [x] Step 2 — TypeScript simulation at `simulation/payout.ts` (43/43 assertions)
+- [x] Step 3 — Anchor program scaffold
+- [x] Step 4 — Instructions: initialize_hackathon, register_project, stake, unstake, resolve, claim
+- [x] Step 5 — Full test suite with Bankrun (48/48 passing)
+- [x] Step 6 — CU audit on claim instruction (see verdict above)
+- [x] Step 7 — Devnet deploy: `5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd`
+- [x] Step 8 — Next.js 16 + Tailwind frontend (`frontend/`)
 
 ## Test Cases (from simulation — outputs become on-chain assertions)
 1. All funds on winner (rank 1) — single project
