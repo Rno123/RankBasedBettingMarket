@@ -508,7 +508,15 @@ describe("hackathon-betting — Bankrun suite", () => {
 
     it("rejects a second finalize_resolve", async () => {
       try { await doFinalizeResolve(program, fix, projects); assert.fail(); }
-      catch (e: any) { assert.include(e.message, "AlreadyResolved"); }
+      catch (e: any) {
+        // anchor-bankrun surfaces constraint errors differently across platforms:
+        // some embed the error name, others include only the code number.
+        const txt = [e.message, ...(e.logs ?? [])].join(" ");
+        assert.ok(
+          txt.includes("AlreadyResolved") || txt.includes("6003"),
+          `Expected AlreadyResolved (6003), got: ${e.message}`,
+        );
+      }
     });
 
     it("rejects resolve after finalized", async () => {
