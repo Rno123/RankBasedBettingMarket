@@ -172,6 +172,7 @@ pub mod hackathon_betting {
         p.rank = 0;
         p.is_registered = true;
         p.is_refund_enabled = false;
+        p.registered_by = ctx.accounts.payer.key();
         p.bump = ctx.bumps.project;
         Ok(())
     }
@@ -581,6 +582,7 @@ pub struct ProjectAccount {
     pub rank: u8,                   // 0 = unranked
     pub is_registered: bool,
     pub is_refund_enabled: bool,    // admin can enable for exceptional refunds
+    pub registered_by: Pubkey,      // wallet that called register_project
     pub bump: u8,
 }
 
@@ -593,6 +595,7 @@ impl ProjectAccount {
         + 1                        // rank
         + 1                        // is_registered
         + 1                        // is_refund_enabled
+        + 32                       // registered_by
         + 1;                       // bump
 }
 
