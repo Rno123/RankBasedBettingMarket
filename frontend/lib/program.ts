@@ -2,8 +2,12 @@
 import { Connection } from "@solana/web3.js";
 import { AnchorProvider, Program } from "@coral-xyz/anchor";
 import type { AnchorWallet } from "@solana/wallet-adapter-react";
-import IDL from "./hackathon_betting.json";
-import { RPC_URL } from "./constants";
+import _IDL from "./hackathon_betting.json";
+import { RPC_URL, PROGRAM_ID } from "./constants";
+
+// Override the IDL's address field — the IDL may have been generated with a
+// different keypair than the currently deployed program.
+const IDL = { ..._IDL, address: PROGRAM_ID.toBase58() };
 
 export function getConnection(): Connection {
   return new Connection(RPC_URL, "confirmed");
