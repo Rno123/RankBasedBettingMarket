@@ -92,15 +92,15 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
 
     setBusy(true);
     try {
-      const trimmedName = hackathonName.trim();
       const resultsTs = Math.floor(new Date(resultsDate).getTime() / 1000);
       const program = getProgram(anchorWallet);
-      const hackathon = hackathonPda(publicKey, trimmedName);
+      // TODO: pass trimmedName here after redeploying the name-seed program:
+      //   hackathonPda(publicKey, trimmedName)  and  .initializeHackathon(trimmedName, ...)
+      const hackathon = hackathonPda(publicKey);
       const escrow = escrowPda(hackathon);
 
       await (program.methods as any)
         .initializeHackathon(
-          trimmedName,
           new BN(resultsTs),
           Buffer.from(pcts),
           Buffer.from(counts),
@@ -222,7 +222,7 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
                   />
                   {isLast && (
                     <p className="mt-1 text-xs text-slate-400">
-                      Leave blank — final tier % splits across all remaining entrants
+                      Leave blank if final tier&apos;s pool is split across all remaining entrants
                     </p>
                   )}
                 </div>

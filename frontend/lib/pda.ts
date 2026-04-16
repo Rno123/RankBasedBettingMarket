@@ -4,11 +4,13 @@ import { PROGRAM_ID } from "./constants";
 // Note: SHA-256 is computed in browser via Web Crypto API — see hashUrl()
 // PDA seeds mirror the on-chain derivation exactly.
 
-export function hackathonPda(admin: PublicKey, name: string): PublicKey {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("hackathon"), admin.toBuffer(), Buffer.from(name, "utf8")],
-    PROGRAM_ID,
-  )[0];
+// name is optional: omit for the current deployed program (2-seed legacy PDA).
+// Pass name after redeploy when the 3-seed multi-hackathon program is live.
+export function hackathonPda(admin: PublicKey, name?: string): PublicKey {
+  const seeds = name
+    ? [Buffer.from("hackathon"), admin.toBuffer(), Buffer.from(name, "utf8")]
+    : [Buffer.from("hackathon"), admin.toBuffer()];
+  return PublicKey.findProgramAddressSync(seeds, PROGRAM_ID)[0];
 }
 
 export function escrowPda(hackathon: PublicKey): PublicKey {
