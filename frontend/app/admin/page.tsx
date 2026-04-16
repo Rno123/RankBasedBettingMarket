@@ -92,15 +92,15 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
 
     setBusy(true);
     try {
+      const trimmedName = hackathonName.trim();
       const resultsTs = Math.floor(new Date(resultsDate).getTime() / 1000);
       const program = getProgram(anchorWallet);
-      // TODO: pass trimmedName here after redeploying the name-seed program:
-      //   hackathonPda(publicKey, trimmedName)  and  .initializeHackathon(trimmedName, ...)
-      const hackathon = hackathonPda(publicKey);
+      const hackathon = hackathonPda(publicKey, trimmedName);
       const escrow = escrowPda(hackathon);
 
       await (program.methods as any)
         .initializeHackathon(
+          trimmedName,
           new BN(resultsTs),
           Buffer.from(pcts),
           Buffer.from(counts),
@@ -115,7 +115,7 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
         })
         .rpc();
 
-      setOk(`Hackathon created: ${hackathon.toBase58()}`);
+      setOk(`Hackathon "${trimmedName}" created: ${hackathon.toBase58()}`);
       onCreated();
     } catch (e: any) {
       const logs: string[] | undefined =
