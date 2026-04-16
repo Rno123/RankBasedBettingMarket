@@ -68,7 +68,14 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
       setOk(`Hackathon created: ${hackathon.toBase58()}`);
       onCreated();
     } catch (e: any) {
-      setErr(e.message ?? "Failed");
+      // Surface on-chain logs when available (SendTransactionError)
+      const logs: string[] | undefined =
+        typeof e.getLogs === "function" ? await e.getLogs() : e.logs;
+      const detail = logs?.length
+        ? logs.join("\n")
+        : (e.message ?? "Failed");
+      setErr(detail);
+      console.error("createHackathon error", e, logs);
     } finally {
       setBusy(false);
     }
