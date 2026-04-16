@@ -11,6 +11,8 @@ pub const SELL_CUTOFF_SECS: i64 = 86_400;
 pub const MAX_PENALTY_BPS: u64 = 3_000;
 /// Hard cap on stake per wallet per project.
 pub const MAX_STAKE_PER_WALLET: u64 = 1_000_000_000;
+/// Maximum length of a hackathon name in bytes.
+pub const NAME_MAX_LEN: usize = 50;
 /// Basis-point denominator for all fixed-point math.
 pub const BPS_DENOM: u64 = 10_000;
 /// Maximum number of configurable winner tiers.
@@ -54,6 +56,8 @@ pub enum BettingError {
     RefundNotEnabled,
     #[msg("No ranked project found in any tier — cannot finalize")]
     AllTiersEmpty,
+    #[msg("Hackathon name exceeds 50-character limit")]
+    NameTooLong,
 }
 
 // ── Pure helpers ───────────────────────────────────────────────────────────
@@ -94,10 +98,13 @@ pub mod hackathon_betting {
     /// `tier_expected_counts` is stored for UI/validation only; does not affect math.
     pub fn initialize_hackathon(
         ctx: Context<InitializeHackathon>,
+        name: String,
         results_timestamp: i64,
         tier_pcts: Vec<u8>,
         tier_expected_counts: Vec<u8>,
     ) -> Result<()> {
+        require!(name.len() <= NAME_MAX_LEN, BettingError::NameTooLong);
+
         let now = Clock::get()?.unix_timestamp;
         require!(results_timestamp > now, BettingError::InvalidTimestamp);
 
@@ -121,6 +128,7 @@ pub mod hackathon_betting {
         let h = &mut ctx.accounts.hackathon;
         h.admin = ctx.accounts.admin.key();
         h.usdc_mint = ctx.accounts.usdc_mint.key();
+        h.name = name;
         h.results_timestamp = results_timestamp;
         h.cutoff_timestamp = results_timestamp
             .checked_sub(SELL_CUTOFF_SECS)
@@ -228,6 +236,7 @@ pub mod hackathon_betting {
         let stake_timestamp = ctx.accounts.user_stake.stake_timestamp;
         let cutoff_timestamp = ctx.accounts.hackathon.cutoff_timestamp;
         let admin_key = ctx.accounts.hackathon.admin;
+        let hname = ctx.accounts.hackathon.name.clone();
         let hbump = ctx.accounts.hackathon.bump;
 
         let t_elapsed = now
@@ -265,7 +274,7 @@ pub mod hackathon_betting {
             .ok_or(BettingError::Overflow)?;
 
         let bump_arr = [hbump];
-        let seeds: &[&[u8]] = &[b"hackathon", admin_key.as_ref(), &bump_arr];
+        let seeds: &[&[u8]] = &[b"hackathon", admin_key.as_ref(), hname.as_bytes(), &bump_arr];
         token::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -398,6 +407,7 @@ pub mod hackathon_betting {
         let total_pool = ctx.accounts.hackathon.total_pool;
         let hackathon_key = ctx.accounts.hackathon.key();
         let admin_key = ctx.accounts.hackathon.admin;
+        let hname = ctx.accounts.hackathon.name.clone();
         let hbump = ctx.accounts.hackathon.bump;
         let eff_pcts = ctx.accounts.hackathon.effective_tier_pcts;
         let tier_count = ctx.accounts.hackathon.tier_count;
@@ -449,7 +459,7 @@ pub mod hackathon_betting {
 
         // CEI: transfer BEFORE marking claimed.
         let bump_arr = [hbump];
-        let seeds: &[&[u8]] = &[b"hackathon", admin_key.as_ref(), &bump_arr];
+        let seeds: &[&[u8]] = &[b"hackathon", admin_key.as_ref(), hname.as_bytes(), &bump_arr];
         token::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -494,10 +504,11 @@ pub mod hackathon_betting {
         require!(refund_amount > 0, BettingError::ZeroAmount);
 
         let admin_key = ctx.accounts.hackathon.admin;
+        let hname = ctx.accounts.hackathon.name.clone();
         let hbump = ctx.accounts.hackathon.bump;
 
         let bump_arr = [hbump];
-        let seeds: &[&[u8]] = &[b"hackathon", admin_key.as_ref(), &bump_arr];
+        let seeds: &[&[u8]] = &[b"hackathon", admin_key.as_ref(), hname.as_bytes(), &bump_arr];
         token::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -521,6 +532,7 @@ pub mod hackathon_betting {
 pub struct HackathonState {
     pub admin: Pubkey,                          // 32
     pub usdc_mint: Pubkey,                      // 32
+    pub name: String,                           // 4 + NAME_MAX_LEN
     pub results_timestamp: i64,                 // 8
     pub cutoff_timestamp: i64,                  // 8
     pub total_pool: u64,                        // 8
@@ -537,6 +549,7 @@ impl HackathonState {
     pub const SPACE: usize = 8  // discriminator
         + 32  // admin
         + 32  // usdc_mint
+        + 4 + NAME_MAX_LEN  // name (4-byte length prefix + max 50 bytes)
         + 8   // results_timestamp
         + 8   // cutoff_timestamp
         + 8   // total_pool
@@ -595,6 +608,7 @@ impl UserStake {
 // ── Instruction contexts ───────────────────────────────────────────────────
 
 #[derive(Accounts)]
+#[instruction(name: String)]
 pub struct InitializeHackathon<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -602,7 +616,7 @@ pub struct InitializeHackathon<'info> {
         init,
         payer = admin,
         space = HackathonState::SPACE,
-        seeds = [b"hackathon", admin.key().as_ref()],
+        seeds = [b"hackathon", admin.key().as_ref(), name.as_bytes()],
         bump,
     )]
     pub hackathon: Account<'info, HackathonState>,

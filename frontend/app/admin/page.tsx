@@ -18,6 +18,7 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
   const { publicKey } = useWallet();
   const anchorWallet = useAnchorWallet();
 
+  const [hackathonName, setHackathonName] = useState("");
   const [resultsDate, setResultsDate] = useState("");
   const [tierPcts, setTierPcts] = useState("55,30,15");
   const [tierCounts, setTierCounts] = useState("1,1,0");
@@ -30,6 +31,12 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
     if (!publicKey || !anchorWallet) return;
     setErr(null); setOk(null);
     try {
+      const trimmedName = hackathonName.trim();
+      if (!trimmedName) { setErr("Hackathon name is required"); return; }
+      if (new TextEncoder().encode(trimmedName).length > 50) {
+        setErr("Hackathon name exceeds 50 characters"); return;
+      }
+
       const pcts = tierPcts.split(",").map((x) => parseInt(x.trim()));
       const counts = tierCounts.split(",").map((x) => parseInt(x.trim()));
       if (pcts.reduce((a, b) => a + b, 0) !== 100) {
@@ -46,11 +53,12 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
 
       setBusy(true);
       const program = getProgram(anchorWallet);
-      const hackathon = hackathonPda(publicKey);
+      const hackathon = hackathonPda(publicKey, trimmedName);
       const escrow = escrowPda(hackathon);
 
       await (program.methods as any)
         .initializeHackathon(
+          trimmedName,
           new BN(resultsTs),
           Buffer.from(pcts),
           Buffer.from(counts),
@@ -87,6 +95,18 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
         Create Hackathon
       </h2>
       <div className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Hackathon name (max 50 chars)
+          </label>
+          <input
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+            placeholder="e.g. Solana Speedrun 2026"
+            maxLength={50}
+            value={hackathonName}
+            onChange={(e) => setHackathonName(e.target.value)}
+          />
+        </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">
             USDC Mint address

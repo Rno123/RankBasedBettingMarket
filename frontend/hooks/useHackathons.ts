@@ -8,6 +8,7 @@ export interface HackathonInfo {
   pubkey: PublicKey;
   admin: PublicKey;
   usdcMint: PublicKey;
+  name: string;
   resultsTimestamp: number;
   cutoffTimestamp: number;
   totalPool: bigint;
@@ -37,6 +38,7 @@ export function useHackathons() {
             pubkey: a.publicKey as PublicKey,
             admin: d.admin as PublicKey,
             usdcMint: d.usdcMint as PublicKey,
+            name: (d.name as string) ?? "",
             resultsTimestamp: Number(d.resultsTimestamp),
             cutoffTimestamp: Number(d.cutoffTimestamp),
             totalPool: BigInt(d.totalPool.toString()),

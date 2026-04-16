@@ -4,9 +4,9 @@ import { PROGRAM_ID } from "./constants";
 // Note: SHA-256 is computed in browser via Web Crypto API — see hashUrl()
 // PDA seeds mirror the on-chain derivation exactly.
 
-export function hackathonPda(admin: PublicKey): PublicKey {
+export function hackathonPda(admin: PublicKey, name: string): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("hackathon"), admin.toBuffer()],
+    [Buffer.from("hackathon"), admin.toBuffer(), Buffer.from(name, "utf8")],
     PROGRAM_ID,
   )[0];
 }
