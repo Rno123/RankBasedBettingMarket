@@ -17,8 +17,21 @@ import {
   timeUntil,
   repoName,
 } from "@/lib/format";
+import { getSupabase } from "@/lib/supabase";
 import type { HackathonInfo } from "@/hooks/useHackathons";
 import type { ProjectInfo } from "@/hooks/useProjects";
+import type { ProjectMetadata, GithubStats } from "@/lib/types";
+
+// ── GitHub stats helper ──────────────────────────────────────────────────────
+
+function daysAgo(isoDate: string | null): string {
+  if (!isoDate) return "unknown";
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
 
 // ── Per-project row ──────────────────────────────────────────────────────────
 
@@ -28,12 +41,16 @@ function ProjectRow({
   allProjects,
   status,
   onStakeUpdated,
+  metadata,
+  githubStats,
 }: {
   project: ProjectInfo;
   hackathon: HackathonInfo;
   allProjects: ProjectInfo[];
   status: ReturnType<typeof hackathonStatus>;
   onStakeUpdated: () => void;
+  metadata?: ProjectMetadata;
+  githubStats?: GithubStats | null;
 }) {
   const { publicKey } = useWallet();
   const { stake } = useUserStake(publicKey, project.pubkey);
@@ -52,39 +69,68 @@ function ProjectRow({
 
   return (
     <>
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md sm:flex-row sm:items-center sm:justify-between">
-        {/* Left: rank + name */}
-        <div className="flex items-center gap-3">
-          <div
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${
-              project.rank === 1
-                ? "bg-amber-100 text-amber-700"
-                : project.rank === 2
-                ? "bg-slate-200 text-slate-600"
-                : project.rank === 3
-                ? "bg-orange-100 text-orange-700"
-                : project.rank > 0
-                ? "bg-indigo-50 text-indigo-500"
-                : "bg-slate-100 text-slate-400"
-            }`}
-          >
-            {project.rank > 0 ? project.rank : "–"}
-          </div>
-          <div>
-            <a
-              href={project.githubUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-slate-900 hover:text-indigo-600"
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
+        {/* Top row: rank + name + action */}
+        <div className="flex items-start justify-between gap-3 sm:items-center">
+          <div className="flex items-center gap-3">
+            <div
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${
+                project.rank === 1
+                  ? "bg-amber-100 text-amber-700"
+                  : project.rank === 2
+                  ? "bg-slate-200 text-slate-600"
+                  : project.rank === 3
+                  ? "bg-orange-100 text-orange-700"
+                  : project.rank > 0
+                  ? "bg-indigo-50 text-indigo-500"
+                  : "bg-slate-100 text-slate-400"
+              }`}
             >
-              {repoName(project.githubUrl)}
-            </a>
-            <p className="text-xs text-slate-400">{rankLabel}</p>
+              {project.rank > 0 ? project.rank : "–"}
+            </div>
+            <div>
+              <a
+                href={project.githubUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-slate-900 hover:text-indigo-600"
+              >
+                {repoName(project.githubUrl)}
+              </a>
+              <p className="text-xs text-slate-400">{rankLabel}</p>
+            </div>
+          </div>
+
+          {/* Action button */}
+          <div className="shrink-0">
+            {status === "resolved" && stake && !stake.isClaimed && stake.amount > 0n ? (
+              <ClaimButton
+                hackathon={hackathon}
+                project={project}
+                allProjects={allProjects}
+                onSuccess={onStakeUpdated}
+              />
+            ) : status === "resolved" && stake?.isClaimed ? (
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-600">
+                Claimed
+              </span>
+            ) : status === "open" ? (
+              <button
+                onClick={() => setModalOpen(true)}
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+              >
+                Stake
+              </button>
+            ) : status === "cutoff" ? (
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-600">
+                Cutoff
+              </span>
+            ) : null}
           </div>
         </div>
 
-        {/* Center: stats */}
-        <div className="flex gap-6 sm:gap-8">
+        {/* Stats row */}
+        <div className="flex flex-wrap gap-5">
           <div>
             <p className="text-xs text-slate-400">Staked</p>
             <p className="font-semibold text-slate-900">
@@ -105,32 +151,64 @@ function ProjectRow({
           )}
         </div>
 
-        {/* Right: action */}
-        <div className="sm:ml-auto">
-          {status === "resolved" && stake && !stake.isClaimed && stake.amount > 0n ? (
-            <ClaimButton
-              hackathon={hackathon}
-              project={project}
-              allProjects={allProjects}
-              onSuccess={onStakeUpdated}
-            />
-          ) : status === "resolved" && stake?.isClaimed ? (
-            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-600">
-              Claimed
-            </span>
-          ) : status === "open" ? (
-            <button
-              onClick={() => setModalOpen(true)}
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
-            >
-              Stake
-            </button>
-          ) : status === "cutoff" ? (
-            <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-600">
-              Cutoff
-            </span>
-          ) : null}
-        </div>
+        {/* GitHub stats row */}
+        {githubStats !== undefined && (
+          <div className="text-xs text-slate-500">
+            {githubStats === null ? (
+              <span className="italic">GitHub stats unavailable</span>
+            ) : (
+              <>
+                Last commit: <span className="font-medium text-slate-700">{daysAgo(githubStats.last_commit_at)}</span>
+                {" · "}
+                <span className="font-medium text-slate-700">
+                  {githubStats.commits_7d ?? "?"} commit{githubStats.commits_7d !== 1 ? "s" : ""} this week
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Social links row */}
+        {metadata && (metadata.twitter_handle || metadata.telegram || metadata.discord) && (
+          <div className="flex items-center gap-3 text-sm">
+            {metadata.twitter_handle && (
+              <a
+                href={`https://twitter.com/${metadata.twitter_handle}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-sky-500 hover:text-sky-600"
+                title="Twitter"
+              >
+                <span>🐦</span>
+                <span className="text-xs">Twitter</span>
+              </a>
+            )}
+            {metadata.telegram && (
+              <a
+                href={metadata.telegram.startsWith("http") ? metadata.telegram : `https://t.me/${metadata.telegram}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-blue-500 hover:text-blue-600"
+                title="Telegram"
+              >
+                <span>✈️</span>
+                <span className="text-xs">Telegram</span>
+              </a>
+            )}
+            {metadata.discord && (
+              <a
+                href={metadata.discord.startsWith("http") ? metadata.discord : `https://discord.gg/${metadata.discord}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-indigo-500 hover:text-indigo-600"
+                title="Discord"
+              >
+                <span>💬</span>
+                <span className="text-xs">Discord</span>
+              </a>
+            )}
+          </div>
+        )}
       </div>
 
       {modalOpen && (
@@ -144,6 +222,10 @@ function ProjectRow({
     </>
   );
 }
+
+// ── Sort type ────────────────────────────────────────────────────────────────
+
+type SortMode = "stake" | "last_commit" | "commits_week";
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
@@ -175,10 +257,62 @@ export default function HackathonPage({
   const { projects, loading: pLoading, error: pError } = useProjects(hackathonPk);
   const [version, setVersion] = useState(0);
 
+  // Off-chain metadata maps
+  const [metadataMap, setMetadataMap] = useState<Record<string, ProjectMetadata>>({});
+  const [githubStatsMap, setGithubStatsMap] = useState<Record<string, GithubStats | null>>({});
+  const [sortMode, setSortMode] = useState<SortMode>("stake");
+
   useEffect(() => {
     const found = hackathons.find((h) => h.pubkey.toBase58() === id);
     if (found) setHackathon(found);
   }, [hackathons, id]);
+
+  // Fetch project metadata from Supabase when projects load
+  useEffect(() => {
+    if (!hackathonPk || projects.length === 0) return;
+
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    supabase
+      .from("project_metadata")
+      .select("*")
+      .eq("hackathon_pubkey", hackathonPk.toBase58())
+      .then(({ data, error }) => {
+        if (error || !data) return;
+        const map: Record<string, ProjectMetadata> = {};
+        for (const row of data) {
+          map[row.project_pubkey] = row as ProjectMetadata;
+        }
+        setMetadataMap(map);
+      });
+  }, [hackathonPk?.toBase58(), projects.length]);
+
+  // Fetch GitHub stats for each project in parallel
+  useEffect(() => {
+    if (projects.length === 0) return;
+
+    Promise.all(
+      projects.map(async (p) => {
+        try {
+          const res = await fetch(
+            `/api/github-stats?url=${encodeURIComponent(p.githubUrl)}`,
+          );
+          if (!res.ok) return { key: p.githubUrl, stats: null };
+          const json = await res.json();
+          return { key: p.githubUrl, stats: (json.data ?? null) as GithubStats | null };
+        } catch {
+          return { key: p.githubUrl, stats: null };
+        }
+      }),
+    ).then((results) => {
+      const map: Record<string, GithubStats | null> = {};
+      for (const r of results) {
+        map[r.key] = r.stats;
+      }
+      setGithubStatsMap(map);
+    });
+  }, [projects.map((p) => p.githubUrl).join(",")]);
 
   const loading = hLoading || pLoading;
 
@@ -217,6 +351,34 @@ export default function HackathonPage({
     hackathon.cutoffTimestamp,
     hackathon.isResolved,
   );
+
+  // Sort projects based on sortMode
+  const sortedProjects = [...projects].sort((a, b) => {
+    if (sortMode === "stake") {
+      // Ranked projects first (ascending rank), then unranked sorted by stake desc
+      if (a.rank === 0 && b.rank === 0) {
+        return Number(b.totalStaked - a.totalStaked);
+      }
+      if (a.rank === 0) return 1;
+      if (b.rank === 0) return -1;
+      return a.rank - b.rank;
+    }
+    if (sortMode === "last_commit") {
+      const aStats = githubStatsMap[a.githubUrl];
+      const bStats = githubStatsMap[b.githubUrl];
+      const aDate = aStats?.last_commit_at ? new Date(aStats.last_commit_at).getTime() : 0;
+      const bDate = bStats?.last_commit_at ? new Date(bStats.last_commit_at).getTime() : 0;
+      return bDate - aDate; // most recent first
+    }
+    if (sortMode === "commits_week") {
+      const aStats = githubStatsMap[a.githubUrl];
+      const bStats = githubStatsMap[b.githubUrl];
+      const aC = aStats?.commits_7d ?? -1;
+      const bC = bStats?.commits_7d ?? -1;
+      return bC - aC; // most active first
+    }
+    return 0;
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-violet-50">
@@ -330,8 +492,33 @@ export default function HackathonPage({
           )}
         </div>
 
-        {/* Projects */}
-        <h2 className="mb-3 text-lg font-bold text-slate-900">Projects</h2>
+        {/* Projects header + sort controls */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-bold text-slate-900">Projects</h2>
+          {projects.length > 0 && (
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+              {(
+                [
+                  { mode: "stake", label: "By stake" },
+                  { mode: "last_commit", label: "By last commit" },
+                  { mode: "commits_week", label: "By commits/week" },
+                ] as const
+              ).map(({ mode, label }) => (
+                <button
+                  key={mode}
+                  onClick={() => setSortMode(mode)}
+                  className={`rounded-lg px-3 py-1 text-xs font-medium transition ${
+                    sortMode === mode
+                      ? "bg-indigo-600 text-white"
+                      : "text-slate-500 hover:bg-slate-100"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {pLoading ? (
           <div className="space-y-3">
@@ -349,7 +536,7 @@ export default function HackathonPage({
           </div>
         ) : (
           <div key={version} className="space-y-3">
-            {projects.map((p) => (
+            {sortedProjects.map((p) => (
               <ProjectRow
                 key={p.pubkey.toBase58()}
                 project={p}
@@ -357,6 +544,12 @@ export default function HackathonPage({
                 allProjects={projects}
                 status={status}
                 onStakeUpdated={() => setVersion((v) => v + 1)}
+                metadata={metadataMap[p.pubkey.toBase58()]}
+                githubStats={
+                  p.githubUrl in githubStatsMap
+                    ? githubStatsMap[p.githubUrl]
+                    : undefined
+                }
               />
             ))}
           </div>

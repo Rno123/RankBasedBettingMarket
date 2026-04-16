@@ -12,6 +12,7 @@ import { useHackathons } from "@/hooks/useHackathons";
 import { useProjects } from "@/hooks/useProjects";
 import { formatTokens, formatDate } from "@/lib/format";
 import { USDC_MINT } from "@/lib/constants";
+import type { ProjectMetadata } from "@/lib/types";
 
 // ── Create Hackathon (multi-step) ────────────────────────────────────────────
 
@@ -282,12 +283,17 @@ function RegisterProjectPanel({
 }: {
   hackathonPubkey: PublicKey;
 }) {
-  const { publicKey } = useWallet();
+  const { publicKey, signMessage } = useWallet();
   const anchorWallet = useAnchorWallet();
   const [url, setUrl] = useState("");
+  // Social link fields (optional)
+  const [twitter, setTwitter] = useState("");
+  const [telegram, setTelegram] = useState("");
+  const [discord, setDiscord] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [step, setStep] = useState<"idle" | "onchain" | "metadata" | "done">("idle");
 
   async function handleRegister() {
     if (!publicKey || !anchorWallet) return;
@@ -297,11 +303,13 @@ function RegisterProjectPanel({
     if (url.length > 200) { setErr("URL too long (max 200 chars)"); return; }
 
     setErr(null); setOk(null); setBusy(true);
+    setStep("onchain");
+    let projectPk: PublicKey;
     try {
       const program = getProgram(anchorWallet);
       const urlHashBytes = await hashUrl(url);
       const urlHash = Array.from(urlHashBytes);
-      const projectPk = await projectPdaFromUrl(hackathonPubkey, url);
+      projectPk = await projectPdaFromUrl(hackathonPubkey, url);
 
       await (program.methods as any)
         .registerProject(url, urlHash)
@@ -312,14 +320,67 @@ function RegisterProjectPanel({
           systemProgram: SystemProgram.programId,
         })
         .rpc();
-
-      setOk(`Registered: ${projectPk.toBase58()}`);
-      setUrl("");
     } catch (e: any) {
-      setErr(e.message ?? "Failed");
-    } finally {
+      setErr(e.message ?? "On-chain registration failed");
       setBusy(false);
+      setStep("idle");
+      return;
     }
+
+    // Step 2: submit social metadata (optional, skip if signMessage not available)
+    if (signMessage) {
+      setStep("metadata");
+      try {
+        const message = `hackbet:register:${projectPk.toBase58()}`;
+        const messageBytes = new TextEncoder().encode(message);
+        const sigBytes = await signMessage(messageBytes);
+        const signature = Buffer.from(sigBytes).toString("base64");
+
+        const res = await fetch("/api/project-metadata", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectPubkey: projectPk.toBase58(),
+            hackathonPubkey: hackathonPubkey.toBase58(),
+            githubUrl: url,
+            twitterHandle: twitter.replace(/^@/, "") || undefined,
+            telegram: telegram || undefined,
+            discord: discord || undefined,
+            walletAddress: publicKey.toBase58(),
+            signature,
+          } satisfies {
+            projectPubkey: string;
+            hackathonPubkey: string;
+            githubUrl: string;
+            twitterHandle?: string;
+            telegram?: string;
+            discord?: string;
+            walletAddress: string;
+            signature: string;
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          console.warn("Metadata submission failed:", body);
+          // Non-fatal — on-chain registration succeeded
+          setOk(`Registered: ${projectPk.toBase58()} (metadata skipped: ${(body as { error?: string }).error ?? res.status})`);
+        } else {
+          setOk(`Registered: ${projectPk.toBase58()} + social links saved`);
+        }
+      } catch (e: any) {
+        console.warn("Metadata step failed:", e);
+        setOk(`Registered: ${projectPk.toBase58()} (social links not saved)`);
+      }
+    } else {
+      setOk(`Registered: ${projectPk.toBase58()}`);
+    }
+
+    setUrl("");
+    setTwitter("");
+    setTelegram("");
+    setDiscord("");
+    setStep("done");
+    setBusy(false);
   }
 
   return (
@@ -327,21 +388,77 @@ function RegisterProjectPanel({
       <h3 className="mb-3 text-sm font-semibold text-slate-700">
         Register project
       </h3>
-      <div className="flex gap-2">
-        <input
-          className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
-          placeholder="https://github.com/org/repo"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
+      <div className="space-y-2">
+        {/* GitHub URL — required */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            GitHub URL <span className="text-red-400">*</span>
+          </label>
+          <input
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+            placeholder="https://github.com/org/repo"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        </div>
+
+        {/* Social links — optional */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Twitter handle <span className="text-slate-400">(optional)</span>
+          </label>
+          <input
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+            placeholder="@handle or leave blank"
+            value={twitter}
+            onChange={(e) => setTwitter(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Telegram <span className="text-slate-400">(optional)</span>
+          </label>
+          <input
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+            placeholder="t.me/... or leave blank"
+            value={telegram}
+            onChange={(e) => setTelegram(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Discord <span className="text-slate-400">(optional)</span>
+          </label>
+          <input
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+            placeholder="discord.gg/... or leave blank"
+            value={discord}
+            onChange={(e) => setDiscord(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-3">
         <button
           onClick={handleRegister}
           disabled={busy || !publicKey}
           className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50"
         >
-          {busy ? "…" : "Add"}
+          {busy
+            ? step === "onchain"
+              ? "Registering on-chain…"
+              : step === "metadata"
+              ? "Saving social links…"
+              : "…"
+            : "Register project"}
         </button>
+        {busy && step === "metadata" && (
+          <span className="text-xs text-slate-400">
+            Please sign the message in your wallet
+          </span>
+        )}
       </div>
+
       {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
       {ok && <p className="mt-2 break-all font-mono text-xs text-emerald-600">{ok}</p>}
     </div>
