@@ -74,7 +74,7 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
 
     const pcts = tierPcts.map((v) => parseInt(v));
     const counts = tierCounts.map((v, i) => {
-      if (i === numTiers - 1) return 0; // last tier is open-ended
+      if (i === numTiers - 1) return 0; // blank or any value → 0 = all remaining
       return parseInt(v);
     });
 
@@ -190,8 +190,8 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
           {Array.from({ length: numTiers }).map((_, i) => {
             const isLast = i === numTiers - 1;
             return (
-              <div key={i} className="grid grid-cols-3 items-center gap-x-3">
-                <span className="text-sm font-medium text-slate-700">
+              <div key={i} className="grid grid-cols-3 items-start gap-x-3">
+                <span className="py-2 text-sm font-medium text-slate-700">
                   Tier {i + 1}
                 </span>
                 <input
@@ -210,11 +210,10 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
                 <div>
                   <input
                     type="number"
-                    min={isLast ? 0 : 1}
-                    placeholder={isLast ? "all remaining" : "count"}
-                    disabled={isLast}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none disabled:bg-slate-50 disabled:text-slate-400"
-                    value={isLast ? "" : (tierCounts[i] ?? "")}
+                    min={0}
+                    placeholder="count"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+                    value={tierCounts[i] ?? ""}
                     onChange={(e) => {
                       const next = [...tierCounts];
                       next[i] = e.target.value;
@@ -222,8 +221,8 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
                     }}
                   />
                   {isLast && (
-                    <p className="mt-0.5 text-xs text-slate-400">
-                      Final tier % splits across all remaining entrants
+                    <p className="mt-1 text-xs text-slate-400">
+                      Leave blank — final tier % splits across all remaining entrants
                     </p>
                   )}
                 </div>
