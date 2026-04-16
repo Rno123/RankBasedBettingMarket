@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { PROTOCOL_ADMIN } from "@/lib/constants";
 
 // Wallet button must never render on the server — it reads browser extension
 // state (Phantom, Solflare) which doesn't exist during SSR, causing a
@@ -17,8 +18,7 @@ const WalletMultiButton = dynamic(
 
 export default function Navbar() {
   const { publicKey } = useWallet();
-  // Admin link shown when connected — on-chain program enforces real admin authority
-  const isAdmin = !!publicKey;
+  const isAdmin = publicKey?.toBase58() === PROTOCOL_ADMIN;
 
   return (
     <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-md">

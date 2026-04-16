@@ -11,47 +11,88 @@ import { hackathonPda, escrowPda, projectPdaFromUrl, hashUrl } from "@/lib/pda";
 import { useHackathons } from "@/hooks/useHackathons";
 import { useProjects } from "@/hooks/useProjects";
 import { formatTokens, formatDate } from "@/lib/format";
+import { USDC_MINT } from "@/lib/constants";
 
-// ── Create Hackathon ─────────────────────────────────────────────────────────
+// ── Create Hackathon (multi-step) ────────────────────────────────────────────
 
 function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
   const { publicKey } = useWallet();
   const anchorWallet = useAnchorWallet();
 
+  // Step 1 fields
+  const [step, setStep] = useState<1 | 2>(1);
   const [hackathonName, setHackathonName] = useState("");
   const [resultsDate, setResultsDate] = useState("");
-  const [tierPcts, setTierPcts] = useState("55,30,15");
-  const [tierCounts, setTierCounts] = useState("1,1,0");
-  const [usdcMint, setUsdcMint] = useState("");
+  const [numTiers, setNumTiers] = useState<number>(3);
+
+  // Step 2 fields — one entry per tier
+  const [tierPcts, setTierPcts] = useState<string[]>(["55", "30", "15"]);
+  const [tierCounts, setTierCounts] = useState<string[]>(["1", "1", ""]);
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
+  // When numTiers changes, resize the arrays and prefill sensible defaults
+  function handleNumTiersChange(n: number) {
+    const clamped = Math.min(Math.max(1, n), 8);
+    setNumTiers(clamped);
+    setTierPcts((prev) => {
+      const next = [...prev];
+      while (next.length < clamped) next.push("");
+      return next.slice(0, clamped);
+    });
+    setTierCounts((prev) => {
+      const next = [...prev];
+      while (next.length < clamped) next.push("");
+      // Last tier is always blank (open-ended)
+      next[clamped - 1] = "";
+      return next.slice(0, clamped);
+    });
+    setErr(null);
+  }
+
+  function handleStep1Next() {
+    setErr(null);
+    const trimmedName = hackathonName.trim();
+    if (!trimmedName) { setErr("Hackathon name is required"); return; }
+    if (new TextEncoder().encode(trimmedName).length > 50) {
+      setErr("Hackathon name exceeds 50 bytes"); return;
+    }
+    const resultsTs = Math.floor(new Date(resultsDate).getTime() / 1000);
+    if (isNaN(resultsTs) || resultsTs < Math.floor(Date.now() / 1000)) {
+      setErr("Results date must be in the future"); return;
+    }
+    if (numTiers < 1 || numTiers > 8) { setErr("Number of tiers must be 1–8"); return; }
+    setStep(2);
+  }
+
   async function handleCreate() {
     if (!publicKey || !anchorWallet) return;
-    setErr(null); setOk(null);
+    setErr(null);
+
+    const pcts = tierPcts.map((v) => parseInt(v));
+    const counts = tierCounts.map((v, i) => {
+      if (i === numTiers - 1) return 0; // last tier is open-ended
+      return parseInt(v);
+    });
+
+    if (pcts.some(isNaN) || pcts.some((v) => v < 1)) {
+      setErr("All tier percentages must be a number ≥ 1"); return;
+    }
+    if (pcts.reduce((a, b) => a + b, 0) !== 100) {
+      setErr("Tier percentages must sum to exactly 100"); return;
+    }
+    for (let i = 0; i < numTiers - 1; i++) {
+      if (isNaN(counts[i]) || counts[i] < 1) {
+        setErr(`Tier ${i + 1} project count must be ≥ 1`); return;
+      }
+    }
+
+    setBusy(true);
     try {
       const trimmedName = hackathonName.trim();
-      if (!trimmedName) { setErr("Hackathon name is required"); return; }
-      if (new TextEncoder().encode(trimmedName).length > 50) {
-        setErr("Hackathon name exceeds 50 characters"); return;
-      }
-
-      const pcts = tierPcts.split(",").map((x) => parseInt(x.trim()));
-      const counts = tierCounts.split(",").map((x) => parseInt(x.trim()));
-      if (pcts.reduce((a, b) => a + b, 0) !== 100) {
-        setErr("Tier percentages must sum to 100"); return;
-      }
       const resultsTs = Math.floor(new Date(resultsDate).getTime() / 1000);
-      if (isNaN(resultsTs) || resultsTs < Math.floor(Date.now() / 1000)) {
-        setErr("Results date must be in the future"); return;
-      }
-
-      let mintPk: PublicKey;
-      try { mintPk = new PublicKey(usdcMint); }
-      catch { setErr("Invalid USDC mint address"); return; }
-
-      setBusy(true);
       const program = getProgram(anchorWallet);
       const hackathon = hackathonPda(publicKey, trimmedName);
       const escrow = escrowPda(hackathon);
@@ -67,7 +108,7 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
           admin: publicKey,
           hackathon,
           escrow,
-          usdcMint: mintPk,
+          usdcMint: USDC_MINT,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
@@ -76,12 +117,9 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
       setOk(`Hackathon created: ${hackathon.toBase58()}`);
       onCreated();
     } catch (e: any) {
-      // Surface on-chain logs when available (SendTransactionError)
       const logs: string[] | undefined =
         typeof e.getLogs === "function" ? await e.getLogs() : e.logs;
-      const detail = logs?.length
-        ? logs.join("\n")
-        : (e.message ?? "Failed");
+      const detail = logs?.length ? logs.join("\n") : (e.message ?? "Failed");
       setErr(detail);
       console.error("createHackathon error", e, logs);
     } finally {
@@ -91,70 +129,111 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-lg font-bold text-slate-900">
-        Create Hackathon
-      </h2>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <label className="mb-1 block text-xs font-medium text-slate-600">
-            Hackathon name (max 50 chars)
-          </label>
-          <input
-            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
-            placeholder="e.g. Solana Speedrun 2026"
-            maxLength={50}
-            value={hackathonName}
-            onChange={(e) => setHackathonName(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">
-            USDC Mint address
-          </label>
-          <input
-            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-mono focus:border-indigo-400 focus:outline-none"
-            placeholder="EPjFWdd5..."
-            value={usdcMint}
-            onChange={(e) => setUsdcMint(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">
-            Results date/time
-          </label>
-          <input
-            type="datetime-local"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
-            value={resultsDate}
-            onChange={(e) => setResultsDate(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">
-            Tier percentages (comma-separated, must sum to 100)
-          </label>
-          <input
-            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
-            placeholder="55,30,15"
-            value={tierPcts}
-            onChange={(e) => setTierPcts(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">
-            Expected project counts per tier (comma-separated)
-          </label>
-          <input
-            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
-            placeholder="1,1,0"
-            value={tierCounts}
-            onChange={(e) => setTierCounts(e.target.value)}
-          />
-        </div>
+      <div className="mb-5 flex items-center gap-2">
+        <h2 className="text-lg font-bold text-slate-900">Create Hackathon</h2>
+        <span className="ml-auto text-xs text-slate-400">Step {step} of 2</span>
       </div>
 
+      {step === 1 && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-slate-600">
+              Hackathon name (max 50 chars)
+            </label>
+            <input
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+              placeholder="e.g. Solana Speedrun 2026"
+              maxLength={50}
+              value={hackathonName}
+              onChange={(e) => setHackathonName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">
+              Results date/time
+            </label>
+            <input
+              type="datetime-local"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+              value={resultsDate}
+              onChange={(e) => setResultsDate(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">
+              Number of tiers (1–8)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={8}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+              value={numTiers}
+              onChange={(e) => handleNumTiersChange(parseInt(e.target.value) || 1)}
+            />
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="space-y-3">
+          <p className="text-xs text-slate-500">
+            Percentages must sum to 100. Project counts must be ≥ 1 for all
+            tiers except the last.
+          </p>
+          <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-xs font-medium text-slate-500">
+            <span>Tier</span>
+            <span>Pool % </span>
+            <span>Projects eligible</span>
+          </div>
+          {Array.from({ length: numTiers }).map((_, i) => {
+            const isLast = i === numTiers - 1;
+            return (
+              <div key={i} className="grid grid-cols-3 items-center gap-x-3">
+                <span className="text-sm font-medium text-slate-700">
+                  Tier {i + 1}
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  placeholder="%"
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none"
+                  value={tierPcts[i] ?? ""}
+                  onChange={(e) => {
+                    const next = [...tierPcts];
+                    next[i] = e.target.value;
+                    setTierPcts(next);
+                  }}
+                />
+                <div>
+                  <input
+                    type="number"
+                    min={isLast ? 0 : 1}
+                    placeholder={isLast ? "all remaining" : "count"}
+                    disabled={isLast}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none disabled:bg-slate-50 disabled:text-slate-400"
+                    value={isLast ? "" : (tierCounts[i] ?? "")}
+                    onChange={(e) => {
+                      const next = [...tierCounts];
+                      next[i] = e.target.value;
+                      setTierCounts(next);
+                    }}
+                  />
+                  {isLast && (
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      Final tier % splits across all remaining entrants
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {err && (
-        <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-600">
+        <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-600 whitespace-pre-wrap">
           {err}
         </p>
       )}
@@ -164,13 +243,34 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
         </p>
       )}
 
-      <button
-        onClick={handleCreate}
-        disabled={busy || !publicKey}
-        className="mt-4 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
-      >
-        {busy ? "Creating…" : "Create hackathon"}
-      </button>
+      <div className="mt-5 flex gap-3">
+        {step === 2 && (
+          <button
+            onClick={() => { setErr(null); setStep(1); }}
+            className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Back
+          </button>
+        )}
+        {step === 1 && (
+          <button
+            onClick={handleStep1Next}
+            disabled={!publicKey}
+            className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+          >
+            Next — configure tiers
+          </button>
+        )}
+        {step === 2 && (
+          <button
+            onClick={handleCreate}
+            disabled={busy || !publicKey}
+            className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {busy ? "Creating…" : "Create hackathon"}
+          </button>
+        )}
+      </div>
     </section>
   );
 }

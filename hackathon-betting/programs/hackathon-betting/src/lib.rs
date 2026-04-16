@@ -17,6 +17,9 @@ pub const NAME_MAX_LEN: usize = 50;
 pub const BPS_DENOM: u64 = 10_000;
 /// Maximum number of configurable winner tiers.
 pub const MAX_TIERS: usize = 8;
+/// Only this wallet may call initialize_hackathon.
+/// Update before redeploy to transfer admin rights to a new key.
+pub const PROTOCOL_ADMIN: &str = "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP";
 /// Effective tier percentages are stored in basis points (sum = 10_000).
 pub const TIER_BPS_TOTAL: u32 = 10_000;
 
@@ -58,6 +61,8 @@ pub enum BettingError {
     AllTiersEmpty,
     #[msg("Hackathon name exceeds 50-character limit")]
     NameTooLong,
+    #[msg("Only the protocol admin may call this instruction")]
+    Unauthorized,
 }
 
 // ── Pure helpers ───────────────────────────────────────────────────────────
@@ -103,6 +108,12 @@ pub mod hackathon_betting {
         tier_pcts: Vec<u8>,
         tier_expected_counts: Vec<u8>,
     ) -> Result<()> {
+        let admin_key = PROTOCOL_ADMIN.parse::<Pubkey>()
+            .expect("PROTOCOL_ADMIN is a valid pubkey");
+        require!(
+            ctx.accounts.admin.key() == admin_key,
+            BettingError::Unauthorized
+        );
         require!(name.len() <= NAME_MAX_LEN, BettingError::NameTooLong);
 
         let now = Clock::get()?.unix_timestamp;
