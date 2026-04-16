@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { getReadonlyProgram } from "@/lib/program";
+import { PROGRAM_ID } from "@/lib/constants";
 
 export interface HackathonInfo {
   pubkey: PublicKey;
@@ -30,16 +31,25 @@ export function useHackathons() {
     async function load() {
       try {
         const program = getReadonlyProgram();
-        const accounts = await (program.account as any).hackathonState.all();
+        const connection = (program.provider as any).connection;
+
+        // Fetch raw accounts and decode individually so stale pre-upgrade
+        // accounts (wrong struct layout) are silently skipped instead of
+        // crashing the whole request.
+        const rawAccounts = await connection.getProgramAccounts(PROGRAM_ID);
+
         if (cancelled) return;
 
-        const list: HackathonInfo[] = accounts.flatMap((a: any) => {
+        const list: HackathonInfo[] = rawAccounts.flatMap((item: any) => {
           try {
-            const d = a.account;
-            // tierCount missing → old pre-upgrade account, skip it
-            if (d.tierCount == null || d.tierPcts == null) return [];
+            const d = (program.coder.accounts as any).decode(
+              "hackathonState",
+              item.account.data,
+            );
+            // Guard: new struct fields must be present
+            if (d == null || d.tierCount == null || d.tierPcts == null) return [];
             return [{
-              pubkey: a.publicKey as PublicKey,
+              pubkey: item.pubkey as PublicKey,
               admin: d.admin as PublicKey,
               usdcMint: d.usdcMint as PublicKey,
               name: (d.name as string) ?? "",
@@ -54,14 +64,13 @@ export function useHackathons() {
               ).slice(0, d.tierCount),
             }];
           } catch {
-            return []; // skip accounts that fail to deserialize (old struct)
+            return []; // skip accounts that fail to decode (old struct / other types)
           }
         });
 
         // Sort: unresolved first, then by results_timestamp asc
         list.sort((a, b) => {
-          if (a.isResolved !== b.isResolved)
-            return a.isResolved ? 1 : -1;
+          if (a.isResolved !== b.isResolved) return a.isResolved ? 1 : -1;
           return a.resultsTimestamp - b.resultsTimestamp;
         });
 
