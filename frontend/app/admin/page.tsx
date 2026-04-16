@@ -320,7 +320,16 @@ function RegisterProjectPanel({
         })
         .rpc();
     } catch (e: any) {
-      setErr(e.message ?? "On-chain registration failed");
+      const msg: string = e.message ?? "";
+      const logs: string[] = e.logs ?? [];
+      const alreadyInUse =
+        msg.includes("already in use") ||
+        logs.some((l: string) => l.includes("already in use"));
+      setErr(
+        alreadyInUse
+          ? "This project is already registered for this hackathon."
+          : msg || "On-chain registration failed",
+      );
       setBusy(false);
       setStep("idle");
       return;
