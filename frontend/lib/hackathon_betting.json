@@ -245,6 +245,10 @@
               {
                 "kind": "account",
                 "path": "admin"
+              },
+              {
+                "kind": "arg",
+                "path": "name"
               }
             ]
           }
@@ -285,6 +289,10 @@
         }
       ],
       "args": [
+        {
+          "name": "name",
+          "type": "string"
+        },
         {
           "name": "results_timestamp",
           "type": "i64"
@@ -839,6 +847,16 @@
       "code": 6015,
       "name": "AllTiersEmpty",
       "msg": "No ranked project found in any tier — cannot finalize"
+    },
+    {
+      "code": 6016,
+      "name": "NameTooLong",
+      "msg": "Hackathon name exceeds 50-character limit"
+    },
+    {
+      "code": 6017,
+      "name": "Unauthorized",
+      "msg": "Only the protocol admin may call this instruction"
     }
   ],
   "types": [
@@ -854,6 +872,10 @@
           {
             "name": "usdc_mint",
             "type": "pubkey"
+          },
+          {
+            "name": "name",
+            "type": "string"
           },
           {
             "name": "results_timestamp",
@@ -941,6 +963,10 @@
           {
             "name": "is_refund_enabled",
             "type": "bool"
+          },
+          {
+            "name": "registered_by",
+            "type": "pubkey"
           },
           {
             "name": "bump",
