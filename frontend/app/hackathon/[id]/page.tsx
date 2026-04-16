@@ -43,6 +43,7 @@ function ProjectRow({
   onStakeUpdated,
   metadata,
   githubStats,
+  stakeRefreshKey,
 }: {
   project: ProjectInfo;
   hackathon: HackathonInfo;
@@ -51,9 +52,10 @@ function ProjectRow({
   onStakeUpdated: () => void;
   metadata?: ProjectMetadata;
   githubStats?: GithubStats | null;
+  stakeRefreshKey?: number;
 }) {
   const { publicKey } = useWallet();
-  const { stake } = useUserStake(publicKey, project.pubkey);
+  const { stake } = useUserStake(publicKey, project.pubkey, stakeRefreshKey);
   const [modalOpen, setModalOpen] = useState(false);
 
   const totalPool = hackathon.totalPool;
@@ -215,6 +217,7 @@ function ProjectRow({
         <StakeModal
           hackathon={hackathon}
           project={project}
+          stake={stake}
           onClose={() => setModalOpen(false)}
           onSuccess={onStakeUpdated}
         />
@@ -250,11 +253,11 @@ export default function HackathonPage({
 }) {
   const { id } = use(params);
 
-  const { hackathons, loading: hLoading } = useHackathons();
+  const { hackathons, loading: hLoading, reload: reloadHackathons } = useHackathons();
   const [hackathon, setHackathon] = useState<HackathonInfo | null>(null);
 
   const hackathonPk = hackathon?.pubkey ?? null;
-  const { projects, loading: pLoading, error: pError } = useProjects(hackathonPk);
+  const { projects, loading: pLoading, error: pError, reload: reloadProjects } = useProjects(hackathonPk);
   const [version, setVersion] = useState(0);
 
   // Off-chain metadata maps
@@ -543,13 +546,18 @@ export default function HackathonPage({
                 hackathon={hackathon}
                 allProjects={projects}
                 status={status}
-                onStakeUpdated={() => setVersion((v) => v + 1)}
+                onStakeUpdated={() => {
+                    setVersion((v) => v + 1);
+                    reloadProjects();
+                    reloadHackathons();
+                  }}
                 metadata={metadataMap[p.pubkey.toBase58()]}
                 githubStats={
                   p.githubUrl in githubStatsMap
                     ? githubStatsMap[p.githubUrl]
                     : undefined
                 }
+                stakeRefreshKey={version}
               />
             ))}
           </div>

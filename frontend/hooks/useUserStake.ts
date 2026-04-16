@@ -17,6 +17,7 @@ export interface UserStakeInfo {
 export function useUserStake(
   userPubkey: PublicKey | null,
   projectPubkey: PublicKey | null,
+  refreshKey?: number,
 ) {
   const [stake, setStake] = useState<UserStakeInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,7 +55,7 @@ export function useUserStake(
 
     load();
     return () => { cancelled = true; };
-  }, [userPubkey?.toBase58(), projectPubkey?.toBase58()]);
+  }, [userPubkey?.toBase58(), projectPubkey?.toBase58(), refreshKey]);
 
   return { stake, loading };
 }

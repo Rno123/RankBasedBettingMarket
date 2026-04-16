@@ -18,6 +18,7 @@ export function useProjects(hackathonPubkey: PublicKey | null) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (!hackathonPubkey) return;
@@ -69,7 +70,7 @@ export function useProjects(hackathonPubkey: PublicKey | null) {
 
     load();
     return () => { cancelled = true; };
-  }, [hackathonPubkey?.toBase58()]);
+  }, [hackathonPubkey?.toBase58(), tick]);
 
-  return { projects, loading, error, reload: () => {} };
+  return { projects, loading, error, reload: () => setTick((t) => t + 1) };
 }

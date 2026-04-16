@@ -22,6 +22,7 @@ export function useHackathons() {
   const [hackathons, setHackathons] = useState<HackathonInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +69,7 @@ export function useHackathons() {
 
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [tick]);
 
-  return { hackathons, loading, error };
+  return { hackathons, loading, error, reload: () => setTick((t) => t + 1) };
 }
