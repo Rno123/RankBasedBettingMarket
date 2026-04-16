@@ -33,23 +33,29 @@ export function useHackathons() {
         const accounts = await (program.account as any).hackathonState.all();
         if (cancelled) return;
 
-        const list: HackathonInfo[] = accounts.map((a: any) => {
-          const d = a.account;
-          return {
-            pubkey: a.publicKey as PublicKey,
-            admin: d.admin as PublicKey,
-            usdcMint: d.usdcMint as PublicKey,
-            name: (d.name as string) ?? "",
-            resultsTimestamp: Number(d.resultsTimestamp),
-            cutoffTimestamp: Number(d.cutoffTimestamp),
-            totalPool: BigInt(d.totalPool.toString()),
-            isResolved: d.isResolved as boolean,
-            tierCount: d.tierCount as number,
-            tierPcts: Array.from(d.tierPcts as number[]).slice(0, d.tierCount),
-            effectiveTierPcts: Array.from(
-              d.effectiveTierPcts as number[],
-            ).slice(0, d.tierCount),
-          };
+        const list: HackathonInfo[] = accounts.flatMap((a: any) => {
+          try {
+            const d = a.account;
+            // tierCount missing → old pre-upgrade account, skip it
+            if (d.tierCount == null || d.tierPcts == null) return [];
+            return [{
+              pubkey: a.publicKey as PublicKey,
+              admin: d.admin as PublicKey,
+              usdcMint: d.usdcMint as PublicKey,
+              name: (d.name as string) ?? "",
+              resultsTimestamp: Number(d.resultsTimestamp),
+              cutoffTimestamp: Number(d.cutoffTimestamp),
+              totalPool: BigInt(d.totalPool.toString()),
+              isResolved: d.isResolved as boolean,
+              tierCount: d.tierCount as number,
+              tierPcts: Array.from(d.tierPcts as number[]).slice(0, d.tierCount),
+              effectiveTierPcts: Array.from(
+                d.effectiveTierPcts as number[],
+              ).slice(0, d.tierCount),
+            }];
+          } catch {
+            return []; // skip accounts that fail to deserialize (old struct)
+          }
         });
 
         // Sort: unresolved first, then by results_timestamp asc

@@ -631,7 +631,7 @@ function HackathonAdminCard({
 
 export default function AdminPage() {
   const { publicKey } = useWallet();
-  const { hackathons, loading } = useHackathons();
+  const { hackathons, loading, reload: reloadHackathons } = useHackathons();
   const [version, setVersion] = useState(0);
 
   return (
@@ -651,7 +651,7 @@ export default function AdminPage() {
         </div>
 
         <div className="space-y-6">
-          <CreateHackathonPanel onCreated={() => setVersion((v) => v + 1)} />
+          <CreateHackathonPanel onCreated={() => { setVersion((v) => v + 1); reloadHackathons(); }} />
 
           <div>
             <h2 className="mb-3 text-lg font-bold text-slate-900">
