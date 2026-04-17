@@ -142,8 +142,16 @@ function SubmitForm({
       const msg: string = e.message ?? "";
       const logs: string[] = e.logs ?? [];
       const alreadyInUse = msg.includes("already in use") || logs.some((l: string) => l.includes("already in use"));
-      setErr(alreadyInUse ? "This project is already registered for this hackathon." : msg || "On-chain registration failed");
-      setBusy(false); setStep("idle"); return;
+      // Wallet retried an already-confirmed tx — treat as success
+      const alreadyProcessed = msg.includes("already been processed");
+      if (!alreadyInUse && !alreadyProcessed) {
+        setErr(msg || "On-chain registration failed");
+        setBusy(false); setStep("idle"); return;
+      }
+      if (alreadyInUse) {
+        setErr("This project is already registered for this hackathon.");
+        setBusy(false); setStep("idle"); return;
+      }
     }
 
     // Save to Supabase submissions table

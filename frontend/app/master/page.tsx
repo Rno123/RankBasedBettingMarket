@@ -84,6 +84,8 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
     } catch (e: any) {
       const logs: string[] | undefined = typeof e.getLogs === "function" ? await e.getLogs() : e.logs;
       const alreadyInUse = (e.message ?? "").includes("already in use") || (logs ?? []).some((l: string) => l.includes("already in use"));
+      const alreadyProcessed = (e.message ?? "").includes("already been processed");
+      if (alreadyProcessed) return;
       setErr(alreadyInUse ? `A hackathon named "${hackathonName.trim()}" already exists.` : logs?.length ? logs.join("\n") : (e.message ?? "Failed"));
     } finally { setBusy(false); }
   }
