@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { PROTOCOL_ADMIN } from "@/lib/constants";
 import { useEffect, useState } from "react";
@@ -19,6 +20,7 @@ export default function Navbar() {
   const { publicKey } = useWallet();
   const isAdmin = publicKey?.toBase58() === PROTOCOL_ADMIN;
   const [devUser, setDevUser] = useState<string | null>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -32,6 +34,11 @@ export default function Navbar() {
     return () => subscription.unsubscribe();
   }, []);
 
+  function navClass(href: string, defaultColor: string) {
+    const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+    return `text-sm font-medium transition ${active ? "text-indigo-600" : `${defaultColor} hover:text-slate-900`}`;
+  }
+
   return (
     <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
@@ -40,23 +47,14 @@ export default function Navbar() {
             <span className="text-xl font-bold text-indigo-600">HackBet</span>
           </Link>
           <div className="hidden items-center gap-4 sm:flex">
-            <Link
-              href="/"
-              className="text-sm font-medium text-slate-600 hover:text-slate-900"
-            >
+            <Link href="/" className={navClass("/", "text-slate-500")}>
               Hackathons
             </Link>
-            <Link
-              href="/dev"
-              className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
-            >
+            <Link href="/dev" className={navClass("/dev", "text-slate-500")}>
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
             {isAdmin && (
-              <Link
-                href="/master"
-                className="text-sm font-medium text-amber-600 hover:text-amber-800"
-              >
+              <Link href="/master" className={navClass("/master", "text-amber-500")}>
                 Master
               </Link>
             )}
