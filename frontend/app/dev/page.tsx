@@ -127,13 +127,11 @@ function SubmitForm({
     if (url.length > 200) { setErr("URL too long (max 200 chars)"); return; }
 
     setErr(null); setBusy(true); setStep("onchain");
-    let projectPk: PublicKey;
+    let projectPk: PublicKey = await projectPdaFromUrl(hackathonPubkey, url);
     try {
       const program = getProgram(anchorWallet);
       const urlHashBytes = await hashUrl(url);
       const urlHash = Array.from(urlHashBytes);
-      projectPk = await projectPdaFromUrl(hackathonPubkey, url);
-
       await (program.methods as any)
         .registerProject(url, urlHash)
         .accounts({ payer: publicKey, hackathon: hackathonPubkey, project: projectPk, systemProgram: SystemProgram.programId })
@@ -168,7 +166,7 @@ function SubmitForm({
         } catch { /* skip if user denies */ }
       }
 
-      await supabase.from("project_submissions").insert({
+      const { error: sbErr } = await supabase.from("project_submissions").upsert({
         hackathon_pubkey: hackathonPubkey.toBase58(),
         project_pubkey: projectPk!.toBase58(),
         github_url: url,
@@ -178,7 +176,11 @@ function SubmitForm({
         discord: discord || null,
         auth_email: authEmail || null,
         status: "pending",
-      });
+      }, { onConflict: "project_pubkey" });
+      if (sbErr) {
+        setErr("Submission saved on-chain but failed to record for review: " + sbErr.message);
+        setBusy(false); return;
+      }
     }
 
     setStep("done");
