@@ -264,30 +264,48 @@ export default function HackathonPage({
   const [metadataMap, setMetadataMap] = useState<Record<string, ProjectMetadata>>({});
   const [githubStatsMap, setGithubStatsMap] = useState<Record<string, GithubStats | null>>({});
   const [sortMode, setSortMode] = useState<SortMode>("stake");
+  // project pubkeys that are in project_submissions but NOT yet approved — hidden from public view
+  const [blockedPubkeys, setBlockedPubkeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const found = hackathons.find((h) => h.pubkey.toBase58() === id);
     if (found) setHackathon(found);
   }, [hackathons, id]);
 
-  // Fetch project metadata from Supabase when projects load
+  // Fetch project metadata + submission statuses from Supabase when projects load
   useEffect(() => {
     if (!hackathonPk || projects.length === 0) return;
 
     const supabase = getSupabase();
     if (!supabase) return;
 
+    const hpk = hackathonPk.toBase58();
+
+    // Metadata (social links)
     supabase
       .from("project_metadata")
       .select("*")
-      .eq("hackathon_pubkey", hackathonPk.toBase58())
-      .then(({ data, error }) => {
-        if (error || !data) return;
+      .eq("hackathon_pubkey", hpk)
+      .then(({ data }) => {
+        if (!data) return;
         const map: Record<string, ProjectMetadata> = {};
-        for (const row of data) {
-          map[row.project_pubkey] = row as ProjectMetadata;
-        }
+        for (const row of data) map[row.project_pubkey] = row as ProjectMetadata;
         setMetadataMap(map);
+      });
+
+    // Submission approval status — hide pending/rejected projects from public view
+    supabase
+      .from("project_submissions")
+      .select("project_pubkey, status")
+      .eq("hackathon_pubkey", hpk)
+      .then(({ data }) => {
+        if (!data) return;
+        const blocked = new Set(
+          data
+            .filter((r: any) => r.status !== "approved" && r.project_pubkey)
+            .map((r: any) => r.project_pubkey as string),
+        );
+        setBlockedPubkeys(blocked);
       });
   }, [hackathonPk?.toBase58(), projects.length]);
 
@@ -355,8 +373,9 @@ export default function HackathonPage({
     hackathon.isResolved,
   );
 
-  // Sort projects based on sortMode
-  const sortedProjects = [...projects].sort((a, b) => {
+  // Sort projects based on sortMode — exclude unapproved dev-portal submissions
+  const visibleProjects = projects.filter((p) => !blockedPubkeys.has(p.pubkey.toBase58()));
+  const sortedProjects = [...visibleProjects].sort((a, b) => {
     if (sortMode === "stake") {
       // Ranked projects first (ascending rank), then unranked sorted by stake desc
       if (a.rank === 0 && b.rank === 0) {
