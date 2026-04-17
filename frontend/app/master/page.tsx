@@ -227,6 +227,7 @@ interface Submission {
   id: string;
   hackathon_pubkey: string;
   hackathon_name?: string;
+  project_pubkey?: string;
   github_url: string;
   wallet_address: string;
   twitter_handle?: string;
@@ -261,7 +262,26 @@ function SubmissionsSection({ hackathons }: { hackathons: ReturnType<typeof useH
     setBusy(id);
     const sb = getSupabaseAdmin() ?? getSupabase();
     if (!sb) { setBusy(null); return; }
+
+    // Update submission status
     await sb.from("project_submissions").update({ status, reviewed_at: new Date().toISOString() }).eq("id", id);
+
+    // On approval: copy social links → project_metadata so they appear on the hackathon page
+    if (status === "approved") {
+      const sub = submissions.find((s) => s.id === id);
+      if (sub?.project_pubkey) {
+        await sb.from("project_metadata").upsert({
+          project_pubkey: sub.project_pubkey,
+          hackathon_pubkey: sub.hackathon_pubkey,
+          github_url: sub.github_url,
+          wallet_address: sub.wallet_address,
+          twitter_handle: sub.twitter_handle ?? null,
+          telegram: sub.telegram ?? null,
+          discord: sub.discord ?? null,
+        }, { onConflict: "project_pubkey" });
+      }
+    }
+
     setSubmissions((prev) => prev.map((s) => s.id === id ? { ...s, status } : s));
     setBusy(null);
   }
