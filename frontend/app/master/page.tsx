@@ -63,7 +63,7 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
     setErr(null);
     const pcts = tierPcts.map((v) => parseInt(v));
     const counts = tierCounts.map((v, i) => i === numTiers - 1 ? 0 : parseInt(v));
-    if (pcts.some(isNaN) || pcts.some((v) => v < 1)) { setErr("All tier % must be ≥ 1"); return; }
+    if (pcts.some(isNaN) || pcts.some((v) => v < 0)) { setErr("All tier % must be ≥ 0"); return; }
     if (pcts.reduce((a, b) => a + b, 0) !== 100) { setErr("Tier % must sum to 100"); return; }
     for (let i = 0; i < numTiers - 1; i++) {
       if (isNaN(counts[i]) || counts[i] < 1) { setErr(`Tier ${i + 1} count must be ≥ 1`); return; }
@@ -120,7 +120,7 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
                   <span className="text-xs text-slate-400">%</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <input type="number" min={1} className={`w-20 rounded-lg border px-2 py-1.5 text-sm text-center ${isLast ? "border-slate-200 bg-slate-50 text-slate-300" : "border-slate-300"}`} placeholder={isLast ? "rest" : "# projects"} disabled={isLast} value={isLast ? "" : (tierCounts[i] ?? "")} onChange={(e) => { const n = [...tierCounts]; n[i] = e.target.value; setTierCounts(n); }} />
+                  <input type="number" min={0} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-center" placeholder={isLast ? "0 = rest" : "# projects"} value={tierCounts[i] ?? ""} onChange={(e) => { const n = [...tierCounts]; n[i] = e.target.value; setTierCounts(n); }} />
                   <span className="text-xs text-slate-400">projects</span>
                 </div>
               </div>
