@@ -4,10 +4,9 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { PROTOCOL_ADMIN } from "@/lib/constants";
+import { useEffect, useState } from "react";
+import { getSupabase } from "@/lib/supabase";
 
-// Wallet button must never render on the server — it reads browser extension
-// state (Phantom, Solflare) which doesn't exist during SSR, causing a
-// hydration mismatch between the server-rendered HTML and the client DOM.
 const WalletMultiButton = dynamic(
   () =>
     import("@solana/wallet-adapter-react-ui").then(
@@ -19,6 +18,19 @@ const WalletMultiButton = dynamic(
 export default function Navbar() {
   const { publicKey } = useWallet();
   const isAdmin = publicKey?.toBase58() === PROTOCOL_ADMIN;
+  const [devUser, setDevUser] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setDevUser(session?.user?.email ?? session?.user?.user_metadata?.user_name ?? null);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      setDevUser(session?.user?.email ?? session?.user?.user_metadata?.user_name ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   return (
     <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-md">
@@ -34,18 +46,29 @@ export default function Navbar() {
             >
               Hackathons
             </Link>
+            <Link
+              href="/dev"
+              className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+            >
+              {devUser ? "Dev Portal" : "Submit Project"}
+            </Link>
             {isAdmin && (
               <Link
-                href="/admin"
+                href="/master"
                 className="text-sm font-medium text-amber-600 hover:text-amber-800"
               >
-                Admin
+                Master
               </Link>
             )}
           </div>
         </div>
 
         <div className="flex items-center gap-3">
+          {devUser && (
+            <span className="hidden text-xs text-slate-400 sm:block">
+              {devUser.length > 20 ? devUser.slice(0, 18) + "…" : devUser}
+            </span>
+          )}
           <WalletMultiButton
             style={{
               height: "36px",
