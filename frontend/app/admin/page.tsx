@@ -605,7 +605,7 @@ function HackathonAdminCard({
       >
         <div>
           <p className="font-semibold text-slate-900">
-            {hackathon.pubkey.toBase58().slice(0, 16)}…
+            {hackathon.name || hackathon.pubkey.toBase58().slice(0, 16) + "…"}
           </p>
           <p className="text-xs text-slate-400">
             Results: {formatDate(hackathon.resultsTimestamp)} ·{" "}
