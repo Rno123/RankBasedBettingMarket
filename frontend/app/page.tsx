@@ -109,11 +109,16 @@ export default function HomePage() {
                     </span>
                   </div>
 
-                  {/* Address */}
+                  {/* Name / address */}
                   <div>
-                    <p className="text-xs font-mono text-slate-400">
-                      {id.slice(0, 8)}…{id.slice(-6)}
+                    <p className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                      {h.name || <span className="font-mono text-slate-400 text-xs">{id.slice(0, 8)}…{id.slice(-6)}</span>}
                     </p>
+                    {h.name && (
+                      <p className="text-xs font-mono text-slate-400">
+                        {id.slice(0, 8)}…{id.slice(-6)}
+                      </p>
+                    )}
                   </div>
 
                   {/* Pool & tiers */}
