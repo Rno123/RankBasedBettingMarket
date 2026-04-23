@@ -28,13 +28,22 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
 
   const supabase = getSupabase();
 
+  function authRedirectUrl(): string {
+    // Prefer an explicit NEXT_PUBLIC_SITE_URL env var (set this in Vercel/production).
+    // Falls back to the current window origin so local dev always works.
+    const base =
+      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
+      (typeof window !== "undefined" ? window.location.origin : "");
+    return `${base}/dev`;
+  }
+
   async function signInEmail() {
     if (!supabase) { setErr("Auth not configured (missing Supabase env vars)"); return; }
     if (!email.trim()) { setErr("Enter an email address"); return; }
     setBusy(true); setErr(null);
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: typeof window !== "undefined" ? window.location.href : undefined },
+      options: { emailRedirectTo: authRedirectUrl() },
     });
     setBusy(false);
     if (error) { setErr(error.message); return; }
@@ -45,7 +54,7 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
     if (!supabase) { setErr("Auth not configured"); return; }
     await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: typeof window !== "undefined" ? window.location.href : undefined },
+      options: { redirectTo: authRedirectUrl() },
     });
   }
 
@@ -60,7 +69,7 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
   return (
     <div className="mx-auto max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
       <h2 className="mb-2 text-xl font-bold text-slate-900">Sign in to submit</h2>
-      <p className="mb-6 text-sm text-slate-500">Sign in to register your project for a hackathon betting pool.</p>
+      <p className="mb-6 text-sm text-slate-500">Sign in to register your project and put skin in the game.</p>
 
       {/* OAuth */}
       <div className="mb-4 space-y-3">
@@ -311,7 +320,7 @@ export default function DevPortalPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-extrabold text-slate-900">Dev Portal</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Submit your project to an open hackathon betting pool.
+            Register your project, put skin in the game, and get discovered by backers.
           </p>
         </div>
 

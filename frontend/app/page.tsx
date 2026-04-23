@@ -30,17 +30,18 @@ export default function HomePage() {
       <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
         {/* Hero */}
         <div className="mb-12 text-center">
-          <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
-            Back the builders you believe in
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+            Prove your conviction. Discover serious builders.
           </h1>
           <p className="mx-auto mt-4 max-w-xl text-lg text-slate-500">
-            Stake on hackathon projects. Earn rewards when your picks place.
-            All payouts happen on-chain — no house edge.
+            Builders back each other with real USDC. The crowd signal is
+            credible because it can&apos;t be edited — immutability is the product.
+            Earn rewards when your picks place.
           </p>
         </div>
 
         {/* Stats strip */}
-        <div className="mb-10 grid grid-cols-3 gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:grid-cols-3">
+        <div className="mb-10 grid grid-cols-3 gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:gap-4 sm:p-6">
           <div className="text-center">
             <div className="text-2xl font-bold text-indigo-600">
               {hackathons.length}

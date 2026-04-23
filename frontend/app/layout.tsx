@@ -3,9 +3,9 @@ import Providers from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "HackBet — Back the best hacker projects",
+  title: "BuildProof — Signal serious builders",
   description:
-    "Stake on hackathon projects you believe in. Earn rewards when your picks place.",
+    "Back hackathon builders with real skin in the game. On-chain conviction signals — earn rewards when your picks place.",
 };
 
 export default function RootLayout({

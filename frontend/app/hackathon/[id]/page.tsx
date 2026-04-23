@@ -73,8 +73,8 @@ function ProjectRow({
     <>
       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
         {/* Top row: rank + name + action */}
-        <div className="flex items-start justify-between gap-3 sm:items-center">
-          <div className="flex items-center gap-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3">
             <div
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${
                 project.rank === 1
@@ -90,12 +90,12 @@ function ProjectRow({
             >
               {project.rank > 0 ? project.rank : "–"}
             </div>
-            <div>
+            <div className="min-w-0">
               <a
                 href={project.githubUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-medium text-slate-900 hover:text-indigo-600"
+                className="block truncate font-medium text-slate-900 hover:text-indigo-600"
               >
                 {repoName(project.githubUrl)}
               </a>
@@ -119,9 +119,9 @@ function ProjectRow({
             ) : status === "open" ? (
               <button
                 onClick={() => setModalOpen(true)}
-                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
               >
-                {stake && stake.amount > 0n ? "Manage stake" : "Stake"}
+                {stake && stake.amount > 0n ? "Back" : "Back"}
               </button>
             ) : status === "cutoff" ? (
               <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-600">
@@ -223,6 +223,130 @@ function ProjectRow({
         />
       )}
     </>
+  );
+}
+
+// ── Crowd vs. Judges ─────────────────────────────────────────────────────────
+
+function CrowdVsJudges({ projects }: { projects: ProjectInfo[] }) {
+  // Only ranked projects participate in the comparison
+  const ranked = projects.filter((p) => p.rank > 0);
+  if (ranked.length === 0) return null;
+
+  // Crowd ranking: sort by totalStaked descending, assign crowd rank 1..N
+  const byStake = [...ranked].sort((a, b) => Number(b.totalStaked - a.totalStaked));
+  const crowdRankMap = new Map<string, number>();
+  byStake.forEach((p, i) => crowdRankMap.set(p.pubkey.toBase58(), i + 1));
+
+  // Display order: judge rank ascending
+  const rows = [...ranked].sort((a, b) => a.rank - b.rank);
+
+  const rankBadgeClass = (r: number) => {
+    if (r === 1) return "bg-amber-100 text-amber-700";
+    if (r === 2) return "bg-slate-200 text-slate-600";
+    if (r === 3) return "bg-orange-100 text-orange-700";
+    return "bg-indigo-50 text-indigo-500";
+  };
+
+  return (
+    <div className="mt-8">
+      <h2 className="mb-3 text-lg font-bold text-slate-900">Crowd vs. Judges</h2>
+      <p className="mb-4 text-sm text-slate-500">
+        Did the crowd call it? Judge ranking (official results) vs. crowd ranking (by backing).
+      </p>
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {/* Header */}
+        <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 border-b border-slate-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <span>Project</span>
+          <span className="w-20 text-center">Judge rank</span>
+          <span className="w-20 text-center">Crowd rank</span>
+          <span className="w-12 text-center">Match</span>
+        </div>
+        {rows.map((p) => {
+          const judgeRank = p.rank;
+          const crowdRank = crowdRankMap.get(p.pubkey.toBase58()) ?? 0;
+          const delta = crowdRank - judgeRank;
+          const exact = delta === 0;
+          const close = Math.abs(delta) <= 1;
+
+          return (
+            <div
+              key={p.pubkey.toBase58()}
+              className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 border-b border-slate-50 px-4 py-3 last:border-0 hover:bg-slate-50 transition"
+            >
+              {/* Project name */}
+              <a
+                href={p.githubUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="truncate text-sm font-medium text-slate-800 hover:text-indigo-600"
+              >
+                {repoName(p.githubUrl)}
+              </a>
+
+              {/* Judge rank badge */}
+              <div className="w-20 flex justify-center">
+                <span
+                  className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${rankBadgeClass(judgeRank)}`}
+                >
+                  #{judgeRank}
+                </span>
+              </div>
+
+              {/* Crowd rank badge + delta arrow */}
+              <div className="w-20 flex items-center justify-center gap-1">
+                <span
+                  className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${rankBadgeClass(crowdRank)}`}
+                >
+                  #{crowdRank}
+                </span>
+                {!exact && (
+                  <span
+                    className={`text-xs font-semibold ${delta < 0 ? "text-emerald-500" : "text-rose-400"}`}
+                    title={delta < 0 ? "Crowd ranked higher than judges" : "Crowd ranked lower than judges"}
+                  >
+                    {delta < 0 ? `▲${Math.abs(delta)}` : `▼${delta}`}
+                  </span>
+                )}
+              </div>
+
+              {/* Match indicator */}
+              <div className="w-12 flex justify-center">
+                {exact ? (
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-600">
+                    ✓ Exact
+                  </span>
+                ) : close ? (
+                  <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-500">
+                    ≈ Close
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-400">
+                    Miss
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Summary line */}
+      {(() => {
+        const exactCount = rows.filter(
+          (p) => (crowdRankMap.get(p.pubkey.toBase58()) ?? 0) === p.rank,
+        ).length;
+        return (
+          <p className="mt-3 text-center text-xs text-slate-400">
+            Crowd got{" "}
+            <span className="font-semibold text-slate-600">{exactCount}</span>{" "}
+            of{" "}
+            <span className="font-semibold text-slate-600">{rows.length}</span>{" "}
+            placements exactly right
+          </p>
+        );
+      })()}
+    </div>
   );
 }
 
@@ -417,10 +541,10 @@ export default function HackathonPage({
 
         {/* Header card */}
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-extrabold text-slate-900">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-extrabold text-slate-900 sm:text-2xl">
                   {hackathon.name || "Hackathon"}
                 </h1>
                 <span
@@ -434,7 +558,7 @@ export default function HackathonPage({
               </p>
             </div>
             {/* Pool */}
-            <div className="text-right">
+            <div className="sm:text-right">
               <p className="text-xs uppercase tracking-wider text-slate-400">
                 Total pool
               </p>
@@ -515,27 +639,29 @@ export default function HackathonPage({
         </div>
 
         {/* Projects header + sort controls */}
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-bold text-slate-900">Projects</h2>
           {projects.length > 0 && (
-            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm self-start sm:self-auto">
               {(
                 [
-                  { mode: "stake", label: "By stake" },
-                  { mode: "last_commit", label: "By last commit" },
-                  { mode: "commits_week", label: "By commits/week" },
+                  { mode: "stake", label: "Stake", labelFull: "By stake" },
+                  { mode: "last_commit", label: "Commit", labelFull: "By last commit" },
+                  { mode: "commits_week", label: "Activity", labelFull: "By commits/week" },
                 ] as const
-              ).map(({ mode, label }) => (
+              ).map(({ mode, label, labelFull }) => (
                 <button
                   key={mode}
                   onClick={() => setSortMode(mode)}
+                  title={labelFull}
                   className={`rounded-lg px-3 py-1 text-xs font-medium transition ${
                     sortMode === mode
                       ? "bg-indigo-600 text-white"
                       : "text-slate-500 hover:bg-slate-100"
                   }`}
                 >
-                  {label}
+                  <span className="sm:hidden">{label}</span>
+                  <span className="hidden sm:inline">{labelFull}</span>
                 </button>
               ))}
             </div>
@@ -580,6 +706,11 @@ export default function HackathonPage({
               />
             ))}
           </div>
+        )}
+
+        {/* Crowd vs. Judges — only shown once resolved */}
+        {status === "resolved" && visibleProjects.length > 0 && (
+          <CrowdVsJudges projects={visibleProjects} />
         )}
       </main>
     </div>
