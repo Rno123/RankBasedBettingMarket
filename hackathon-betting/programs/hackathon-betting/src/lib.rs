@@ -7,10 +7,16 @@ declare_id!("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd");
 
 /// Seconds before results_timestamp after which unstaking is forbidden.
 pub const SELL_CUTOFF_SECS: i64 = 86_400;
-/// Max penalty on early unstake in basis points (30%).
-pub const MAX_PENALTY_BPS: u64 = 3_000;
-/// Hard cap on stake per wallet per project.
-pub const MAX_STAKE_PER_WALLET: u64 = 1_000_000_000;
+/// Fixed unstake penalty in basis points (2%).
+pub const UNSTAKE_PENALTY_BPS: u64 = 200;
+/// Portion of the unstake penalty routed to fee_recipient (1%).
+pub const UNSTAKE_PROTOCOL_BPS: u64 = 100;
+/// Shares multiplier at t=0 in basis points (1.5×).
+pub const EARLY_MULTIPLIER_BPS: u64 = 15_000;
+/// Shares multiplier at cutoff in basis points (1.0×).
+pub const BASE_MULTIPLIER_BPS: u64 = 10_000;
+/// Hard cap on stake per wallet per project ($2 000, 6 decimals).
+pub const MAX_STAKE_PER_WALLET: u64 = 2_000_000_000;
 /// Maximum length of a hackathon name in bytes.
 pub const NAME_MAX_LEN: usize = 50;
 /// Basis-point denominator for all fixed-point math.
@@ -23,8 +29,11 @@ pub const TIER_BPS_TOTAL: u32 = 10_000;
 pub const DEFAULT_PROTOCOL_FEE_BPS: u16 = 150;
 /// Default builder commitment deposit in USDC lamports ($10, 6 decimals).
 pub const DEFAULT_DEPOSIT_AMOUNT: u64 = 10_000_000;
-/// Maximum cumulative self-stake a builder may place on their own project ($5 000, 6 decimals).
-pub const MAX_SELF_STAKE: u64 = 5_000_000_000;
+/// Maximum cumulative self-stake a builder may place on their own project ($2 000, 6 decimals).
+pub const MAX_SELF_STAKE: u64 = 2_000_000_000;
+
+/// Protocol-level admin: the only wallet allowed to call initialize_hackathon.
+pub const PROTOCOL_ADMIN: Pubkey = anchor_lang::solana_program::pubkey!("5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP");
 
 // ── Errors ─────────────────────────────────────────────────────────────────
 
@@ -82,8 +91,12 @@ pub enum BettingError {
     DepositAlreadyForfeited,
     #[msg("Self-stake amount is below the required minimum (hackathon deposit_amount)")]
     SelfStakeBelowMinimum,
-    #[msg("Self-stake would exceed the $5 000 maximum")]
+    #[msg("Self-stake would exceed the $2 000 maximum")]
     SelfStakeExceedsMaximum,
+    #[msg("Caller is not the protocol admin")]
+    Unauthorized,
+    #[msg("Wallet is not whitelisted to stake in this hackathon")]
+    NotWhitelisted,
     #[msg("Builder has not declared submission via submit_project")]
     NotDeclared,
 }
@@ -110,6 +123,19 @@ fn rank_to_tier_idx(rank: u8, tier_count: u8) -> usize {
     (rank as usize)
         .saturating_sub(1)
         .min((tier_count as usize).saturating_sub(1))
+}
+
+/// Time-weighted shares: multiplier decays linearly from 1.5× at t=start to 1× at t=cutoff.
+/// Returns the share units earned for `amount` staked at `now`.
+fn compute_shares(amount: u64, now: i64, start: i64, cutoff: i64) -> Result<u64> {
+    let window = cutoff.saturating_sub(start).max(1) as u64;
+    let elapsed = (now.saturating_sub(start).max(0) as u64).min(window);
+    let multiplier_bps = EARLY_MULTIPLIER_BPS
+        .saturating_sub((EARLY_MULTIPLIER_BPS - BASE_MULTIPLIER_BPS) * elapsed / window);
+    amount
+        .checked_mul(multiplier_bps)
+        .and_then(|v| v.checked_div(10_000))
+        .ok_or(error!(BettingError::Overflow))
 }
 
 // ── Program ────────────────────────────────────────────────────────────────
@@ -161,6 +187,7 @@ pub mod hackathon_betting {
         h.admin = ctx.accounts.admin.key();
         h.usdc_mint = ctx.accounts.usdc_mint.key();
         h.name = name;
+        h.start_timestamp = now;
         h.results_timestamp = results_timestamp;
         h.cutoff_timestamp = results_timestamp
             .checked_sub(SELL_CUTOFF_SECS)
@@ -194,6 +221,7 @@ pub mod hackathon_betting {
         p.hackathon = ctx.accounts.hackathon.key();
         p.github_url = github_url;
         p.total_staked = 0;
+        p.total_shares = 0;
         p.rank = 0;
         p.is_registered = true;
         p.is_refund_enabled = false;
@@ -237,6 +265,13 @@ pub mod hackathon_betting {
             .ok_or(BettingError::Overflow)?;
         require!(new_amount <= MAX_STAKE_PER_WALLET, BettingError::StakeCapExceeded);
 
+        let new_shares = compute_shares(
+            amount,
+            now,
+            ctx.accounts.hackathon.start_timestamp,
+            ctx.accounts.hackathon.cutoff_timestamp,
+        )?;
+
         if user_stake.user == Pubkey::default() {
             user_stake.user = ctx.accounts.user.key();
             user_stake.project = ctx.accounts.project.key();
@@ -245,11 +280,19 @@ pub mod hackathon_betting {
             user_stake.bump = ctx.bumps.user_stake;
         }
         user_stake.amount = new_amount;
+        user_stake.shares = user_stake.shares
+            .checked_add(new_shares)
+            .ok_or(BettingError::Overflow)?;
 
         ctx.accounts.project.total_staked = ctx.accounts
             .project
             .total_staked
             .checked_add(amount)
+            .ok_or(BettingError::Overflow)?;
+        ctx.accounts.project.total_shares = ctx.accounts
+            .project
+            .total_shares
+            .checked_add(new_shares)
             .ok_or(BettingError::Overflow)?;
         ctx.accounts.hackathon.total_pool = ctx.accounts
             .hackathon
@@ -322,9 +365,21 @@ pub mod hackathon_betting {
             user_stake.bump      = ctx.bumps.user_stake;
         }
         user_stake.amount = new_amount;
+        let new_shares = compute_shares(
+            amount,
+            now,
+            ctx.accounts.hackathon.start_timestamp,
+            ctx.accounts.hackathon.cutoff_timestamp,
+        )?;
+        user_stake.shares = user_stake.shares
+            .checked_add(new_shares)
+            .ok_or(BettingError::Overflow)?;
 
         ctx.accounts.project.total_staked = ctx.accounts.project.total_staked
             .checked_add(amount)
+            .ok_or(BettingError::Overflow)?;
+        ctx.accounts.project.total_shares = ctx.accounts.project.total_shares
+            .checked_add(new_shares)
             .ok_or(BettingError::Overflow)?;
         ctx.accounts.project.builder_staked = new_builder_staked;
         ctx.accounts.hackathon.total_pool = ctx.accounts.hackathon.total_pool
@@ -372,10 +427,10 @@ pub mod hackathon_betting {
 
     // ── 4.6  unstake ──────────────────────────────────────────────────────
 
-    /// Linear decay penalty:
-    ///   penalty_bps = MAX_PENALTY_BPS × (t_now − t_stake) / (t_cutoff − t_stake)
-    ///   return_amount = stake × (BPS_DENOM − penalty_bps) / BPS_DENOM
-    /// Penalty stays in the pool; only return_amount leaves the escrow.
+    /// Fixed 2% exit penalty: 1% to fee_recipient, 1% stays in pool.
+    ///   return_amount = stake × (10_000 − UNSTAKE_PENALTY_BPS) / 10_000  (98%)
+    ///   protocol_fee  = stake × UNSTAKE_PROTOCOL_BPS / 10_000             (1%)
+    ///   pool_fee      = penalty − protocol_fee                             (1%, stays in escrow)
     pub fn unstake(ctx: Context<Unstake>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         require!(
@@ -384,48 +439,41 @@ pub mod hackathon_betting {
         );
 
         let stake_amount = ctx.accounts.user_stake.amount;
-        let stake_timestamp = ctx.accounts.user_stake.stake_timestamp;
-        let cutoff_timestamp = ctx.accounts.hackathon.cutoff_timestamp;
+        let user_shares = ctx.accounts.user_stake.shares;
+        require!(stake_amount > 0, BettingError::ZeroAmount);
+
         let admin_key = ctx.accounts.hackathon.admin;
         let hname = ctx.accounts.hackathon.name.clone();
         let hbump = ctx.accounts.hackathon.bump;
 
-        let t_elapsed = now
-            .checked_sub(stake_timestamp)
+        let penalty = stake_amount
+            .checked_mul(UNSTAKE_PENALTY_BPS)
             .ok_or(BettingError::Overflow)?
-            .max(0) as u64;
-        let t_total = cutoff_timestamp
-            .checked_sub(stake_timestamp)
+            / BPS_DENOM;
+        let protocol_fee = stake_amount
+            .checked_mul(UNSTAKE_PROTOCOL_BPS)
             .ok_or(BettingError::Overflow)?
-            .max(1) as u64;
-
-        let penalty_bps = MAX_PENALTY_BPS
-            .checked_mul(t_elapsed)
-            .ok_or(BettingError::Overflow)?
-            .checked_div(t_total)
-            .unwrap_or(MAX_PENALTY_BPS)
-            .min(MAX_PENALTY_BPS);
-
+            / BPS_DENOM;
         let return_amount = stake_amount
-            .checked_mul(BPS_DENOM - penalty_bps)
-            .ok_or(BettingError::Overflow)?
-            .checked_div(BPS_DENOM)
-            .unwrap_or(0);
+            .checked_sub(penalty)
+            .ok_or(BettingError::Overflow)?;
 
         ctx.accounts.user_stake.amount = 0;
-        ctx.accounts.project.total_staked = ctx.accounts
-            .project
-            .total_staked
+        ctx.accounts.user_stake.shares = 0;
+        ctx.accounts.project.total_staked = ctx.accounts.project.total_staked
             .checked_sub(stake_amount)
             .ok_or(BettingError::Overflow)?;
-        ctx.accounts.hackathon.total_pool = ctx.accounts
-            .hackathon
-            .total_pool
+        ctx.accounts.project.total_shares = ctx.accounts.project.total_shares
+            .checked_sub(user_shares)
+            .ok_or(BettingError::Overflow)?;
+        ctx.accounts.hackathon.total_pool = ctx.accounts.hackathon.total_pool
             .checked_sub(return_amount)
+            .and_then(|v| v.checked_sub(protocol_fee))
             .ok_or(BettingError::Overflow)?;
 
         let bump_arr = [hbump];
         let seeds: &[&[u8]] = &[b"hackathon", admin_key.as_ref(), hname.as_bytes(), &bump_arr];
+
         token::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -438,6 +486,22 @@ pub mod hackathon_betting {
             ),
             return_amount,
         )?;
+
+        if protocol_fee > 0 {
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.escrow.to_account_info(),
+                        to: ctx.accounts.fee_recipient_token_account.to_account_info(),
+                        authority: ctx.accounts.hackathon.to_account_info(),
+                    },
+                    &[seeds],
+                ),
+                protocol_fee,
+            )?;
+        }
+
         Ok(())
     }
 
@@ -546,12 +610,12 @@ pub mod hackathon_betting {
     /// Stage 1 — tier allocation (from effective_tier_pcts set at finalize_resolve):
     ///   P_t = effective_tier_pcts[tier_of(project.rank)]  (basis points)
     ///
-    /// Stage 2 — within-tier distribution by sqrt crowding:
-    ///   C_i       = isqrt(project.total_staked)
+    /// Stage 2 — within-tier distribution:
+    ///   C_i       = isqrt(project.total_staked)  — sqrt crowding between projects
     ///   C_total_t = Σ isqrt(S_j) for all projects j in the same tier
     ///
-    /// User payout:
-    ///   payout = stake × C_i × P_t × total_pool / (S_i × C_total_t × 10_000)
+    /// User payout (shares-weighted within project):
+    ///   payout = shares × C_i × P_t × total_pool / (total_shares × C_total_t × 10_000)
     ///
     /// remaining_accounts: all registered ProjectAccounts for this hackathon.
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
@@ -564,8 +628,10 @@ pub mod hackathon_betting {
         let tier_count = ctx.accounts.hackathon.tier_count;
         let protocol_fee_bps = ctx.accounts.hackathon.protocol_fee_bps;
         let project_total_staked = ctx.accounts.project.total_staked;
+        let project_total_shares = ctx.accounts.project.total_shares;
         let project_rank = ctx.accounts.project.rank;
         let stake_amount = ctx.accounts.user_stake.amount;
+        let user_shares = ctx.accounts.user_stake.shares;
 
         require!(stake_amount > 0, BettingError::ZeroAmount);
         require!(project_rank > 0, BettingError::NotResolved);
@@ -594,14 +660,14 @@ pub mod hackathon_betting {
         }
         require!(c_total_t > 0, BettingError::Overflow);
 
-        // payout = stake × C_i × P_t × pool / (S_i × C_total_t × 10_000)
+        // payout = shares × C_i × P_t × pool / (total_shares × C_total_t × 10_000)
         let payout: u64 = {
-            let num = (stake_amount as u128)
+            let num = (user_shares as u128)
                 .checked_mul(c_i)
                 .and_then(|n| n.checked_mul(p_t))
                 .and_then(|n| n.checked_mul(total_pool as u128))
                 .ok_or(BettingError::Overflow)?;
-            let den = (project_total_staked as u128)
+            let den = (project_total_shares as u128)
                 .checked_mul(c_total_t as u128)
                 .and_then(|d| d.checked_mul(10_000u128))
                 .ok_or(BettingError::Overflow)?;
@@ -831,7 +897,52 @@ pub mod hackathon_betting {
         Ok(())
     }
 
-    // ── 4.12  forfeit_deposit ─────────────────────────────────────────────
+    // ── 4.12  transfer_upgrade_authority ─────────────────────────────────
+
+    /// Transfers the program's BPF loader upgrade authority to a new account.
+    /// Both the current authority and the new authority must sign
+    /// (BPF loader's SetAuthorityChecked), preventing accidental transfers to
+    /// a wrong address. Use this to hand deploy rights to a partner (e.g.
+    /// Solana Foundation) while both parties confirm on-chain.
+    pub fn transfer_upgrade_authority(
+        ctx: Context<TransferUpgradeAuthority>,
+    ) -> Result<()> {
+        anchor_lang::solana_program::program::invoke(
+            &anchor_lang::solana_program::bpf_loader_upgradeable::set_upgrade_authority_checked(
+                ctx.accounts.program_data.key,
+                ctx.accounts.current_authority.key,
+                ctx.accounts.new_authority.key,
+            ),
+            &[
+                ctx.accounts.program_data.to_account_info(),
+                ctx.accounts.current_authority.to_account_info(),
+                ctx.accounts.new_authority.to_account_info(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    // ── 4.13  revoke_upgrade_authority ────────────────────────────────────
+
+    /// Permanently removes the upgrade authority, making this program immutable.
+    /// IRREVERSIBLE — no further code changes are possible after this call.
+    /// Use this as a final trust signal once the protocol is stable and audited.
+    pub fn revoke_upgrade_authority(ctx: Context<RevokeUpgradeAuthority>) -> Result<()> {
+        anchor_lang::solana_program::program::invoke(
+            &anchor_lang::solana_program::bpf_loader_upgradeable::set_upgrade_authority(
+                ctx.accounts.program_data.key,
+                ctx.accounts.current_authority.key,
+                None,
+            ),
+            &[
+                ctx.accounts.program_data.to_account_info(),
+                ctx.accounts.current_authority.to_account_info(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    // ── 4.14  forfeit_deposit ─────────────────────────────────────────────
 
     /// Admin confiscates the deposit of a builder who registered but did not
     /// actually submit.  50% of the deposit is added to the prize pool
@@ -886,6 +997,20 @@ pub mod hackathon_betting {
         ctx.accounts.project.deposit_forfeited = true;
         Ok(())
     }
+
+    // ── 4.15  whitelist_wallet ────────────────────────────────────────────
+
+    /// Admin creates a per-hackathon whitelist entry for a wallet, allowing it
+    /// to call `stake`. Only whitelisted wallets may stake; builders who call
+    /// `self_stake` are exempt from this check (they are already gated by
+    /// project ownership and the deposit requirement).
+    pub fn whitelist_wallet(ctx: Context<WhitelistWallet>) -> Result<()> {
+        let entry = &mut ctx.accounts.whitelist_entry;
+        entry.hackathon = ctx.accounts.hackathon.key();
+        entry.wallet = ctx.accounts.wallet.key();
+        entry.bump = ctx.bumps.whitelist_entry;
+        Ok(())
+    }
 }
 
 // ── Account structs ────────────────────────────────────────────────────────
@@ -897,6 +1022,7 @@ pub struct HackathonState {
     pub name: String,                           // 4 + NAME_MAX_LEN
     pub results_timestamp: i64,                 // 8
     pub cutoff_timestamp: i64,                  // 8
+    pub start_timestamp: i64,                   // 8
     pub total_pool: u64,                        // 8
     pub is_resolved: bool,                      // 1
     pub tier_count: u8,                         // 1
@@ -918,6 +1044,7 @@ impl HackathonState {
         + 4 + NAME_MAX_LEN  // name (4-byte length prefix + max 50 bytes)
         + 8   // results_timestamp
         + 8   // cutoff_timestamp
+        + 8   // start_timestamp
         + 8   // total_pool
         + 1   // is_resolved
         + 1   // tier_count
@@ -937,6 +1064,7 @@ pub struct ProjectAccount {
     pub hackathon: Pubkey,
     pub github_url: String,         // ≤ MAX_URL bytes
     pub total_staked: u64,
+    pub total_shares: u64,
     pub rank: u8,                   // 0 = unranked
     pub is_registered: bool,
     pub is_refund_enabled: bool,    // admin can enable for exceptional refunds
@@ -957,6 +1085,7 @@ impl ProjectAccount {
         + 32                       // hackathon
         + 4 + Self::MAX_URL        // github_url (4-byte length prefix + data)
         + 8                        // total_staked
+        + 8                        // total_shares
         + 1                        // rank
         + 1                        // is_registered
         + 1                        // is_refund_enabled
@@ -976,6 +1105,7 @@ pub struct UserStake {
     pub user: Pubkey,
     pub project: Pubkey,
     pub amount: u64,
+    pub shares: u64,
     pub stake_timestamp: i64,
     pub is_claimed: bool,
     pub bump: u8,
@@ -986,9 +1116,21 @@ impl UserStake {
         + 32  // user
         + 32  // project
         + 8   // amount
+        + 8   // shares
         + 8   // stake_timestamp
         + 1   // is_claimed
         + 1;  // bump
+}
+
+#[account]
+pub struct WhitelistedWallet {
+    pub hackathon: Pubkey,  // 32
+    pub wallet: Pubkey,     // 32
+    pub bump: u8,           // 1
+}
+
+impl WhitelistedWallet {
+    pub const SPACE: usize = 8 + 32 + 32 + 1;
 }
 
 // ── Instruction contexts ───────────────────────────────────────────────────
@@ -996,7 +1138,10 @@ impl UserStake {
 #[derive(Accounts)]
 #[instruction(name: String)]
 pub struct InitializeHackathon<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        address = PROTOCOL_ADMIN @ BettingError::Unauthorized,
+    )]
     pub admin: Signer<'info>,
     #[account(
         init,
@@ -1053,6 +1198,13 @@ pub struct Stake<'info> {
         bump,
     )]
     pub user_stake: Account<'info, UserStake>,
+    /// Whitelist entry — must exist for this hackathon + user pair.
+    /// Admin creates it via whitelist_wallet before backers can stake.
+    #[account(
+        seeds = [b"whitelist", hackathon.key().as_ref(), user.key().as_ref()],
+        bump  = whitelist_entry.bump,
+    )]
+    pub whitelist_entry: Account<'info, WhitelistedWallet>,
     #[account(
         mut,
         token::mint      = hackathon.usdc_mint,
@@ -1134,6 +1286,12 @@ pub struct Unstake<'info> {
         token::authority = user,
     )]
     pub user_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        constraint = fee_recipient_token_account.owner == hackathon.fee_recipient @ BettingError::InvalidFeeRecipient,
+        token::mint = hackathon.usdc_mint,
+    )]
+    pub fee_recipient_token_account: Account<'info, TokenAccount>,
     #[account(
         mut,
         seeds = [b"escrow", hackathon.key().as_ref()],
@@ -1365,4 +1523,53 @@ pub struct ForfeitDeposit<'info> {
     )]
     pub escrow: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct TransferUpgradeAuthority<'info> {
+    /// Current upgrade authority — must sign.
+    pub current_authority: Signer<'info>,
+    /// CHECK: this program's ProgramData account, derived from the program ID.
+    /// The BPF loader verifies that current_authority is the actual upgrade authority.
+    #[account(
+        mut,
+        address = anchor_lang::solana_program::bpf_loader_upgradeable::get_program_data_address(&crate::ID),
+    )]
+    pub program_data: UncheckedAccount<'info>,
+    /// CHECK: the new upgrade authority. Must also sign (BPF SetAuthorityChecked).
+    pub new_authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct RevokeUpgradeAuthority<'info> {
+    /// Current upgrade authority — must sign.
+    pub current_authority: Signer<'info>,
+    /// CHECK: this program's ProgramData account, derived from the program ID.
+    /// The BPF loader verifies that current_authority is the actual upgrade authority.
+    #[account(
+        mut,
+        address = anchor_lang::solana_program::bpf_loader_upgradeable::get_program_data_address(&crate::ID),
+    )]
+    pub program_data: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct WhitelistWallet<'info> {
+    #[account(
+        mut,
+        address = PROTOCOL_ADMIN @ BettingError::Unauthorized,
+    )]
+    pub admin: Signer<'info>,
+    pub hackathon: Account<'info, HackathonState>,
+    /// CHECK: the wallet to whitelist — we only need its pubkey for the PDA seed.
+    pub wallet: UncheckedAccount<'info>,
+    #[account(
+        init,
+        payer = admin,
+        space = WhitelistedWallet::SPACE,
+        seeds = [b"whitelist", hackathon.key().as_ref(), wallet.key().as_ref()],
+        bump,
+    )]
+    pub whitelist_entry: Account<'info, WhitelistedWallet>,
+    pub system_program: Program<'info, System>,
 }

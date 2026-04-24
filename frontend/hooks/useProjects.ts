@@ -9,6 +9,7 @@ export interface ProjectInfo {
   hackathon: PublicKey;
   githubUrl: string;
   totalStaked: bigint;
+  totalShares: bigint;
   rank: number;
   isRegistered: boolean;
   isRefundEnabled: boolean;
@@ -46,6 +47,7 @@ export function useProjects(hackathonPubkey: PublicKey | null) {
             hackathon: d.hackathon as PublicKey,
             githubUrl: d.githubUrl as string,
             totalStaked: BigInt(d.totalStaked.toString()),
+            totalShares: BigInt(d.totalShares.toString()),
             rank: d.rank as number,
             isRegistered: d.isRegistered as boolean,
             isRefundEnabled: d.isRefundEnabled as boolean,

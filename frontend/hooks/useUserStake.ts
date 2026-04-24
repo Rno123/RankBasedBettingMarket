@@ -10,6 +10,7 @@ export interface UserStakeInfo {
   user: PublicKey;
   project: PublicKey;
   amount: bigint;
+  shares: bigint;
   stakeTimestamp: number;
   isClaimed: boolean;
 }
@@ -39,6 +40,7 @@ export function useUserStake(
               user: acc.user,
               project: acc.project,
               amount: BigInt(acc.amount.toString()),
+              shares: BigInt(acc.shares.toString()),
               stakeTimestamp: Number(acc.stakeTimestamp),
               isClaimed: acc.isClaimed,
             });

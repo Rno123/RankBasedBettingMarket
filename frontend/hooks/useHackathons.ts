@@ -9,9 +9,11 @@ export interface HackathonInfo {
   pubkey: PublicKey;
   admin: PublicKey;
   usdcMint: PublicKey;
+  feeRecipient: PublicKey;
   name: string;
   resultsTimestamp: number;
   cutoffTimestamp: number;
+  startTimestamp: number;
   totalPool: bigint;
   isResolved: boolean;
   tierCount: number;
@@ -52,9 +54,11 @@ export function useHackathons() {
               pubkey: item.pubkey as PublicKey,
               admin: d.admin as PublicKey,
               usdcMint: d.usdcMint as PublicKey,
+              feeRecipient: d.feeRecipient as PublicKey,
               name: (d.name as string) ?? "",
               resultsTimestamp: Number(d.resultsTimestamp),
               cutoffTimestamp: Number(d.cutoffTimestamp),
+              startTimestamp: Number(d.startTimestamp),
               totalPool: BigInt(d.totalPool.toString()),
               isResolved: d.isResolved as boolean,
               tierCount: d.tierCount as number,

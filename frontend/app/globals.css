@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
@@ -9,7 +10,28 @@ body {
   font-family: var(--font-sans);
 }
 
+html.dark body {
+  color-scheme: dark;
+}
+
 /* Wallet adapter button overrides */
 .wallet-adapter-button {
   font-family: var(--font-sans) !important;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
+}
+
+.wallet-adapter-button:not([disabled]):hover {
+  background: linear-gradient(135deg, #4338ca, #6d28d9) !important;
+}
+
+/* Scrollbar — dark */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #08080f;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e1b4b;
+  border-radius: 3px;
 }

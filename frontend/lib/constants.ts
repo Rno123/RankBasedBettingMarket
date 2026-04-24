@@ -8,7 +8,7 @@ export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "https://api.devnet.so
 
 export const TOKEN_DECIMALS = 6; // USDC has 6 decimals
 
-export const MAX_STAKE_PER_WALLET = 1_000_000_000; // protocol cap, in smallest units
+export const MAX_STAKE_PER_WALLET = 2_000_000_000; // protocol cap, in smallest units
 
 // Devnet USDC mint — hardcoded for MVP
 export const USDC_MINT = new PublicKey(
