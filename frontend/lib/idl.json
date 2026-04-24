@@ -8,6 +8,72 @@
   },
   "instructions": [
     {
+      "name": "add_protocol_admin",
+      "docs": [
+        "PROTOCOL_ADMIN delegates hackathon-creation and wallet-whitelisting",
+        "rights to another wallet by minting a ProtocolAdminEntry PDA for it.",
+        "The new admin can then call initialize_hackathon and whitelist_wallet",
+        "once the contract is updated to check for this PDA."
+      ],
+      "discriminator": [
+        55,
+        234,
+        145,
+        138,
+        26,
+        17,
+        9,
+        63
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+        },
+        {
+          "name": "new_admin"
+        },
+        {
+          "name": "admin_entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  97,
+                  100,
+                  109,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "new_admin"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "approve_submissions",
       "docs": [
         "Organizer (hackathon admin) marks a batch of projects as submitted.",
@@ -748,6 +814,66 @@
       ]
     },
     {
+      "name": "remove_protocol_admin",
+      "docs": [
+        "Revokes a previously granted protocol admin entry, closing the PDA",
+        "and returning its rent lamports to PROTOCOL_ADMIN."
+      ],
+      "discriminator": [
+        202,
+        191,
+        80,
+        222,
+        230,
+        27,
+        61,
+        130
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+        },
+        {
+          "name": "admin_wallet"
+        },
+        {
+          "name": "admin_entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  97,
+                  100,
+                  109,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "admin_wallet"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "resolve",
       "docs": [
         "Sets the rank on a single ProjectAccount. Call once per project.",
@@ -1145,9 +1271,9 @@
     {
       "name": "unstake",
       "docs": [
-        "Fixed 2% exit penalty: 1% to fee_recipient, 1% stays in pool.",
-        "return_amount = stake × (10_000 − UNSTAKE_PENALTY_BPS) / 10_000  (98%)",
-        "protocol_fee  = stake × UNSTAKE_PROTOCOL_BPS / 10_000             (1%)",
+        "Fixed 3% exit penalty: 1.5% to fee_recipient, 1.5% stays in pool.",
+        "return_amount = stake × (10_000 − UNSTAKE_PENALTY_BPS) / 10_000  (97%)",
+        "protocol_fee  = stake × UNSTAKE_PROTOCOL_BPS / 10_000             (1.5%)",
         "pool_fee      = penalty − protocol_fee                             (1%, stays in escrow)"
       ],
       "discriminator": [
@@ -1345,6 +1471,19 @@
         35,
         171,
         116
+      ]
+    },
+    {
+      "name": "ProtocolAdminEntry",
+      "discriminator": [
+        5,
+        56,
+        125,
+        87,
+        115,
+        4,
+        0,
+        15
       ]
     },
     {
@@ -1686,6 +1825,22 @@
           {
             "name": "declared_at",
             "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolAdminEntry",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
           },
           {
             "name": "bump",

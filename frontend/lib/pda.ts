@@ -52,6 +52,13 @@ export function whitelistPda(hackathon: PublicKey, wallet: PublicKey): PublicKey
   )[0];
 }
 
+export function protocolAdminPda(wallet: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("protocol_admin"), wallet.toBuffer()],
+    PROGRAM_ID,
+  )[0];
+}
+
 /** SHA-256 of a UTF-8 string, using the browser's Web Crypto API. */
 export async function hashUrl(url: string): Promise<Uint8Array> {
   const data = new TextEncoder().encode(url);

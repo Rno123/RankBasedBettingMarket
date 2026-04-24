@@ -4,10 +4,10 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { PROTOCOL_ADMIN } from "@/lib/constants";
 import { useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { useTheme } from "@/hooks/useTheme";
+import { useIsProtocolAdmin } from "@/hooks/useIsProtocolAdmin";
 
 const WalletMultiButton = dynamic(
   () =>
@@ -19,7 +19,7 @@ const WalletMultiButton = dynamic(
 
 export default function Navbar() {
   const { publicKey } = useWallet();
-  const isAdmin = publicKey?.toBase58() === PROTOCOL_ADMIN;
+  const { isProtocolAdmin } = useIsProtocolAdmin(publicKey ?? null);
   const [devUser, setDevUser] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
@@ -63,7 +63,10 @@ export default function Navbar() {
             <Link href="/dev" className={navClass("/dev")}>
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
-            {isAdmin && (
+            {isProtocolAdmin && (
+              <Link href="/admin" className={navClass("/admin")}>Admin</Link>
+            )}
+            {isProtocolAdmin && (
               <Link
                 href="/master"
                 className={`text-sm font-medium text-amber-600 transition hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 ${pathname.startsWith("/master") ? "font-semibold" : ""}`}
@@ -145,7 +148,10 @@ export default function Navbar() {
             <Link href="/dev" className={`rounded-lg px-3 py-2 ${navClass("/dev")}`}>
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
-            {isAdmin && (
+            {isProtocolAdmin && (
+              <Link href="/admin" className={`rounded-lg px-3 py-2 ${navClass("/admin")}`}>Admin</Link>
+            )}
+            {isProtocolAdmin && (
               <Link href="/master" className="rounded-lg px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-400">
                 Master
               </Link>

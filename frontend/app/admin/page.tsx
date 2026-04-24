@@ -12,7 +12,8 @@ import { hackathonPda, escrowPda, whitelistPda } from "@/lib/pda";
 import { useHackathons } from "@/hooks/useHackathons";
 import { useProjects } from "@/hooks/useProjects";
 import { formatTokens, formatDate } from "@/lib/format";
-import { USDC_MINT, PROTOCOL_ADMIN } from "@/lib/constants";
+import { USDC_MINT } from "@/lib/constants";
+import { useIsProtocolAdmin } from "@/hooks/useIsProtocolAdmin";
 import { getSupabase, getSupabaseAdmin } from "@/lib/supabase";
 
 // ── Create Hackathon ──────────────────────────────────────────────────────────
@@ -493,7 +494,7 @@ export default function AdminPage() {
   const { publicKey } = useWallet();
   const { hackathons, loading, reload: reloadHackathons } = useHackathons();
   const [version, setVersion] = useState(0);
-  const isAdmin = publicKey?.toBase58() === PROTOCOL_ADMIN;
+  const { isProtocolAdmin: isAdmin } = useIsProtocolAdmin(publicKey ?? null);
 
   return (
     <div className="min-h-screen">

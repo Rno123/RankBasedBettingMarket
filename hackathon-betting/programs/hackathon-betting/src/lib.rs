@@ -998,7 +998,28 @@ pub mod hackathon_betting {
         Ok(())
     }
 
-    // ── 4.15  whitelist_wallet ────────────────────────────────────────────
+    // ── 4.15  add_protocol_admin ──────────────────────────────────────────
+
+    /// PROTOCOL_ADMIN delegates hackathon-creation and wallet-whitelisting
+    /// rights to another wallet by minting a ProtocolAdminEntry PDA for it.
+    /// The new admin can then call initialize_hackathon and whitelist_wallet
+    /// once the contract is updated to check for this PDA.
+    pub fn add_protocol_admin(ctx: Context<AddProtocolAdmin>) -> Result<()> {
+        let entry = &mut ctx.accounts.admin_entry;
+        entry.wallet = ctx.accounts.new_admin.key();
+        entry.bump = ctx.bumps.admin_entry;
+        Ok(())
+    }
+
+    // ── 4.16  remove_protocol_admin ───────────────────────────────────────
+
+    /// Revokes a previously granted protocol admin entry, closing the PDA
+    /// and returning its rent lamports to PROTOCOL_ADMIN.
+    pub fn remove_protocol_admin(_ctx: Context<RemoveProtocolAdmin>) -> Result<()> {
+        Ok(())
+    }
+
+    // ── 4.17  whitelist_wallet ────────────────────────────────────────────
 
     /// Admin creates a per-hackathon whitelist entry for a wallet, allowing it
     /// to call `stake`. Only whitelisted wallets may stake; builders who call
@@ -1131,6 +1152,16 @@ pub struct WhitelistedWallet {
 
 impl WhitelistedWallet {
     pub const SPACE: usize = 8 + 32 + 32 + 1;
+}
+
+#[account]
+pub struct ProtocolAdminEntry {
+    pub wallet: Pubkey,  // 32
+    pub bump: u8,        // 1
+}
+
+impl ProtocolAdminEntry {
+    pub const SPACE: usize = 8 + 32 + 1;
 }
 
 // ── Instruction contexts ───────────────────────────────────────────────────
@@ -1572,4 +1603,42 @@ pub struct WhitelistWallet<'info> {
     )]
     pub whitelist_entry: Account<'info, WhitelistedWallet>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct AddProtocolAdmin<'info> {
+    #[account(
+        mut,
+        address = PROTOCOL_ADMIN @ BettingError::Unauthorized,
+    )]
+    pub authority: Signer<'info>,
+    /// CHECK: the wallet being granted protocol admin rights.
+    pub new_admin: UncheckedAccount<'info>,
+    #[account(
+        init,
+        payer = authority,
+        space = ProtocolAdminEntry::SPACE,
+        seeds = [b"protocol_admin", new_admin.key().as_ref()],
+        bump,
+    )]
+    pub admin_entry: Account<'info, ProtocolAdminEntry>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RemoveProtocolAdmin<'info> {
+    #[account(
+        mut,
+        address = PROTOCOL_ADMIN @ BettingError::Unauthorized,
+    )]
+    pub authority: Signer<'info>,
+    /// CHECK: the wallet whose admin entry is being revoked.
+    pub admin_wallet: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [b"protocol_admin", admin_wallet.key().as_ref()],
+        bump = admin_entry.bump,
+        close = authority,
+    )]
+    pub admin_entry: Account<'info, ProtocolAdminEntry>,
 }
