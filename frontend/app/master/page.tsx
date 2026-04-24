@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { PublicKey, Transaction, TransactionInstruction, Connection } from "@solana/web3.js";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import Navbar from "@/components/Navbar";
-import { PROGRAM_ID, PROTOCOL_ADMIN } from "@/lib/constants";
+import { PROGRAM_ID } from "@/lib/constants";
 
 const BPF_LOADER_UPGRADEABLE = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
 
@@ -232,7 +232,6 @@ function RevokeAuthorityPanel({ programDataAddress }: { programDataAddress: Publ
 export default function MasterPage() {
   const { publicKey } = useWallet();
   const { connection } = useConnection();
-  const isAdmin = publicKey?.toBase58() === PROTOCOL_ADMIN;
 
   const [programDataAddress] = useState(getProgramDataAddress);
   const [currentAuthority, setCurrentAuthority] = useState<PublicKey | null | undefined>(undefined);
@@ -254,6 +253,12 @@ export default function MasterPage() {
   }, [connection, programDataAddress]);
 
   const isImmutable = currentAuthority === null && !loadingAuthority;
+  // Gate on the actual on-chain upgrade authority, not PROTOCOL_ADMIN.
+  // Only the wallet that currently holds BPF upgrade rights can transfer/revoke.
+  const isDeployer =
+    !loadingAuthority &&
+    currentAuthority !== null &&
+    publicKey?.toBase58() === currentAuthority?.toBase58();
 
   return (
     <div className="min-h-screen">
@@ -262,14 +267,14 @@ export default function MasterPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white">Master Panel</h1>
           <p className="mt-1 text-sm text-slate-500">Program upgrade authority management.</p>
-          {!isAdmin && (
+          {!loadingAuthority && !isImmutable && !isDeployer && (
             <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">
-              Access restricted. Connect the deployer wallet to use this panel.
+              Transfer and revoke controls are only available to the current upgrade authority.
             </div>
           )}
         </div>
 
-        {/* Authority status card */}
+        {/* Authority status card — always visible */}
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-none">
           <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Program Authority Status</h2>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -296,7 +301,7 @@ export default function MasterPage() {
           </div>
         </div>
 
-        {isAdmin && !isImmutable && (
+        {isDeployer && !isImmutable && (
           <div className="space-y-6">
             <TransferAuthorityPanel
               programDataAddress={programDataAddress}
@@ -306,7 +311,7 @@ export default function MasterPage() {
           </div>
         )}
 
-        {isAdmin && isImmutable && (
+        {isImmutable && (
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center dark:border-emerald-500/20 dark:bg-emerald-500/10">
             <p className="text-base font-bold text-emerald-700 dark:text-emerald-400">Program is immutable</p>
             <p className="mt-1 text-sm text-emerald-600 dark:text-emerald-500">
