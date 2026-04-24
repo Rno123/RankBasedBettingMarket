@@ -7,10 +7,10 @@ declare_id!("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd");
 
 /// Seconds before results_timestamp after which unstaking is forbidden.
 pub const SELL_CUTOFF_SECS: i64 = 86_400;
-/// Fixed unstake penalty in basis points (2%).
-pub const UNSTAKE_PENALTY_BPS: u64 = 200;
-/// Portion of the unstake penalty routed to fee_recipient (1%).
-pub const UNSTAKE_PROTOCOL_BPS: u64 = 100;
+/// Fixed unstake penalty in basis points (3%).
+pub const UNSTAKE_PENALTY_BPS: u64 = 300;
+/// Portion of the unstake penalty routed to fee_recipient (1.5%).
+pub const UNSTAKE_PROTOCOL_BPS: u64 = 150;
 /// Shares multiplier at t=0 in basis points (1.5×).
 pub const EARLY_MULTIPLIER_BPS: u64 = 15_000;
 /// Shares multiplier at cutoff in basis points (1.0×).
@@ -427,9 +427,9 @@ pub mod hackathon_betting {
 
     // ── 4.6  unstake ──────────────────────────────────────────────────────
 
-    /// Fixed 2% exit penalty: 1% to fee_recipient, 1% stays in pool.
-    ///   return_amount = stake × (10_000 − UNSTAKE_PENALTY_BPS) / 10_000  (98%)
-    ///   protocol_fee  = stake × UNSTAKE_PROTOCOL_BPS / 10_000             (1%)
+    /// Fixed 3% exit penalty: 1.5% to fee_recipient, 1.5% stays in pool.
+    ///   return_amount = stake × (10_000 − UNSTAKE_PENALTY_BPS) / 10_000  (97%)
+    ///   protocol_fee  = stake × UNSTAKE_PROTOCOL_BPS / 10_000             (1.5%)
     ///   pool_fee      = penalty − protocol_fee                             (1%, stays in escrow)
     pub fn unstake(ctx: Context<Unstake>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;

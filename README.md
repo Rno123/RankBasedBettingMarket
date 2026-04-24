@@ -41,7 +41,7 @@ payout = user_shares / project_total_shares × project_tier_share × total_pool
 A protocol fee (default 1.5%) is deducted at claim time.
 
 ### Early Exit
-Unstaking before cutoff incurs a fixed **2% penalty**: 1% goes to the fee recipient (protocol revenue), 1% stays in the escrow pool (benefiting remaining stakers). Unstaking is locked in the final 24 hours.
+Unstaking before cutoff incurs a fixed **3% penalty**: 1.5% goes to the fee recipient (protocol revenue), 1.5% stays in the escrow pool (benefiting remaining stakers). Unstaking is locked in the final 24 hours.
 
 ---
 
@@ -50,8 +50,8 @@ Unstaking before cutoff incurs a fixed **2% penalty**: 1% goes to the fee recipi
 | Constant | Value | Description |
 |---|---|---|
 | `SELL_CUTOFF_SECS` | 86,400 s | Seconds before results that staking locks |
-| `UNSTAKE_PENALTY_BPS` | 200 bps | Total early-exit penalty (2%) |
-| `UNSTAKE_PROTOCOL_BPS` | 100 bps | Portion routed to fee recipient (1%) |
+| `UNSTAKE_PENALTY_BPS` | 300 bps | Total early-exit penalty (3%) |
+| `UNSTAKE_PROTOCOL_BPS` | 150 bps | Portion routed to fee recipient (1.5%) |
 | `EARLY_MULTIPLIER_BPS` | 15,000 bps | Share multiplier at open (1.5×) |
 | `BASE_MULTIPLIER_BPS` | 10,000 bps | Share multiplier at cutoff (1.0×) |
 | `MAX_STAKE_PER_WALLET` | 2,000,000,000 | $2,000 USDC cap per wallet per project |
@@ -156,7 +156,7 @@ Whitelisted wallet stakes USDC on a project. Cap: $2,000 per wallet. Requires:
 - Caller's `WhitelistedWallet` PDA to exist for this hackathon
 
 **`unstake`**  
-Withdraws all stake before cutoff. 2% penalty: 1% to fee recipient, 1% stays in pool. Shares are zeroed.
+Withdraws all stake before cutoff. 3% penalty: 1.5% to fee recipient, 1.5% stays in pool. Shares are zeroed.
 
 **`claim`**  
 After `finalize_resolve`, claim payout based on project rank + sqrt crowding + share weight. Marks `is_claimed = true`. Irreversible.

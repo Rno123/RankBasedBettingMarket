@@ -243,7 +243,7 @@ export default function StakeModal({
             </div>
 
             <p className="mt-3 text-xs text-slate-400 dark:text-slate-600">
-              Early unstake incurs a fixed 2% exit fee (1% to protocol, 1% stays in pool).
+              Early unstake incurs a fixed 3% exit fee (1.5% to protocol, 1.5% stays in pool).
               Unstaking is locked 24 h before results.
             </p>
           </>
