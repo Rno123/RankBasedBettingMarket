@@ -62,157 +62,19 @@ Unstaking before cutoff incurs a fixed **3% penalty**: 1.5% goes to the fee reci
 
 ---
 
-## On-Chain Program
-
-**Network:** Solana Devnet  
-**Program ID:** `5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd`  
-**Framework:** Anchor 0.31.1 / solana-program 2.3.0 (Agave)
-
-### Account Types
-
-#### `HackathonState`
-Created once per hackathon. Stores all configuration and state.
-
-| Field | Type | Description |
-|---|---|---|
-| `admin` | Pubkey | Wallet that created the hackathon (always PROTOCOL_ADMIN) |
-| `usdc_mint` | Pubkey | The USDC mint for this hackathon |
-| `name` | String | Hackathon name (max 50 bytes), used as PDA seed |
-| `start_timestamp` | i64 | Unix timestamp when hackathon was created |
-| `results_timestamp` | i64 | Unix timestamp of judging results |
-| `cutoff_timestamp` | i64 | `results_timestamp − 86400` — staking locks here |
-| `total_pool` | u64 | Total USDC currently in the prize pool |
-| `is_resolved` | bool | True after `finalize_resolve` is called |
-| `tier_count` | u8 | Number of winner tiers |
-| `tier_pcts` | [u8; 8] | Configured pool % per tier (sum = 100) |
-| `effective_tier_pcts` | [u16; 8] | Computed at finalize, basis points (sum = 10,000) |
-| `fee_recipient` | Pubkey | Wallet receiving protocol fees |
-| `protocol_fee_bps` | u16 | Claim fee in basis points |
-| `deposit_amount` | u64 | Required builder deposit (0 = none) |
-| `requires_approval` | bool | Whether organiser must approve submissions |
-
-PDA seeds: `["hackathon", admin, name]`
-
-#### `ProjectAccount`
-One per project registered in a hackathon.
-
-| Field | Type | Description |
-|---|---|---|
-| `hackathon` | Pubkey | Parent hackathon |
-| `github_url` | String | GitHub repo URL (max 200 chars), hashed for PDA seed |
-| `total_staked` | u64 | Total USDC staked on this project |
-| `total_shares` | u64 | Total time-weighted shares accumulated |
-| `rank` | u8 | Judge rank (0 = unranked) |
-| `builder_wallet` | Pubkey | Wallet that registered the project |
-| `deposit_amount_paid` | u64 | USDC paid as commitment deposit |
-| `builder_staked` | u64 | Cumulative builder self-stake |
-| `builder_declared` | bool | Builder called `submit_project` |
-| `submitted` | bool | Organiser approved via `approve_submissions` |
-| `is_refund_enabled` | bool | Admin enabled exceptional refunds |
-
-PDA seeds: `["project", hackathon, sha256(github_url)]`
-
-#### `UserStake`
-One per (user, project) pair.
-
-| Field | Type | Description |
-|---|---|---|
-| `user` | Pubkey | Staker wallet |
-| `project` | Pubkey | Project staked on |
-| `amount` | u64 | USDC staked |
-| `shares` | u64 | Time-weighted shares earned |
-| `stake_timestamp` | i64 | When the first stake was placed |
-| `is_claimed` | bool | True after claim or refund |
-
-PDA seeds: `["stake", user, project]`
-
-#### `WhitelistedWallet`
-Per-hackathon per-wallet access grant. Created by admin. Presence = allowed to stake.
-
-PDA seeds: `["whitelist", hackathon, wallet]`
-
----
-
-### Instructions
-
-#### User-Callable
-
-**`register_project(github_url, url_hash)`**  
-Any wallet can register a project for a hackathon by providing a GitHub URL and its SHA-256 hash (verified on-chain). Creates a `ProjectAccount` PDA.
-
-**`pay_deposit`**  
-Builder pays the hackathon's required commitment deposit into the escrow. Required before external backers can stake on the project.
-
-**`self_stake(amount)`**  
-Builder stakes their own funds behind their project. Minimum: `hackathon.deposit_amount`. Maximum cumulative: $2,000. Uses the same `UserStake` PDA and payout math as regular staking.
-
-**`submit_project`**  
-Builder declares on-chain that they have submitted their project (before cutoff). When `requires_approval = false`, this unlocks `claim_deposit_refund`. When `requires_approval = true`, the organiser must additionally call `approve_submissions`.
-
-**`stake(amount)`**  
-Whitelisted wallet stakes USDC on a project. Cap: $2,000 per wallet. Requires:
-- `cutoff_timestamp` not yet passed
-- Project's builder deposit paid (if hackathon has `deposit_amount > 0`)
-- Caller's `WhitelistedWallet` PDA to exist for this hackathon
-
-**`unstake`**  
-Withdraws all stake before cutoff. 3% penalty: 1.5% to fee recipient, 1.5% stays in pool. Shares are zeroed.
-
-**`claim`**  
-After `finalize_resolve`, claim payout based on project rank + sqrt crowding + share weight. Marks `is_claimed = true`. Irreversible.
-
-**`refund`**  
-On admin-enabled refund projects only. Returns original stake with no penalty. For exceptional cases.
-
-**`claim_deposit_refund`**  
-Builder reclaims commitment deposit after submission is approved (or self-declared, if `requires_approval = false`).
-
-#### Admin-Only
-
-**`initialize_hackathon(name, results_timestamp, tier_pcts, tier_expected_counts, fee_recipient, protocol_fee_bps, deposit_amount, requires_approval)`**  
-Creates a new hackathon. Only callable by `PROTOCOL_ADMIN` (`5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP`).
-
-**`whitelist_wallet`**  
-Creates a `WhitelistedWallet` PDA for a (hackathon, wallet) pair, granting that wallet the ability to call `stake`. Only callable by `PROTOCOL_ADMIN`.
-
-**`resolve(rank)`**  
-Sets the judge rank on a single project after `results_timestamp`. Call once per project. Rank 1 = first place.
-
-**`finalize_resolve`**  
-Computes `effective_tier_pcts` using proportional cascade (empty tiers redistribute to occupied ones), sets `is_resolved = true`. Irreversible. Unlocks `claim`.
-
-**`enable_refund`**  
-Marks a project as refund-eligible. One-way flag for exceptional cases.
-
-**`approve_submissions`**  
-Batch-approves builder submissions when `requires_approval = true`. Processed as `remaining_accounts`.
-
-**`forfeit_deposit`**  
-Confiscates deposit of a ghost builder (registered + paid deposit but never submitted). 50% to fee recipient, 50% added to prize pool.
-
-#### Deployer-Only (BPF Loader)
-
-**`transfer_upgrade_authority`**  
-Transfers program upgrade rights to a new wallet. Both current and new authority must sign (BPF `SetAuthorityChecked`). Used to hand deploy rights to a partner.
-
-**`revoke_upgrade_authority`**  
-Permanently removes the upgrade authority. The program bytecode is frozen forever — no further deploys or patches by anyone.
-
----
-
 ## Frontend
 
 **Stack:** Next.js 16 (App Router) · React 19 · Tailwind CSS v4 · Anchor client · Supabase
 
 ### Pages
 
-| Route | Description |
+| Page | Description |
 |---|---|
-| `/` | Landing page — hackathon list, project explorer, stake UI |
-| `/hackathon/[id]` | Individual hackathon view — project cards, staking, leaderboard |
-| `/admin` | Protocol admin panel — create hackathons, whitelist wallets, approve submissions, set ranks, finalize |
-| `/master` | Deployer panel — view current upgrade authority, transfer or revoke it |
-| `/dev` | Development utilities |
+| Home | Hackathon list, project explorer, stake UI |
+| Hackathon Detail | Individual hackathon view — project cards, staking, live leaderboard |
+| Admin Panel | Create hackathons, whitelist wallets, approve submissions, set ranks, finalize results |
+| Master Panel | View current upgrade authority, transfer or permanently revoke it |
+| Dev | Development utilities |
 
 ### Key Components
 
@@ -244,88 +106,14 @@ On-chain accounts store only what's required for the protocol. Display metadata 
 
 ---
 
-## Admin Panel Walkthrough
-
-### Creating a Hackathon
-1. Connect the protocol admin wallet (`5mxHcM…`)
-2. Go to `/admin` → **Create Hackathon**
-3. Fill in: name, results date, tier count, builder deposit, protocol fee bps, fee recipient, requires-approval flag
-4. Step 2: configure tier percentages (must sum to 100) and expected project counts per tier
-5. Submit — creates `HackathonState` PDA + escrow token account on-chain
-
-### Whitelisting Stakers
-Inside each hackathon card on `/admin`:
-1. Expand the card
-2. **Whitelist stakers** section — paste a wallet address
-3. Click **Whitelist** — creates the `WhitelistedWallet` PDA on-chain
-4. Repeat for each tester/participant
-
-### Resolving Results
-After `results_timestamp`:
-1. Expand the hackathon card → **Resolve projects**
-2. Enter ranks for each project (1 = winner)
-3. Click **Set ranks** — sends one `resolve` transaction per ranked project
-4. Click **Finalize resolve** → confirm the irreversible prompt
-5. Stakers can now call `claim`
-
----
-
-## Running Locally
-
-### Prerequisites
-- Node.js 18+
-- Rust + Cargo (stable)
-- Solana CLI (`solana-cli` 2.x)
-- Anchor CLI 0.31.x
-- A Solana devnet wallet with some SOL
-
-### Smart Contract
-
-```bash
-cd hackathon-betting
-anchor build
-anchor test          # Bankrun tests
-```
-
-To deploy your own instance:
-```bash
-solana program deploy target/deploy/hackathon_betting.so \
-  --program-id target/deploy/hackathon_betting-keypair.json
-```
-
-Update `frontend/lib/constants.ts` with the new program ID.
-
-### Frontend
-
-```bash
-cd frontend
-cp .env.example .env.local   # fill in RPC_URL and Supabase keys
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-### Environment Variables
-
-| Variable | Description |
-|---|---|
-| `NEXT_PUBLIC_RPC_URL` | Solana RPC endpoint (defaults to devnet public) |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server-side only) |
-
----
-
-## Architecture
+## High-Level Overview
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      Frontend (Vercel)                   │
 │  Next.js 16 App Router + React 19 + Tailwind CSS v4      │
 │                                                          │
-│  /             /hackathon/[id]    /admin     /master     │
-│  Stake UI      Project detail     Admin ops  Deploy ops  │
+│  Home     Hackathon Detail     Admin Panel  Master Panel │
 └───────────────────────┬─────────────────────────────────┘
                         │ Anchor client + wallet adapter
 ┌───────────────────────▼─────────────────────────────────┐
@@ -337,8 +125,7 @@ Open [http://localhost:3000](http://localhost:3000).
 └───────────────────────┬─────────────────────────────────┘
                         │ token::transfer (spl-token)
 ┌───────────────────────▼─────────────────────────────────┐
-│              Devnet USDC Escrow                           │
-│  Mint: Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr   │
+│                     USDC Escrow                          │
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
@@ -347,17 +134,6 @@ Open [http://localhost:3000](http://localhost:3000).
 │  project_submissions                                     │
 └─────────────────────────────────────────────────────────┘
 ```
-
----
-
-## Security Properties
-
-- **Admin gate:** Only `PROTOCOL_ADMIN` can create hackathons or whitelist wallets. Enforced via on-chain `address` constraint — other wallets receive `Unauthorized`.
-- **Whitelist gate:** Only wallets with a `WhitelistedWallet` PDA for the hackathon can stake. The PDA lookup fails natively if it doesn't exist.
-- **Finalization is irreversible:** `finalize_resolve` sets `is_resolved = true` and computes `effective_tier_pcts` — no further ranking changes are possible.
-- **CEI pattern:** All token transfers execute before state flags are set (`is_claimed`, `deposit_refunded`).
-- **No f64 on-chain:** All math uses integer arithmetic (`u64`, `u128`). Sqrt uses Newton's method. Multipliers use basis points.
-- **Upgrade authority:** The program's BPF upgrade authority can be revoked via `/master`, permanently ossifying the bytecode.
 
 ---
 
