@@ -22,8 +22,6 @@ import type { HackathonInfo } from "@/hooks/useHackathons";
 import type { ProjectInfo } from "@/hooks/useProjects";
 import type { ProjectMetadata, GithubStats } from "@/lib/types";
 
-// ── GitHub stats helper ──────────────────────────────────────────────────────
-
 function daysAgo(isoDate: string | null): string {
   if (!isoDate) return "unknown";
   const diff = Date.now() - new Date(isoDate).getTime();
@@ -31,6 +29,14 @@ function daysAgo(isoDate: string | null): string {
   if (days === 0) return "today";
   if (days === 1) return "1 day ago";
   return `${days} days ago`;
+}
+
+function rankBadgeStyle(rank: number): React.CSSProperties {
+  if (rank === 1) return { background: "var(--rank-1-bg)", color: "var(--rank-1-text)" };
+  if (rank === 2) return { background: "var(--rank-2-bg)", color: "var(--rank-2-text)" };
+  if (rank === 3) return { background: "var(--rank-3-bg)", color: "var(--rank-3-text)" };
+  if (rank > 0) return { background: "var(--rank-other-bg)", color: "var(--rank-other-text)" };
+  return { background: "var(--rank-none-bg)", color: "var(--rank-none-text)" };
 }
 
 // ── Per-project row ──────────────────────────────────────────────────────────
@@ -64,47 +70,45 @@ function ProjectRow({
       ? Number((project.totalStaked * 10000n) / totalPool) / 100
       : 0;
 
-  const rankLabel =
-    project.rank === 0
-      ? "Unranked"
-      : `#${project.rank}`;
+  const rankLabel = project.rank === 0 ? "Unranked" : `#${project.rank}`;
 
   return (
     <>
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-none dark:hover:border-indigo-500/20 dark:hover:bg-white/[0.05]">
+      <div className="ui-project-row">
         {/* Top row: rank + name + action */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-3">
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "8px" }}>
+          <div style={{ display: "flex", minWidth: 0, alignItems: "center", gap: "12px" }}>
             <div
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-black ${
-                project.rank === 1
-                  ? "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-1 dark:ring-amber-500/20"
-                  : project.rank === 2
-                  ? "bg-slate-200 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-1 dark:ring-slate-500/20"
-                  : project.rank === 3
-                  ? "bg-orange-100 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400 dark:ring-1 dark:ring-orange-500/20"
-                  : project.rank > 0
-                  ? "bg-indigo-50 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-400 dark:ring-1 dark:ring-indigo-500/20"
-                  : "bg-slate-100 text-slate-400 dark:bg-white/[0.05] dark:text-slate-600"
-              }`}
+              style={{
+                display: "flex",
+                height: "36px",
+                width: "36px",
+                flexShrink: 0,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "8px",
+                fontSize: "0.875rem",
+                fontWeight: 900,
+                ...rankBadgeStyle(project.rank),
+              }}
             >
               {project.rank > 0 ? project.rank : "–"}
             </div>
-            <div className="min-w-0">
+            <div style={{ minWidth: 0 }}>
               <a
                 href={project.githubUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block truncate font-semibold text-slate-900 transition-colors hover:text-indigo-600 dark:text-white dark:hover:text-indigo-300"
+                style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, color: "var(--c-text)", textDecoration: "none", transition: "color 0.15s" }}
               >
                 {repoName(project.githubUrl)}
               </a>
-              <p className="text-xs text-slate-400 dark:text-slate-600">{rankLabel}</p>
+              <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>{rankLabel}</p>
             </div>
           </div>
 
           {/* Action button */}
-          <div className="shrink-0">
+          <div style={{ flexShrink: 0 }}>
             {status === "resolved" && stake && !stake.isClaimed && stake.amount > 0n ? (
               <ClaimButton
                 hackathon={hackathon}
@@ -113,18 +117,18 @@ function ProjectRow({
                 onSuccess={onStakeUpdated}
               />
             ) : status === "resolved" && stake?.isClaimed ? (
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-1 dark:ring-emerald-500/20">
+              <span style={{ borderRadius: "9999px", background: "var(--c-emerald-light)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>
                 Claimed
               </span>
             ) : status === "open" ? (
               <button
                 onClick={() => setModalOpen(true)}
-                className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-indigo-700 dark:hover:bg-indigo-500"
+                className="ui-btn ui-btn-indigo ui-btn-sm"
               >
                 Back
               </button>
             ) : status === "cutoff" ? (
-              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-600 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-1 dark:ring-amber-500/20">
+              <span style={{ borderRadius: "9999px", background: "var(--c-amber-light)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-amber-text)" }}>
                 Cutoff
               </span>
             ) : null}
@@ -132,22 +136,22 @@ function ProjectRow({
         </div>
 
         {/* Stats row */}
-        <div className="flex flex-wrap gap-5">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "20px" }}>
           <div>
-            <p className="text-xs uppercase tracking-wider text-slate-400 dark:text-slate-600">Staked</p>
-            <p className="font-bold text-slate-900 dark:text-white">
-              {formatTokens(project.totalStaked)} <span className="text-xs text-slate-500">USDC</span>
+            <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Staked</p>
+            <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>
+              {formatTokens(project.totalStaked)} <span style={{ fontSize: "0.75rem", color: "var(--c-text-3)" }}>USDC</span>
             </p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wider text-slate-400 dark:text-slate-600" title="% of total staked USDC backing this project">Pool share</p>
-            <p className="font-bold text-slate-900 dark:text-white">{share.toFixed(1)}%</p>
+            <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }} title="% of total staked USDC backing this project">Pool share</p>
+            <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{share.toFixed(1)}%</p>
           </div>
           {stake && stake.amount > 0n && (
             <div>
-              <p className="text-xs uppercase tracking-wider text-slate-400 dark:text-slate-600">Your stake</p>
-              <p className="font-bold text-indigo-600 dark:text-indigo-400">
-                {formatTokens(stake.amount)} <span className="text-xs text-slate-500">USDC</span>
+              <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Your stake</p>
+              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-indigo-text)" }}>
+                {formatTokens(stake.amount)} <span style={{ fontSize: "0.75rem", color: "var(--c-text-3)" }}>USDC</span>
               </p>
             </div>
           )}
@@ -155,14 +159,14 @@ function ProjectRow({
 
         {/* GitHub stats row */}
         {githubStats !== undefined && (
-          <div className="text-xs text-slate-400 dark:text-slate-600">
+          <div style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
             {githubStats === null ? (
-              <span className="italic">GitHub stats unavailable</span>
+              <span style={{ fontStyle: "italic" }}>GitHub stats unavailable</span>
             ) : (
               <>
-                Last commit: <span className="font-medium text-slate-600 dark:text-slate-400">{daysAgo(githubStats.last_commit_at)}</span>
+                Last commit: <span style={{ fontWeight: 500, color: "var(--c-text-3)" }}>{daysAgo(githubStats.last_commit_at)}</span>
                 {" · "}
-                <span className="font-medium text-slate-600 dark:text-slate-400">
+                <span style={{ fontWeight: 500, color: "var(--c-text-3)" }}>
                   {githubStats.commits_7d ?? "?"} commit{githubStats.commits_7d !== 1 ? "s" : ""} this week
                 </span>
               </>
@@ -172,23 +176,23 @@ function ProjectRow({
 
         {/* Social links row */}
         {metadata && (metadata.twitter_handle || metadata.telegram || metadata.discord) && (
-          <div className="flex items-center gap-3 text-sm">
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "0.875rem" }}>
             {metadata.twitter_handle && (
               <a href={`https://twitter.com/${metadata.twitter_handle}`} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1 text-sky-500 transition-colors hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300" title="Twitter">
-                <span>🐦</span><span className="text-xs">Twitter</span>
+                style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--c-sky-text)", textDecoration: "none" }}>
+                <span>🐦</span><span style={{ fontSize: "0.75rem" }}>Twitter</span>
               </a>
             )}
             {metadata.telegram && (
               <a href={metadata.telegram.startsWith("http") ? metadata.telegram : `https://t.me/${metadata.telegram}`} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1 text-blue-500 transition-colors hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300" title="Telegram">
-                <span>✈️</span><span className="text-xs">Telegram</span>
+                style={{ display: "flex", alignItems: "center", gap: "4px", color: "#3b82f6", textDecoration: "none" }}>
+                <span>✈️</span><span style={{ fontSize: "0.75rem" }}>Telegram</span>
               </a>
             )}
             {metadata.discord && (
               <a href={metadata.discord.startsWith("http") ? metadata.discord : `https://discord.gg/${metadata.discord}`} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1 text-indigo-500 transition-colors hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300" title="Discord">
-                <span>💬</span><span className="text-xs">Discord</span>
+                style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--c-indigo-text)", textDecoration: "none" }}>
+                <span>💬</span><span style={{ fontSize: "0.75rem" }}>Discord</span>
               </a>
             )}
           </div>
@@ -211,38 +215,28 @@ function ProjectRow({
 // ── Crowd vs. Judges ─────────────────────────────────────────────────────────
 
 function CrowdVsJudges({ projects }: { projects: ProjectInfo[] }) {
-  // Only ranked projects participate in the comparison
   const ranked = projects.filter((p) => p.rank > 0);
   if (ranked.length === 0) return null;
 
-  // Crowd ranking: sort by totalStaked descending, assign crowd rank 1..N
   const byStake = [...ranked].sort((a, b) => Number(b.totalStaked - a.totalStaked));
   const crowdRankMap = new Map<string, number>();
   byStake.forEach((p, i) => crowdRankMap.set(p.pubkey.toBase58(), i + 1));
 
-  // Display order: judge rank ascending
   const rows = [...ranked].sort((a, b) => a.rank - b.rank);
 
-  const rankBadgeClass = (r: number) => {
-    if (r === 1) return "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-1 dark:ring-amber-500/20";
-    if (r === 2) return "bg-slate-200 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-1 dark:ring-slate-500/20";
-    if (r === 3) return "bg-orange-100 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400 dark:ring-1 dark:ring-orange-500/20";
-    return "bg-indigo-50 text-indigo-500 dark:bg-indigo-500/10 dark:text-indigo-400 dark:ring-1 dark:ring-indigo-500/20";
-  };
-
   return (
-    <div className="mt-8">
-      <h2 className="mb-1 text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Crowd vs. Judges</h2>
-      <p className="mb-4 text-sm text-slate-500">
+    <div style={{ marginTop: "32px" }}>
+      <h2 style={{ margin: "0 0 4px", fontSize: "1.125rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>Crowd vs. Judges</h2>
+      <p style={{ margin: "0 0 16px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
         Did the crowd call it? Judge ranking (official results) vs. crowd ranking (by backing).
       </p>
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-none dark:backdrop-blur-sm">
+      <div className="ui-card" style={{ overflow: "hidden" }}>
         {/* Header */}
-        <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 border-b border-slate-100 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-400 dark:border-white/[0.05] dark:text-slate-600">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "16px", borderBottom: "1px solid var(--c-divider-2)", padding: "10px 16px", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>
           <span>Project</span>
-          <span className="w-20 text-center">Judge rank</span>
-          <span className="w-20 text-center">Crowd rank</span>
-          <span className="w-12 text-center">Match</span>
+          <span style={{ width: "80px", textAlign: "center" }}>Judge rank</span>
+          <span style={{ width: "80px", textAlign: "center" }}>Crowd rank</span>
+          <span style={{ width: "48px", textAlign: "center" }}>Match</span>
         </div>
         {rows.map((p) => {
           const judgeRank = p.rank;
@@ -254,37 +248,30 @@ function CrowdVsJudges({ projects }: { projects: ProjectInfo[] }) {
           return (
             <div
               key={p.pubkey.toBase58()}
-              className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 border-b border-slate-50 px-4 py-3 last:border-0 hover:bg-slate-50 transition dark:border-white/[0.04] dark:hover:bg-white/[0.03]"
+              style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", alignItems: "center", gap: "16px", borderBottom: "1px solid var(--c-divider-2)", padding: "12px 16px", transition: "background 0.15s" }}
             >
-              {/* Project name */}
               <a
                 href={p.githubUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="truncate text-sm font-medium text-slate-800 transition-colors hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-300"
+                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)", textDecoration: "none" }}
               >
                 {repoName(p.githubUrl)}
               </a>
 
-              {/* Judge rank badge */}
-              <div className="w-20 flex justify-center">
-                <span
-                  className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-black ${rankBadgeClass(judgeRank)}`}
-                >
+              <div style={{ width: "80px", display: "flex", justifyContent: "center" }}>
+                <span style={{ display: "flex", height: "28px", width: "28px", alignItems: "center", justifyContent: "center", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 900, ...rankBadgeStyle(judgeRank) }}>
                   #{judgeRank}
                 </span>
               </div>
 
-              {/* Crowd rank badge + delta arrow */}
-              <div className="w-20 flex items-center justify-center gap-1">
-                <span
-                  className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-black ${rankBadgeClass(crowdRank)}`}
-                >
+              <div style={{ width: "80px", display: "flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
+                <span style={{ display: "flex", height: "28px", width: "28px", alignItems: "center", justifyContent: "center", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 900, ...rankBadgeStyle(crowdRank) }}>
                   #{crowdRank}
                 </span>
                 {!exact && (
                   <span
-                    className={`text-xs font-bold ${delta < 0 ? "text-emerald-400" : "text-rose-400"}`}
+                    style={{ fontSize: "0.75rem", fontWeight: 700, color: delta < 0 ? "var(--c-emerald-text)" : "var(--c-red-text)" }}
                     title={delta < 0 ? "Crowd ranked higher than judges" : "Crowd ranked lower than judges"}
                   >
                     {delta < 0 ? `▲${Math.abs(delta)}` : `▼${delta}`}
@@ -292,18 +279,17 @@ function CrowdVsJudges({ projects }: { projects: ProjectInfo[] }) {
                 )}
               </div>
 
-              {/* Match indicator */}
-              <div className="w-12 flex justify-center">
+              <div style={{ width: "48px", display: "flex", justifyContent: "center" }}>
                 {exact ? (
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-1 dark:ring-emerald-500/20">
+                  <span style={{ borderRadius: "9999px", background: "var(--c-emerald-light)", padding: "2px 8px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>
                     ✓ Exact
                   </span>
                 ) : close ? (
-                  <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-500 dark:bg-sky-500/10 dark:text-sky-400 dark:ring-1 dark:ring-sky-500/20">
+                  <span style={{ borderRadius: "9999px", background: "var(--c-sky-light)", padding: "2px 8px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-sky-text)" }}>
                     ≈ Close
                   </span>
                 ) : (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-400 dark:bg-white/[0.05] dark:text-slate-500">
+                  <span style={{ borderRadius: "9999px", background: "var(--c-divider-2)", padding: "2px 8px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-4)" }}>
                     Miss
                   </span>
                 )}
@@ -313,17 +299,16 @@ function CrowdVsJudges({ projects }: { projects: ProjectInfo[] }) {
         })}
       </div>
 
-      {/* Summary line */}
       {(() => {
         const exactCount = rows.filter(
           (p) => (crowdRankMap.get(p.pubkey.toBase58()) ?? 0) === p.rank,
         ).length;
         return (
-          <p className="mt-3 text-center text-xs text-slate-400 dark:text-slate-600">
+          <p style={{ marginTop: "12px", textAlign: "center", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
             Crowd got{" "}
-            <span className="font-bold text-slate-600 dark:text-slate-300">{exactCount}</span>{" "}
+            <span style={{ fontWeight: 700, color: "var(--c-text-2)" }}>{exactCount}</span>{" "}
             of{" "}
-            <span className="font-bold text-slate-600 dark:text-slate-300">{rows.length}</span>{" "}
+            <span style={{ fontWeight: 700, color: "var(--c-text-2)" }}>{rows.length}</span>{" "}
             placements exactly right
           </p>
         );
@@ -336,14 +321,7 @@ function CrowdVsJudges({ projects }: { projects: ProjectInfo[] }) {
 
 type SortMode = "stake" | "last_commit" | "commits_week";
 
-// ── Main page ────────────────────────────────────────────────────────────────
-
-const STATUS_STYLES = {
-  open: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-1 dark:ring-emerald-500/20",
-  cutoff: "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-1 dark:ring-amber-500/20",
-  pending: "bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400 dark:ring-1 dark:ring-sky-500/20",
-  resolved: "bg-slate-100 text-slate-600 dark:bg-slate-500/10 dark:text-slate-400 dark:ring-1 dark:ring-slate-500/20",
-};
+// ── Status labels ────────────────────────────────────────────────────────────
 
 const STATUS_LABELS = {
   open: "Open for staking",
@@ -351,6 +329,8 @@ const STATUS_LABELS = {
   pending: "Awaiting resolution",
   resolved: "Resolved",
 };
+
+// ── Main page ────────────────────────────────────────────────────────────────
 
 export default function HackathonPage({
   params,
@@ -365,17 +345,12 @@ export default function HackathonPage({
   const { projects, loading: pLoading, error: pError, reload: reloadProjects } = useProjects(hackathonPk);
   const [version, setVersion] = useState(0);
 
-  // Hackathon-level off-chain metadata
   const [hackathonMeta, setHackathonMeta] = useState<{ official_link?: string | null; icon_url?: string | null } | null>(null);
-
-  // Off-chain metadata maps
   const [metadataMap, setMetadataMap] = useState<Record<string, ProjectMetadata>>({});
   const [githubStatsMap, setGithubStatsMap] = useState<Record<string, GithubStats | null>>({});
   const [sortMode, setSortMode] = useState<SortMode>("stake");
-  // project pubkeys that are in project_submissions but NOT yet approved — hidden from public view
   const [blockedPubkeys, setBlockedPubkeys] = useState<Set<string>>(new Set());
 
-  // Fetch hackathon-level metadata (icon, link)
   useEffect(() => {
     if (!hackathonPk) return;
     const supabase = getSupabase();
@@ -388,15 +363,11 @@ export default function HackathonPage({
       .then(({ data }) => { if (data) setHackathonMeta(data); });
   }, [hackathonPk?.toBase58()]);
 
-  // Fetch project metadata + submission statuses from Supabase when projects load
   useEffect(() => {
     if (!hackathonPk || projects.length === 0) return;
-
     const supabase = getSupabase();
     if (!supabase) return;
-
     const hpk = hackathonPk.toBase58();
-
     Promise.all([
       supabase.from("project_metadata").select("*").eq("hackathon_pubkey", hpk),
       supabase.from("project_submissions").select("project_pubkey, status").eq("hackathon_pubkey", hpk),
@@ -417,16 +388,12 @@ export default function HackathonPage({
     });
   }, [hackathonPk?.toBase58(), projects.length]);
 
-  // Fetch GitHub stats for each project in parallel
   useEffect(() => {
     if (projects.length === 0) return;
-
     Promise.all(
       projects.map(async (p) => {
         try {
-          const res = await fetch(
-            `/api/github-stats?url=${encodeURIComponent(p.githubUrl)}`,
-          );
+          const res = await fetch(`/api/github-stats?url=${encodeURIComponent(p.githubUrl)}`);
           if (!res.ok) return { key: p.githubUrl, stats: null };
           const json = await res.json();
           return { key: p.githubUrl, stats: (json.data ?? null) as GithubStats | null };
@@ -436,22 +403,20 @@ export default function HackathonPage({
       }),
     ).then((results) => {
       const map: Record<string, GithubStats | null> = {};
-      for (const r of results) {
-        map[r.key] = r.stats;
-      }
+      for (const r of results) map[r.key] = r.stats;
       setGithubStatsMap(map);
     });
   }, [projects.map((p) => p.githubUrl).join(",")]);
 
   if (hLoading) {
     return (
-      <div className="min-h-screen">
+      <div style={{ minHeight: "100vh" }}>
         <Navbar />
-        <main className="mx-auto max-w-4xl px-4 py-12">
-          <div className="h-8 w-64 animate-pulse rounded-xl bg-slate-200 dark:bg-white/[0.06]" />
-          <div className="mt-6 space-y-3">
+        <main style={{ margin: "0 auto", maxWidth: "896px", padding: "48px 16px" }}>
+          <div className="ui-skeleton" style={{ height: "32px", width: "256px" }} />
+          <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "12px" }}>
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-20 animate-pulse rounded-xl bg-slate-200 dark:bg-white/[0.04]" />
+              <div key={i} className="ui-skeleton" style={{ height: "80px" }} />
             ))}
           </div>
         </main>
@@ -461,32 +426,22 @@ export default function HackathonPage({
 
   if (!hackathon) {
     return (
-      <div className="min-h-screen">
+      <div style={{ minHeight: "100vh" }}>
         <Navbar />
-        <main className="mx-auto max-w-4xl px-4 py-12 text-center text-slate-500">
+        <main style={{ margin: "0 auto", maxWidth: "896px", padding: "48px 16px", textAlign: "center", color: "var(--c-text-3)" }}>
           Hackathon not found.{" "}
-          <Link href="/" className="text-indigo-600 underline dark:text-indigo-400">
-            Go back
-          </Link>
+          <Link href="/" className="ui-text-link">Go back</Link>
         </main>
       </div>
     );
   }
 
-  const status = hackathonStatus(
-    hackathon.resultsTimestamp,
-    hackathon.cutoffTimestamp,
-    hackathon.isResolved,
-  );
+  const status = hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
 
-  // Sort projects based on sortMode — exclude unapproved dev-portal submissions
   const visibleProjects = projects.filter((p) => !blockedPubkeys.has(p.pubkey.toBase58()));
   const sortedProjects = [...visibleProjects].sort((a, b) => {
     if (sortMode === "stake") {
-      // Ranked projects first (ascending rank), then unranked sorted by stake desc
-      if (a.rank === 0 && b.rank === 0) {
-        return Number(b.totalStaked - a.totalStaked);
-      }
+      if (a.rank === 0 && b.rank === 0) return Number(b.totalStaked - a.totalStaked);
       if (a.rank === 0) return 1;
       if (b.rank === 0) return -1;
       return a.rank - b.rank;
@@ -496,52 +451,45 @@ export default function HackathonPage({
       const bStats = githubStatsMap[b.githubUrl];
       const aDate = aStats?.last_commit_at ? new Date(aStats.last_commit_at).getTime() : 0;
       const bDate = bStats?.last_commit_at ? new Date(bStats.last_commit_at).getTime() : 0;
-      return bDate - aDate; // most recent first
+      return bDate - aDate;
     }
     if (sortMode === "commits_week") {
       const aStats = githubStatsMap[a.githubUrl];
       const bStats = githubStatsMap[b.githubUrl];
       const aC = aStats?.commits_7d ?? -1;
       const bC = bStats?.commits_7d ?? -1;
-      return bC - aC; // most active first
+      return bC - aC;
     }
     return 0;
   });
 
   return (
-    <div className="min-h-screen">
+    <div style={{ minHeight: "100vh" }}>
       <Navbar />
 
-      <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+      <main style={{ margin: "0 auto", maxWidth: "896px", padding: "40px 16px" }}>
         {/* Back */}
-        <Link
-          href="/"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-slate-400 transition hover:text-slate-900 dark:text-slate-500 dark:hover:text-white"
-        >
-          ← All hackathons
-        </Link>
+        <Link href="/" className="ui-back-link">← All hackathons</Link>
 
         {/* Header card */}
-        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/[0.07] dark:bg-white/[0.04] dark:shadow-none dark:backdrop-blur-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="ui-card" style={{ marginBottom: "24px", padding: "24px" }}>
+          <div className="sm-flex-row" style={{ gap: "12px", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div className="flex flex-wrap items-center gap-3">
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px" }}>
                 {hackathonMeta?.icon_url && (
-                  <div className="flex h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-white/[0.08] dark:bg-white/[0.04]">
-                    <img src={hackathonMeta.icon_url} alt="" className="h-full w-full object-cover" />
+                  <div style={{ display: "flex", height: "40px", width: "40px", flexShrink: 0, overflow: "hidden", borderRadius: "12px", border: "1px solid var(--c-divider)" }}>
+                    <img src={hackathonMeta.icon_url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
                   </div>
                 )}
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-black uppercase tracking-tight text-slate-900 sm:text-2xl dark:text-white">
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
+                  <h1 style={{ margin: 0, fontSize: "clamp(1.25rem, 3vw, 1.5rem)", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>
                     {hackathon.name || "Hackathon"}
                   </h1>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[status]}`}>
-                    {STATUS_LABELS[status]}
-                  </span>
+                  <span className={`ui-badge ui-badge-${status}`}>{STATUS_LABELS[status]}</span>
                 </div>
               </div>
-              <div className="mt-1 flex items-center gap-3">
-                <p className="font-mono text-xs text-slate-400 dark:text-slate-600">
+              <div style={{ marginTop: "4px", display: "flex", alignItems: "center", gap: "12px" }}>
+                <p style={{ margin: 0, fontFamily: "monospace", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
                   {id.slice(0, 16)}…
                 </p>
                 {hackathonMeta?.official_link && (
@@ -549,9 +497,9 @@ export default function HackathonPage({
                     href={hackathonMeta.official_link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-slate-400 dark:hover:border-indigo-500/40 dark:hover:text-indigo-400"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "4px", borderRadius: "6px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "2px 8px", fontSize: "0.75rem", fontWeight: 500, color: "var(--c-text-3)", textDecoration: "none" }}
                   >
-                    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <svg style={{ height: "12px", width: "12px" }} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                       <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                     </svg>
@@ -561,51 +509,45 @@ export default function HackathonPage({
               </div>
             </div>
             {/* Pool */}
-            <div className="sm:text-right">
-              <p className="text-xs uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Total pool
-              </p>
-              <p className="text-2xl font-black text-slate-900 dark:text-white">
+            <div style={{ textAlign: "right" }}>
+              <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Total pool</p>
+              <p style={{ margin: 0, fontSize: "1.5rem", fontWeight: 900, color: "var(--c-text)" }}>
                 {formatTokens(hackathon.totalPool)}{" "}
-                <span className="text-sm font-semibold text-slate-500">USDC</span>
+                <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-3)" }}>USDC</span>
               </p>
             </div>
           </div>
 
-          {/* Meta row: Cutoff | Results | Projects (right) */}
-          <div className="mt-4 flex items-start justify-between gap-4">
-            <div className="flex gap-16">
+          {/* Meta row */}
+          <div style={{ marginTop: "16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
+            <div style={{ display: "flex", gap: "64px" }}>
               <div>
-                <p className="text-xs uppercase tracking-wider text-slate-400 dark:text-slate-600">Cutoff</p>
-                <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">
-                  {formatDate(hackathon.cutoffTimestamp)}
-                </p>
-                <p className="text-xs text-slate-400 dark:text-slate-600">Staking closes</p>
+                <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Cutoff</p>
+                <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)" }}>{formatDate(hackathon.cutoffTimestamp)}</p>
+                <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Staking closes</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wider text-slate-400 dark:text-slate-600">Results</p>
-                <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">
-                  {formatDate(hackathon.resultsTimestamp)}
-                </p>
-                <p className="text-xs text-slate-400 dark:text-slate-600">Judge announcement</p>
+                <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Results</p>
+                <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)" }}>{formatDate(hackathon.resultsTimestamp)}</p>
+                <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Judge announcement</p>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-xs uppercase tracking-wider text-slate-400 dark:text-slate-600">Projects</p>
-              <p className="mt-0.5 text-sm font-bold text-slate-700 dark:text-slate-300">
+            <div style={{ textAlign: "right" }}>
+              <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Projects</p>
+              <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 700, color: "var(--c-text-2)" }}>
                 {pLoading ? "…" : projects.length}
               </p>
             </div>
           </div>
 
-          {/* Prize tiers row */}
-          <div className="mt-4 border-t border-slate-100 pt-3 dark:border-white/[0.05]">
-            <p className="mb-1.5 text-xs uppercase tracking-wider text-slate-400 dark:text-slate-600">Prize tiers</p>
-            <div className="inline-flex overflow-hidden rounded-md border border-indigo-200 bg-indigo-50 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+          {/* Prize tiers */}
+          <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "12px" }}>
+            <p style={{ margin: "0 0 6px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Prize tiers</p>
+            <div style={{ display: "inline-flex", overflow: "hidden", borderRadius: "6px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)" }}>
               {hackathon.tierPcts.map((pct, i) => (
                 <span
                   key={i}
-                  className={`px-2.5 py-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400${i > 0 ? " border-l border-indigo-200 dark:border-indigo-500/20" : ""}`}
+                  style={{ padding: "4px 10px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-indigo-text)", borderLeft: i > 0 ? "1px solid var(--c-indigo-border)" : "none" }}
                 >
                   #{i + 1}: {pct}%
                 </span>
@@ -615,15 +557,15 @@ export default function HackathonPage({
 
           {/* Effective tier pcts if resolved */}
           {hackathon.isResolved && (
-            <div className="mt-4 rounded-xl bg-slate-50 p-3 dark:border dark:border-white/[0.05] dark:bg-white/[0.03]">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <div style={{ marginTop: "16px", borderRadius: "12px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px" }}>
+              <p style={{ margin: "0 0 8px", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-3)" }}>
                 Effective tier allocations (after cascade)
               </p>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                 {hackathon.effectiveTierPcts.map((bps, i) => (
                   <span
                     key={i}
-                    className="rounded-lg bg-indigo-50 px-2.5 py-1 text-sm font-semibold text-indigo-700 dark:border dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-400"
+                    style={{ borderRadius: "8px", background: "var(--c-indigo-light)", border: "1px solid var(--c-indigo-border)", padding: "4px 10px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-indigo-text)" }}
                   >
                     Tier {i + 1}: {(bps / 100).toFixed(2)}%
                   </span>
@@ -634,32 +576,22 @@ export default function HackathonPage({
 
           {/* Time indicator */}
           {!hackathon.isResolved && status !== "pending" && (
-            <div className="mt-4 text-sm text-slate-500">
+            <div style={{ marginTop: "16px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
               {status === "open" && (
-                <>
-                  Staking closes in{" "}
-                  <span className="font-semibold text-amber-600 dark:text-amber-400">
-                    {timeUntil(hackathon.cutoffTimestamp)}
-                  </span>
-                </>
+                <>Staking closes in <span style={{ fontWeight: 600, color: "var(--c-amber-text)" }}>{timeUntil(hackathon.cutoffTimestamp)}</span></>
               )}
               {status === "cutoff" && (
-                <>
-                  Results in{" "}
-                  <span className="font-semibold text-sky-600 dark:text-sky-400">
-                    {timeUntil(hackathon.resultsTimestamp)}
-                  </span>
-                </>
+                <>Results in <span style={{ fontWeight: 600, color: "var(--c-sky-text)" }}>{timeUntil(hackathon.resultsTimestamp)}</span></>
               )}
             </div>
           )}
         </div>
 
         {/* Projects header + sort controls */}
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Projects</h2>
+        <div className="sm-flex-row" style={{ marginBottom: "12px", gap: "8px", alignItems: "center", justifyContent: "space-between" }}>
+          <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>Projects</h2>
           {projects.length > 0 && (
-            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm self-start sm:self-auto dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-none">
+            <div style={{ display: "flex", alignItems: "center", gap: "4px", borderRadius: "12px", border: "1px solid var(--card-border)", background: "var(--card-bg)", padding: "4px" }}>
               {(
                 [
                   { mode: "stake", label: "Stake", labelFull: "By stake" },
@@ -671,14 +603,10 @@ export default function HackathonPage({
                   key={mode}
                   onClick={() => setSortMode(mode)}
                   aria-label={labelFull}
-                  className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
-                    sortMode === mode
-                      ? "bg-indigo-600 text-white"
-                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-transparent dark:hover:text-white"
-                  }`}
+                  className={`ui-sort-tab ${sortMode === mode ? "ui-sort-tab-active" : "ui-sort-tab-inactive"}`}
                 >
-                  <span className="sm:hidden">{label}</span>
-                  <span className="hidden sm:inline">{labelFull}</span>
+                  <span className="sm-hidden">{label}</span>
+                  <span className="hidden-sm-inline">{labelFull}</span>
                 </button>
               ))}
             </div>
@@ -686,29 +614,27 @@ export default function HackathonPage({
         </div>
 
         {pLoading ? (
-          <div className="space-y-3">
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-20 animate-pulse rounded-xl bg-slate-200 dark:bg-white/[0.04]" />
+              <div key={i} className="ui-skeleton" style={{ height: "80px" }} />
             ))}
           </div>
         ) : pError ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">
+          <div style={{ borderRadius: "12px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "16px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>
             {pError}
           </div>
         ) : projects.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-white/[0.08] dark:bg-transparent">
-            <p className="text-slate-400 dark:text-slate-500">No projects registered yet.</p>
+          <div style={{ borderRadius: "12px", border: "1px dashed var(--c-divider)", background: "var(--card-bg)", padding: "32px", textAlign: "center" }}>
+            <p style={{ margin: 0, color: "var(--c-text-4)" }}>No projects registered yet.</p>
             {status === "open" && (
-              <p className="mt-2 text-sm text-slate-500">
+              <p style={{ margin: "8px 0 0", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
                 Building something?{" "}
-                <Link href="/dev" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-                  Submit your project →
-                </Link>
+                <Link href="/dev" className="ui-text-link" style={{ fontWeight: 500 }}>Submit your project →</Link>
               </p>
             )}
           </div>
         ) : (
-          <div key={version} className="space-y-3">
+          <div key={version} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {sortedProjects.map((p) => (
               <ProjectRow
                 key={p.pubkey.toBase58()}
@@ -717,10 +643,10 @@ export default function HackathonPage({
                 allProjects={projects}
                 status={status}
                 onStakeUpdated={() => {
-                    setVersion((v) => v + 1);
-                    reloadProjects();
-                    reloadHackathons();
-                  }}
+                  setVersion((v) => v + 1);
+                  reloadProjects();
+                  reloadHackathons();
+                }}
                 metadata={metadataMap[p.pubkey.toBase58()]}
                 githubStats={
                   p.githubUrl in githubStatsMap
@@ -733,7 +659,6 @@ export default function HackathonPage({
           </div>
         )}
 
-        {/* Crowd vs. Judges — only shown once resolved */}
         {status === "resolved" && visibleProjects.length > 0 && (
           <CrowdVsJudges projects={visibleProjects} />
         )}

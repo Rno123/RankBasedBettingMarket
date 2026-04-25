@@ -77,11 +77,12 @@ export default function ClaimButton({
       <button
         onClick={handleClaim}
         disabled={busy || !publicKey}
-        className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+        className="ui-btn ui-btn-emerald"
+        style={{ width: "100%", padding: "10px 16px", fontSize: "0.875rem" }}
       >
         {busy ? "Claiming…" : "Claim payout"}
       </button>
-      {err && <p className="mt-1.5 text-xs text-red-500">{err}</p>}
+      {err && <p style={{ marginTop: "6px", fontSize: "0.75rem", color: "var(--c-red-text)" }}>{err}</p>}
     </div>
   );
 }

@@ -15,5 +15,8 @@ export const USDC_MINT = new PublicKey(
   "Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr",
 );
 
-// Only this wallet can create hackathons (enforced on-chain after redeploy)
+// Hardcoded super-admin (controls Anchor program-layer instructions)
 export const PROTOCOL_ADMIN = "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP";
+
+// BPF upgrade authority — controls bytecode; can access Admin + Master panels
+export const DEPLOYER = "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD";

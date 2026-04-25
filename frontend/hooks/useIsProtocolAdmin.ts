@@ -13,6 +13,7 @@ import { PROGRAM_ID, PROTOCOL_ADMIN } from "@/lib/constants";
  */
 export function useIsProtocolAdmin(walletPubkey: PublicKey | null): {
   isProtocolAdmin: boolean;
+  isSuperAdmin: boolean;
   loading: boolean;
 } {
   const { connection } = useConnection();
@@ -47,6 +48,7 @@ export function useIsProtocolAdmin(walletPubkey: PublicKey | null): {
 
   return {
     isProtocolAdmin: isSuperAdmin || pdaExists,
+    isSuperAdmin,
     loading: !isSuperAdmin && loading,
   };
 }

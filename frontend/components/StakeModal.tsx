@@ -134,19 +134,19 @@ export default function StakeModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 backdrop-blur-sm sm:items-center dark:bg-black/60"
+      style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(0,0,0,0.5)", padding: "16px", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-white/[0.08] dark:bg-[#0f0f1a] dark:shadow-2xl">
-        <div className="mb-4 flex items-start justify-between">
+      <div style={{ width: "100%", maxWidth: "28rem", borderRadius: "16px", border: "1px solid var(--card-border)", background: "var(--card-bg)", padding: "24px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ marginBottom: "16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
-            <h2 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Manage Stake</h2>
-            <p className="mt-0.5 text-sm text-slate-500">{repoLabel}</p>
+            <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>Manage Stake</h2>
+            <p style={{ margin: "2px 0 0", fontSize: "0.875rem", color: "var(--c-text-3)" }}>{repoLabel}</p>
           </div>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-slate-400 transition hover:text-slate-700 dark:text-slate-600 dark:hover:text-white"
+            style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--c-text-4)", fontSize: "1rem", lineHeight: 1, padding: "4px" }}
           >
             ✕
           </button>
@@ -154,53 +154,53 @@ export default function StakeModal({
 
         {/* Current stake */}
         {hasStake && (
-          <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
-            <p className="text-xs uppercase tracking-wider text-indigo-600 dark:text-indigo-500">Your current stake</p>
-            <p className="text-2xl font-black text-indigo-700 dark:text-white">
-              {formatTokens(stake.amount)} <span className="text-sm font-semibold text-slate-500">USDC</span>
+          <div style={{ marginBottom: "16px", borderRadius: "12px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "16px" }}>
+            <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-indigo-text)" }}>Your current stake</p>
+            <p style={{ margin: 0, fontSize: "1.5rem", fontWeight: 900, color: "var(--c-text)" }}>
+              {formatTokens(stake.amount)} <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-3)" }}>USDC</span>
             </p>
           </div>
         )}
 
         {/* Multiplier info */}
         {nowSecs < hackathon.cutoffTimestamp && (
-          <div className="mb-4 rounded-xl border border-indigo-200/60 bg-indigo-50/60 p-3 text-sm dark:border-indigo-500/20 dark:bg-indigo-500/10">
-            <p className="font-semibold text-indigo-700 dark:text-indigo-300">
-              Current stake multiplier: <span className="font-black">{currentMultiplier.toFixed(2)}×</span>
+          <div style={{ marginBottom: "16px", borderRadius: "12px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "12px", fontSize: "0.875rem" }}>
+            <p style={{ margin: 0, fontWeight: 600, color: "var(--c-indigo-text)" }}>
+              Current stake multiplier: <span style={{ fontWeight: 900 }}>{currentMultiplier.toFixed(2)}×</span>
             </p>
-            <p className="mt-1 text-xs text-indigo-500 dark:text-indigo-400/70">
+            <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "var(--c-text-3)" }}>
               Earlier stakers earn more shares. Multiplier decays from 1.5× at open to 1.0× at cutoff.
             </p>
           </div>
         )}
 
         {!hasStake && (
-          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/[0.06] dark:bg-white/[0.03]">
-            <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-600">Total staked on project</p>
-            <p className="text-2xl font-black text-slate-900 dark:text-white">
-              {formatTokens(project.totalStaked)} <span className="text-sm font-semibold text-slate-500">USDC</span>
+          <div style={{ marginBottom: "16px", borderRadius: "12px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "16px" }}>
+            <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-3)" }}>Total staked on project</p>
+            <p style={{ margin: 0, fontSize: "1.5rem", fontWeight: 900, color: "var(--c-text)" }}>
+              {formatTokens(project.totalStaked)} <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-3)" }}>USDC</span>
             </p>
           </div>
         )}
 
         {/* Whitelist gate */}
         {publicKey && checkingWhitelist && (
-          <div className="mb-4 h-10 animate-pulse rounded-xl bg-slate-100 dark:bg-white/[0.05]" />
+          <div className="ui-skeleton" style={{ marginBottom: "16px", height: "40px" }} />
         )}
 
         {publicKey && !checkingWhitelist && isWhitelisted === false && (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
-            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Not whitelisted</p>
-            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-              Your wallet hasn't been approved to stake in this hackathon. Contact the organiser to get whitelisted.
+          <div style={{ marginBottom: "16px", borderRadius: "12px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "16px" }}>
+            <p style={{ margin: 0, fontSize: "0.875rem", fontWeight: 600, color: "var(--c-amber-text)" }}>Not whitelisted</p>
+            <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "var(--c-amber-text)" }}>
+              Your wallet hasn&apos;t been approved to stake in this hackathon. Contact the organiser to get whitelisted.
             </p>
           </div>
         )}
 
         {(!publicKey || isWhitelisted !== false) && (
           <>
-            <div className="mb-4">
-              <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-400">
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", marginBottom: "6px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>
                 Add stake (USDC)
               </label>
               <input
@@ -212,21 +212,22 @@ export default function StakeModal({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 disabled={!publicKey || isWhitelisted === false}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white dark:placeholder-slate-600 dark:focus:border-indigo-500/50 dark:focus:ring-indigo-500/20"
+                className="ui-input"
               />
             </div>
 
             {txError && (
-              <p className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">
+              <p style={{ marginBottom: "12px", borderRadius: "8px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "12px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>
                 {txError}
               </p>
             )}
 
-            <div className="flex gap-3">
+            <div style={{ display: "flex", gap: "12px" }}>
               <button
                 onClick={handleStake}
                 disabled={busy || !publicKey || isWhitelisted === false}
-                className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-500 disabled:opacity-40"
+                className="ui-btn ui-btn-indigo"
+                style={{ flex: 1 }}
               >
                 {busy ? "Sending…" : "Stake"}
               </button>
@@ -234,7 +235,7 @@ export default function StakeModal({
                 <button
                   onClick={handleUnstake}
                   disabled={busy || !publicKey || !canUnstake}
-                  className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-sm font-bold text-amber-400 transition hover:bg-amber-500/20 disabled:opacity-40"
+                  className="ui-btn ui-btn-amber"
                   title={!canUnstake ? "Unstaking is locked (cutoff passed)" : undefined}
                 >
                   Unstake all
@@ -242,7 +243,7 @@ export default function StakeModal({
               )}
             </div>
 
-            <p className="mt-3 text-xs text-slate-400 dark:text-slate-600">
+            <p style={{ marginTop: "12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
               Early unstake incurs a fixed 3% exit fee (1.5% to protocol, 1.5% stays in pool).
               Unstaking is locked 24 h before results.
             </p>

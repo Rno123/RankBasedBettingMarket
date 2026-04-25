@@ -8,6 +8,105 @@
   },
   "instructions": [
     {
+      "name": "add_protocol_admin",
+      "docs": [
+        "PROTOCOL_ADMIN delegates hackathon-creation and wallet-whitelisting",
+        "rights to another wallet by minting a ProtocolAdminEntry PDA for it.",
+        "The new admin can then call initialize_hackathon and whitelist_wallet",
+        "once the contract is updated to check for this PDA."
+      ],
+      "discriminator": [
+        55,
+        234,
+        145,
+        138,
+        26,
+        17,
+        9,
+        63
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+        },
+        {
+          "name": "new_admin"
+        },
+        {
+          "name": "admin_entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  97,
+                  100,
+                  109,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "new_admin"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "approve_submissions",
+      "docs": [
+        "Organizer (hackathon admin) marks a batch of projects as submitted.",
+        "Projects are passed as writable remaining_accounts (ProjectAccount PDAs).",
+        "Sets submitted = true for each project that belongs to this hackathon.",
+        "This is a flag-and-claim model: calling this does NOT transfer funds.",
+        "Builders call claim_deposit_refund separately to pull their deposit back."
+      ],
+      "discriminator": [
+        215,
+        3,
+        223,
+        99,
+        162,
+        12,
+        15,
+        167
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "hackathon"
+          ]
+        },
+        {
+          "name": "hackathon"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "claim",
       "docs": [
         "Computes and transfers the user's payout using a two-stage tier formula.",
@@ -15,12 +114,12 @@
         "Stage 1 — tier allocation (from effective_tier_pcts set at finalize_resolve):",
         "P_t = effective_tier_pcts[tier_of(project.rank)]  (basis points)",
         "",
-        "Stage 2 — within-tier distribution by sqrt crowding:",
-        "C_i       = isqrt(project.total_staked)",
+        "Stage 2 — within-tier distribution:",
+        "C_i       = isqrt(project.total_staked)  — sqrt crowding between projects",
         "C_total_t = Σ isqrt(S_j) for all projects j in the same tier",
         "",
-        "User payout:",
-        "payout = stake × C_i × P_t × total_pool / (S_i × C_total_t × 10_000)",
+        "User payout (shares-weighted within project):",
+        "payout = shares × C_i × P_t × total_pool / (total_shares × C_total_t × 10_000)",
         "",
         "remaining_accounts: all registered ProjectAccounts for this hackathon."
       ],
@@ -83,6 +182,81 @@
         },
         {
           "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "fee_recipient_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_deposit_refund",
+      "docs": [
+        "Builder reclaims their commitment deposit after the organizer has",
+        "approved their submission via approve_submissions.",
+        "Uses CEI: transfer executes before deposit_refunded flag is set."
+      ],
+      "discriminator": [
+        216,
+        100,
+        227,
+        218,
+        33,
+        153,
+        157,
+        63
+      ],
+      "accounts": [
+        {
+          "name": "builder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "writable": true
+        },
+        {
+          "name": "builder_token_account",
           "writable": true
         },
         {
@@ -200,6 +374,77 @@
       "args": []
     },
     {
+      "name": "forfeit_deposit",
+      "docs": [
+        "Admin confiscates the deposit of a builder who registered but did not",
+        "actually submit.  50% of the deposit is added to the prize pool",
+        "(stays in escrow, distributed to backers at claim time).  50% is",
+        "transferred to the fee_recipient as protocol revenue."
+      ],
+      "discriminator": [
+        158,
+        12,
+        20,
+        135,
+        12,
+        240,
+        130,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "hackathon"
+          ]
+        },
+        {
+          "name": "hackathon",
+          "writable": true,
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "writable": true
+        },
+        {
+          "name": "fee_recipient_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initialize_hackathon",
       "docs": [
         "Creates a HackathonState PDA and its USDC escrow token account.",
@@ -221,7 +466,8 @@
         {
           "name": "admin",
           "writable": true,
-          "signer": true
+          "signer": true,
+          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
         },
         {
           "name": "hackathon",
@@ -304,8 +550,192 @@
         {
           "name": "tier_expected_counts",
           "type": "bytes"
+        },
+        {
+          "name": "fee_recipient",
+          "type": "pubkey"
+        },
+        {
+          "name": "protocol_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "deposit_amount",
+          "type": "u64"
+        },
+        {
+          "name": "requires_approval",
+          "type": "bool"
         }
       ]
+    },
+    {
+      "name": "migrate_hackathon_v1",
+      "discriminator": [
+        140,
+        246,
+        21,
+        19,
+        212,
+        12,
+        24,
+        144
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Any signer can pay for the rent increase; the instruction is safe",
+            "because it only operates on accounts that are exactly 186 bytes",
+            "(the old layout size) and owned by this program."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "docs": [
+            "that Anchor cannot deserialize with the current struct definition.",
+            "The instruction reads and rewrites the bytes manually."
+          ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_project_v1",
+      "discriminator": [
+        108,
+        208,
+        181,
+        224,
+        118,
+        66,
+        231,
+        56
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "project",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_project_v2",
+      "discriminator": [
+        8,
+        46,
+        163,
+        18,
+        80,
+        209,
+        88,
+        131
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "project",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "pay_deposit",
+      "docs": [
+        "Builder pays the hackathon's required commitment deposit into escrow.",
+        "Idempotent — reverts if already paid. Does not add to total_pool;",
+        "deposits are tracked separately so payout math is unaffected.",
+        "Once paid, external backers may stake on this project."
+      ],
+      "discriminator": [
+        119,
+        244,
+        32,
+        28,
+        177,
+        154,
+        37,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "builder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "writable": true
+        },
+        {
+          "name": "builder_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "refund",
@@ -480,6 +910,66 @@
       ]
     },
     {
+      "name": "remove_protocol_admin",
+      "docs": [
+        "Revokes a previously granted protocol admin entry, closing the PDA",
+        "and returning its rent lamports to PROTOCOL_ADMIN."
+      ],
+      "discriminator": [
+        202,
+        191,
+        80,
+        222,
+        230,
+        27,
+        61,
+        130
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+        },
+        {
+          "name": "admin_wallet"
+        },
+        {
+          "name": "admin_entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  97,
+                  100,
+                  109,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "admin_wallet"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "resolve",
       "docs": [
         "Sets the rank on a single ProjectAccount. Call once per project.",
@@ -519,6 +1009,147 @@
         {
           "name": "rank",
           "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "revoke_upgrade_authority",
+      "docs": [
+        "Permanently removes the upgrade authority, making this program immutable.",
+        "IRREVERSIBLE — no further code changes are possible after this call.",
+        "Use this as a final trust signal once the protocol is stable and audited."
+      ],
+      "discriminator": [
+        241,
+        245,
+        65,
+        34,
+        213,
+        50,
+        161,
+        48
+      ],
+      "accounts": [
+        {
+          "name": "current_authority",
+          "docs": [
+            "Current upgrade authority — must sign."
+          ],
+          "signer": true
+        },
+        {
+          "name": "program_data",
+          "docs": [
+            "The BPF loader verifies that current_authority is the actual upgrade authority."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "self_stake",
+      "docs": [
+        "Builder places their own funds behind their project.",
+        "Minimum: hackathon.deposit_amount (e.g. $10).",
+        "Maximum cumulative: MAX_SELF_STAKE ($5 000) — prevents whale builders",
+        "from drowning out the crowd signal with their own stake.",
+        "Uses the same UserStake PDA and escrow as regular stake so the builder",
+        "participates in payout claims identically to any backer."
+      ],
+      "discriminator": [
+        102,
+        65,
+        249,
+        181,
+        21,
+        159,
+        42,
+        61
+      ],
+      "accounts": [
+        {
+          "name": "builder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "writable": true,
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "writable": true
+        },
+        {
+          "name": "user_stake",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  107,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "builder"
+              },
+              {
+                "kind": "account",
+                "path": "project"
+              }
+            ]
+          }
+        },
+        {
+          "name": "builder_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
         }
       ]
     },
@@ -578,6 +1209,39 @@
           }
         },
         {
+          "name": "whitelist_entry",
+          "docs": [
+            "Whitelist entry — must exist for this hackathon + user pair.",
+            "Admin creates it via whitelist_wallet before backers can stake."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
           "name": "user_token_account",
           "writable": true
         },
@@ -621,12 +1285,92 @@
       ]
     },
     {
+      "name": "submit_project",
+      "docs": [
+        "Builder declares on-chain that they have submitted their project.",
+        "Must be called before cutoff_timestamp (after cutoff, staking is frozen",
+        "anyway so a declaration has no effect for backers).",
+        "Sets builder_declared = true and records the timestamp.",
+        "When hackathon.requires_approval = false, this is sufficient to unlock",
+        "claim_deposit_refund. When requires_approval = true, the organizer must",
+        "also run approve_submissions."
+      ],
+      "discriminator": [
+        117,
+        198,
+        165,
+        208,
+        111,
+        248,
+        202,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "builder",
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "transfer_upgrade_authority",
+      "docs": [
+        "Transfers the program's BPF loader upgrade authority to a new account.",
+        "Both the current authority and the new authority must sign",
+        "(BPF loader's SetAuthorityChecked), preventing accidental transfers to",
+        "a wrong address. Use this to hand deploy rights to a partner (e.g.",
+        "Solana Foundation) while both parties confirm on-chain."
+      ],
+      "discriminator": [
+        82,
+        52,
+        117,
+        53,
+        56,
+        196,
+        253,
+        219
+      ],
+      "accounts": [
+        {
+          "name": "current_authority",
+          "docs": [
+            "Current upgrade authority — must sign."
+          ],
+          "signer": true
+        },
+        {
+          "name": "program_data",
+          "docs": [
+            "The BPF loader verifies that current_authority is the actual upgrade authority."
+          ],
+          "writable": true
+        },
+        {
+          "name": "new_authority",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "unstake",
       "docs": [
-        "Linear decay penalty:",
-        "penalty_bps = MAX_PENALTY_BPS × (t_now − t_stake) / (t_cutoff − t_stake)",
-        "return_amount = stake × (BPS_DENOM − penalty_bps) / BPS_DENOM",
-        "Penalty stays in the pool; only return_amount leaves the escrow."
+        "Fixed 3% exit penalty: 1.5% to fee_recipient, 1.5% stays in pool.",
+        "return_amount = stake × (10_000 − UNSTAKE_PENALTY_BPS) / 10_000  (97%)",
+        "protocol_fee  = stake × UNSTAKE_PROTOCOL_BPS / 10_000             (1.5%)",
+        "pool_fee      = penalty − protocol_fee                             (1%, stays in escrow)"
       ],
       "discriminator": [
         90,
@@ -692,6 +1436,10 @@
           "writable": true
         },
         {
+          "name": "fee_recipient_token_account",
+          "writable": true
+        },
+        {
           "name": "escrow",
           "writable": true,
           "pda": {
@@ -717,6 +1465,74 @@
         {
           "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "whitelist_wallet",
+      "docs": [
+        "Admin creates a per-hackathon whitelist entry for a wallet, allowing it",
+        "to call `stake`. Only whitelisted wallets may stake; builders who call",
+        "`self_stake` are exempt from this check (they are already gated by",
+        "project ownership and the deposit requirement)."
+      ],
+      "discriminator": [
+        8,
+        114,
+        174,
+        168,
+        72,
+        155,
+        183,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+        },
+        {
+          "name": "hackathon"
+        },
+        {
+          "name": "wallet"
+        },
+        {
+          "name": "whitelist_entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "hackathon"
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -754,6 +1570,19 @@
       ]
     },
     {
+      "name": "ProtocolAdminEntry",
+      "discriminator": [
+        5,
+        56,
+        125,
+        87,
+        115,
+        4,
+        0,
+        15
+      ]
+    },
+    {
       "name": "UserStake",
       "discriminator": [
         102,
@@ -765,13 +1594,26 @@
         87,
         153
       ]
+    },
+    {
+      "name": "WhitelistedWallet",
+      "discriminator": [
+        165,
+        134,
+        140,
+        1,
+        20,
+        238,
+        159,
+        41
+      ]
     }
   ],
   "errors": [
     {
       "code": 6000,
       "name": "CutoffPassed",
-      "msg": "Cutoff has passed — unstaking is no longer allowed"
+      "msg": "Cutoff has passed — staking, self-staking, and unstaking are no longer allowed"
     },
     {
       "code": 6001,
@@ -855,8 +1697,73 @@
     },
     {
       "code": 6017,
+      "name": "InvalidFeeRecipient",
+      "msg": "fee_recipient_token_account does not match hackathon.fee_recipient"
+    },
+    {
+      "code": 6018,
+      "name": "DepositNotPaid",
+      "msg": "Builder deposit has not been paid — pay_deposit before staking is allowed"
+    },
+    {
+      "code": 6019,
+      "name": "DepositAlreadyPaid",
+      "msg": "Builder deposit has already been paid"
+    },
+    {
+      "code": 6020,
+      "name": "NotBuilder",
+      "msg": "Caller is not the registered builder for this project"
+    },
+    {
+      "code": 6021,
+      "name": "AlreadySubmitted",
+      "msg": "Project has already been marked as submitted"
+    },
+    {
+      "code": 6022,
+      "name": "NotSubmitted",
+      "msg": "Project has not been approved as submitted by the organizer"
+    },
+    {
+      "code": 6023,
+      "name": "DepositAlreadyRefunded",
+      "msg": "Builder deposit has already been refunded"
+    },
+    {
+      "code": 6024,
+      "name": "DepositAlreadyForfeited",
+      "msg": "Builder deposit has already been forfeited"
+    },
+    {
+      "code": 6025,
+      "name": "SelfStakeBelowMinimum",
+      "msg": "Self-stake amount is below the required minimum (hackathon deposit_amount)"
+    },
+    {
+      "code": 6026,
+      "name": "SelfStakeExceedsMaximum",
+      "msg": "Self-stake would exceed the $2 000 maximum"
+    },
+    {
+      "code": 6027,
       "name": "Unauthorized",
-      "msg": "Only the protocol admin may call this instruction"
+      "msg": "Caller is not the protocol admin"
+    },
+    {
+      "code": 6028,
+      "name": "NotWhitelisted",
+      "msg": "Wallet is not whitelisted to stake in this hackathon"
+    },
+    {
+      "code": 6029,
+      "name": "NotDeclared",
+      "msg": "Builder has not declared submission via submit_project"
+    },
+    {
+      "code": 6030,
+      "name": "AlreadyMigrated",
+      "msg": "Hackathon has already been migrated to the current layout"
     }
   ],
   "types": [
@@ -883,6 +1790,10 @@
           },
           {
             "name": "cutoff_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "start_timestamp",
             "type": "i64"
           },
           {
@@ -925,6 +1836,22 @@
             }
           },
           {
+            "name": "fee_recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "deposit_amount",
+            "type": "u64"
+          },
+          {
+            "name": "requires_approval",
+            "type": "bool"
+          },
+          {
             "name": "bump",
             "type": "u8"
           },
@@ -953,6 +1880,10 @@
             "type": "u64"
           },
           {
+            "name": "total_shares",
+            "type": "u64"
+          },
+          {
             "name": "rank",
             "type": "u8"
           },
@@ -965,7 +1896,51 @@
             "type": "bool"
           },
           {
-            "name": "registered_by",
+            "name": "builder_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "deposit_amount_paid",
+            "type": "u64"
+          },
+          {
+            "name": "submitted",
+            "type": "bool"
+          },
+          {
+            "name": "deposit_refunded",
+            "type": "bool"
+          },
+          {
+            "name": "deposit_forfeited",
+            "type": "bool"
+          },
+          {
+            "name": "builder_staked",
+            "type": "u64"
+          },
+          {
+            "name": "builder_declared",
+            "type": "bool"
+          },
+          {
+            "name": "declared_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolAdminEntry",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
             "type": "pubkey"
           },
           {
@@ -993,12 +1968,36 @@
             "type": "u64"
           },
           {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
             "name": "stake_timestamp",
             "type": "i64"
           },
           {
             "name": "is_claimed",
             "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WhitelistedWallet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hackathon",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
           },
           {
             "name": "bump",

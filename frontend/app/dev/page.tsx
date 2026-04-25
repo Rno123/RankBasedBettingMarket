@@ -23,42 +23,50 @@ const WalletMultiButton = dynamic(
 function StepIndicator({ current }: { current: 1 | 2 | 3 }) {
   const steps = ["Sign in", "Connect wallet", "Submit project"];
   return (
-    <div className="mb-8 flex items-start justify-center gap-0">
+    <div style={{ marginBottom: "32px", display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 0 }}>
       {steps.map((label, i) => {
         const n = (i + 1) as 1 | 2 | 3;
         const done = current > n;
         const active = current === n;
         return (
-          <div key={n} className="flex items-start">
-            <div className="flex flex-col items-center">
+          <div key={n} style={{ display: "flex", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
               <div
-                className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold transition ${
-                  done
-                    ? "bg-emerald-500 text-white"
-                    : active
-                    ? "bg-indigo-600 text-white"
-                    : "bg-slate-200 text-slate-400 dark:bg-white/[0.08] dark:text-slate-500"
-                }`}
+                style={{
+                  display: "flex",
+                  height: "32px",
+                  width: "32px",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "9999px",
+                  fontSize: "0.875rem",
+                  fontWeight: 700,
+                  transition: "all 0.15s",
+                  background: done ? "var(--c-emerald)" : active ? "var(--c-indigo)" : "var(--c-divider)",
+                  color: done || active ? "#ffffff" : "var(--c-text-4)",
+                }}
               >
                 {done ? "✓" : n}
               </div>
               <span
-                className={`mt-1 text-xs ${
-                  active
-                    ? "font-medium text-indigo-600 dark:text-indigo-400"
-                    : done
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-slate-400"
-                }`}
+                style={{
+                  marginTop: "4px",
+                  fontSize: "0.75rem",
+                  color: active ? "var(--c-indigo-text)" : done ? "var(--c-emerald-text)" : "var(--c-text-4)",
+                }}
               >
                 {label}
               </span>
             </div>
             {i < steps.length - 1 && (
               <div
-                className={`mx-3 mt-4 h-0.5 w-10 flex-shrink-0 ${
-                  current > n ? "bg-emerald-400" : "bg-slate-200 dark:bg-white/[0.08]"
-                }`}
+                style={{
+                  margin: "16px 12px 0",
+                  height: "2px",
+                  width: "40px",
+                  flexShrink: 0,
+                  background: current > n ? "var(--c-emerald)" : "var(--c-divider)",
+                }}
               />
             )}
           </div>
@@ -100,56 +108,70 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
 
   async function signInOAuth(provider: "google" | "twitter") {
     if (!supabase) { setErr("Auth not configured"); return; }
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: authRedirectUrl() },
-    });
+    await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: authRedirectUrl() } });
   }
 
   if (!supabase) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-400">
-        Supabase not configured. Add <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_URL</code> and <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to <code className="font-mono text-xs">.env.local</code> to enable sign-in.
+      <div style={{ borderRadius: "12px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "16px", fontSize: "0.875rem", color: "var(--c-amber-text)" }}>
+        Supabase not configured. Add <code style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>NEXT_PUBLIC_SUPABASE_URL</code> and <code style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to <code style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>.env.local</code> to enable sign-in.
       </div>
     );
   }
 
+  const oauthBtnStyle: React.CSSProperties = {
+    display: "flex",
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    borderRadius: "12px",
+    border: "1px solid var(--c-divider)",
+    padding: "10px 16px",
+    fontSize: "0.875rem",
+    fontWeight: 500,
+    color: "var(--c-text-2)",
+    background: "transparent",
+    cursor: "pointer",
+    transition: "background 0.15s",
+    fontFamily: "inherit",
+  };
+
   return (
-    <div className="mx-auto max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-none">
-      <h2 className="mb-2 text-xl font-bold text-slate-900 dark:text-white">Sign in to submit</h2>
-      <p className="mb-6 text-sm text-slate-500">Sign in to register your project and put skin in the game.</p>
+    <div className="ui-card" style={{ margin: "0 auto", maxWidth: "24rem", padding: "32px" }}>
+      <h2 style={{ margin: "0 0 8px", fontSize: "1.25rem", fontWeight: 700, color: "var(--c-text)" }}>Sign in to submit</h2>
+      <p style={{ margin: "0 0 24px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>Sign in to register your project and put skin in the game.</p>
 
       {/* OAuth */}
-      <div className="mb-4 space-y-3">
-        <button onClick={() => signInOAuth("google")} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-white/[0.08] dark:text-slate-300 dark:hover:bg-white/[0.06]">
-          <svg className="h-4 w-4" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      <div style={{ marginBottom: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+        <button onClick={() => signInOAuth("google")} style={oauthBtnStyle}>
+          <svg style={{ height: "16px", width: "16px" }} viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
           Continue with Google
         </button>
-        <button onClick={() => signInOAuth("twitter")} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-white/[0.08] dark:text-slate-300 dark:hover:bg-white/[0.06]">
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.264 5.633zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        <button onClick={() => signInOAuth("twitter")} style={oauthBtnStyle}>
+          <svg style={{ height: "16px", width: "16px" }} viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.264 5.633zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
           Continue with X / Twitter
         </button>
       </div>
 
-      <div className="mb-4 flex items-center gap-3 text-xs text-slate-400">
-        <div className="flex-1 border-t border-slate-200 dark:border-white/[0.08]" />or<div className="flex-1 border-t border-slate-200 dark:border-white/[0.08]" />
+      <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+        <div style={{ flex: 1, borderTop: "1px solid var(--c-divider)" }} />or<div style={{ flex: 1, borderTop: "1px solid var(--c-divider)" }} />
       </div>
 
-      {/* Email magic link */}
       {sent ? (
-        <div className="rounded-xl bg-emerald-50 p-4 text-center text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+        <div style={{ borderRadius: "12px", background: "var(--c-emerald-light)", padding: "16px", textAlign: "center", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>
           Check your email — a sign-in link was sent to <strong>{email}</strong>.
         </div>
       ) : (
-        <div className="space-y-2">
-          <input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signInEmail()} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white dark:placeholder-slate-600 dark:focus:border-indigo-500/50 dark:focus:ring-indigo-500/20" />
-          <button onClick={signInEmail} disabled={busy} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && signInEmail()} className="ui-input" />
+          <button onClick={signInEmail} disabled={busy} className="ui-btn ui-btn-indigo" style={{ width: "100%" }}>
             {busy ? "Sending…" : "Send magic link"}
           </button>
         </div>
       )}
 
-      {err && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{err}</p>}
+      {err && <p style={{ marginTop: "12px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
     </div>
   );
 }
@@ -219,7 +241,6 @@ function SubmitForm({
           signature = Buffer.from(sig).toString("base64");
         } catch { /* skip if user denies */ }
       }
-
       const { error: sbErr } = await supabase.from("project_submissions").upsert({
         hackathon_pubkey: hackathonPubkey.toBase58(),
         project_pubkey: projectPk!.toBase58(),
@@ -244,43 +265,45 @@ function SubmitForm({
 
   if (ok) {
     return (
-      <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
-        <p className="font-medium text-emerald-800 dark:text-emerald-300">Submitted successfully!</p>
-        <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">
+      <div style={{ marginTop: "12px", borderRadius: "12px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "16px" }}>
+        <p style={{ margin: 0, fontWeight: 500, color: "var(--c-emerald-text)" }}>Submitted successfully!</p>
+        <p style={{ margin: "4px 0 0", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>
           Your project is <strong>pending organizer review</strong>. Once approved it will appear on the hackathon page and backers can stake on it.
         </p>
-        <button onClick={onDone} className="mt-2 text-xs text-emerald-600 underline hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300">Close</button>
+        <button onClick={onDone} style={{ marginTop: "8px", background: "transparent", border: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--c-emerald-text)", textDecoration: "underline", fontFamily: "inherit" }}>Close</button>
       </div>
     );
   }
 
+  const subLabelStyle: React.CSSProperties = { display: "block", marginBottom: "4px", fontSize: "0.75rem", fontWeight: 500, color: "var(--c-text-3)" };
+
   return (
-    <div className="mt-3 space-y-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
-      <p className="text-sm font-medium text-indigo-800 dark:text-indigo-300">Submit to: {hackathonName}</p>
+    <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px", borderRadius: "12px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "16px" }}>
+      <p style={{ margin: 0, fontSize: "0.875rem", fontWeight: 500, color: "var(--c-indigo-text)" }}>Submit to: {hackathonName}</p>
       <div>
-        <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">GitHub URL <span className="text-red-400">*</span></label>
-        <input className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-400 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white dark:placeholder-slate-600" placeholder="https://github.com/org/repo" value={url} onChange={(e) => setUrl(e.target.value)} />
+        <label style={subLabelStyle}>GitHub URL <span style={{ color: "var(--c-red-text)" }}>*</span></label>
+        <input className="ui-input" placeholder="https://github.com/org/repo" value={url} onChange={(e) => setUrl(e.target.value)} />
       </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="grid-auto-2" style={{ gap: "8px" }}>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Twitter / X</label>
-          <input className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" placeholder="@handle" value={twitter} onChange={(e) => setTwitter(e.target.value)} />
+          <label style={subLabelStyle}>Twitter / X</label>
+          <input className="ui-input" placeholder="@handle" value={twitter} onChange={(e) => setTwitter(e.target.value)} />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Telegram</label>
-          <input className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" placeholder="t.me/…" value={telegram} onChange={(e) => setTelegram(e.target.value)} />
+          <label style={subLabelStyle}>Telegram</label>
+          <input className="ui-input" placeholder="t.me/…" value={telegram} onChange={(e) => setTelegram(e.target.value)} />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Discord</label>
-          <input className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" placeholder="discord.gg/…" value={discord} onChange={(e) => setDiscord(e.target.value)} />
+          <label style={subLabelStyle}>Discord</label>
+          <input className="ui-input" placeholder="discord.gg/…" value={discord} onChange={(e) => setDiscord(e.target.value)} />
         </div>
       </div>
-      {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
-      <div className="flex gap-2">
-        <button onClick={handleSubmit} disabled={busy || !publicKey} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+      {err && <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button onClick={handleSubmit} disabled={busy || !publicKey} className="ui-btn ui-btn-indigo ui-btn-sm">
           {busy ? (step === "onchain" ? "Registering on-chain…" : "Saving…") : "Submit project"}
         </button>
-        <button onClick={onDone} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-slate-400 dark:hover:bg-white/[0.08]">Cancel</button>
+        <button onClick={onDone} className="ui-btn ui-btn-outline ui-btn-sm">Cancel</button>
       </div>
     </div>
   );
@@ -296,11 +319,11 @@ function DevHackathonCard({ hackathon, authEmail }: { hackathon: ReturnType<type
   if (status !== "open") return null;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-none">
-      <div className="flex items-start justify-between gap-3">
+    <div className="ui-card" style={{ padding: "20px" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
         <div>
-          <p className="font-semibold text-slate-900 dark:text-white">{hackathon.name || hackathon.pubkey.toBase58().slice(0, 12) + "…"}</p>
-          <p className="mt-0.5 text-xs text-slate-400">
+          <p style={{ margin: 0, fontWeight: 600, color: "var(--c-text)" }}>{hackathon.name || hackathon.pubkey.toBase58().slice(0, 12) + "…"}</p>
+          <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
             Results: {formatDate(hackathon.resultsTimestamp)} · Cutoff in {timeUntil(hackathon.cutoffTimestamp)}
           </p>
         </div>
@@ -308,7 +331,8 @@ function DevHackathonCard({ hackathon, authEmail }: { hackathon: ReturnType<type
           <button
             onClick={() => setSubmitting(true)}
             disabled={!publicKey}
-            className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="ui-btn ui-btn-indigo ui-btn-sm"
+            style={{ flexShrink: 0 }}
             title={!publicKey ? "Connect wallet first" : undefined}
           >
             Submit project
@@ -361,18 +385,18 @@ export default function DevPortalPage() {
   });
 
   return (
-    <div className="min-h-screen">
+    <div style={{ minHeight: "100vh" }}>
       <Navbar />
-      <main className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white">Dev Portal</h1>
-          <p className="mt-1 text-sm text-slate-500">
+      <main style={{ margin: "0 auto", maxWidth: "672px", padding: "40px 16px" }}>
+        <div style={{ marginBottom: "32px" }}>
+          <h1 style={{ margin: 0, fontSize: "1.875rem", fontWeight: 800, color: "var(--c-text)" }}>Dev Portal</h1>
+          <p style={{ margin: "4px 0 0", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
             Register your project for a hackathon. Backers stake real USDC on who they think will win — your project&apos;s backing is a public, on-chain conviction signal.
           </p>
         </div>
 
         {sessionLoading ? (
-          <div className="h-48 animate-pulse rounded-2xl bg-slate-200 dark:bg-white/[0.04]" />
+          <div className="ui-skeleton" style={{ height: "192px", borderRadius: "16px" }} />
         ) : (
           <StepIndicator current={!session ? 1 : !publicKey ? 2 : 3} />
         )}
@@ -380,19 +404,19 @@ export default function DevPortalPage() {
         {sessionLoading ? null : !session ? (
           <AuthSection onSession={setSession} />
         ) : (
-          <div className="space-y-6">
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             {/* Logged-in banner */}
-            <div className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
-              <p className="text-sm text-emerald-700 dark:text-emerald-400">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderRadius: "16px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "12px 20px" }}>
+              <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>
                 Signed in as <strong>{authEmail || "wallet user"}</strong>
               </p>
-              <button onClick={signOut} className="text-xs text-emerald-600 underline hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300">Sign out</button>
+              <button onClick={signOut} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--c-emerald-text)", textDecoration: "underline", fontFamily: "inherit" }}>Sign out</button>
             </div>
 
             {/* Wallet connect */}
             {!publicKey && (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-none">
-                <p className="text-sm text-slate-600 dark:text-slate-400">Connect your wallet to register a project on-chain.</p>
+              <div className="ui-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", padding: "32px", textAlign: "center" }}>
+                <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-text-3)" }}>Connect your wallet to register a project on-chain.</p>
                 <WalletMultiButton style={{ borderRadius: "12px", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", fontSize: "13px" }} />
               </div>
             )}
@@ -400,15 +424,15 @@ export default function DevPortalPage() {
             {/* Hackathon list */}
             {publicKey && (
               <div>
-                <h2 className="mb-3 text-lg font-bold text-slate-900 dark:text-white">Open Hackathons</h2>
+                <h2 style={{ margin: "0 0 12px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Open Hackathons</h2>
                 {hLoading ? (
-                  <div className="space-y-3">{[...Array(2)].map((_, i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-slate-200 dark:bg-white/[0.04]" />)}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "96px" }} />)}</div>
                 ) : openHackathons.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-400 dark:border-white/[0.08] dark:bg-transparent dark:text-slate-500">
+                  <div className="ui-card" style={{ padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>
                     No hackathons currently accepting project submissions.
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                     {openHackathons.map((h) => (
                       <DevHackathonCard key={h.pubkey.toBase58()} hackathon={h} authEmail={authEmail} />
                     ))}

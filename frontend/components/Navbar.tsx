@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsProtocolAdmin } from "@/hooks/useIsProtocolAdmin";
+import { DEPLOYER } from "@/lib/constants";
 
 const WalletMultiButton = dynamic(
   () =>
@@ -19,7 +20,10 @@ const WalletMultiButton = dynamic(
 
 export default function Navbar() {
   const { publicKey } = useWallet();
-  const { isProtocolAdmin } = useIsProtocolAdmin(publicKey ?? null);
+  const { isProtocolAdmin, isSuperAdmin } = useIsProtocolAdmin(publicKey ?? null);
+  const isDeployer = publicKey?.toBase58() === DEPLOYER;
+  const showAdmin = isProtocolAdmin || isDeployer;
+  const showMaster = isSuperAdmin || isDeployer;
   const [devUser, setDevUser] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
@@ -39,37 +43,53 @@ export default function Navbar() {
 
   useEffect(() => { setMenuOpen(false); }, [pathname]);
 
-  function navClass(href: string) {
+  function navLinkStyle(href: string): React.CSSProperties {
     const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
-    return `text-sm font-medium transition ${
-      active
-        ? "text-indigo-600 dark:text-white"
-        : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-    }`;
+    return {
+      fontSize: "0.875rem",
+      fontWeight: 500,
+      textDecoration: "none",
+      transition: "color 0.15s",
+      color: active ? "var(--c-indigo-text)" : "var(--c-text-3)",
+    };
   }
 
+  const iconBtnStyle: React.CSSProperties = {
+    display: "flex",
+    height: "36px",
+    width: "36px",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "8px",
+    color: "var(--c-text-3)",
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    transition: "background 0.15s, color 0.15s",
+  };
+
   return (
-    <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-white/[0.06] dark:bg-[#08080f]/80">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+    <nav className="ui-nav">
+      <div style={{ margin: "0 auto", display: "flex", maxWidth: "1280px", alignItems: "center", justifyContent: "space-between", padding: "12px 16px" }}>
         {/* Left: logo + desktop links */}
-        <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-xl font-black tracking-tight text-slate-900 dark:text-white">
-              HACK<span className="text-indigo-600 dark:text-indigo-400">BET</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+          <Link href="/" style={{ display: "flex", alignItems: "center", gap: "8px", textDecoration: "none" }}>
+            <span style={{ fontSize: "1.25rem", fontWeight: 900, letterSpacing: "-0.025em", color: "var(--c-text)" }}>
+              HACK<span style={{ color: "var(--c-indigo-text)" }}>BET</span>
             </span>
           </Link>
-          <div className="hidden items-center gap-4 sm:flex">
-            <Link href="/" className={navClass("/")}>Hackathons</Link>
-            <Link href="/dev" className={navClass("/dev")}>
+          <div className="hidden-sm-flex" style={{ alignItems: "center", gap: "16px" }}>
+            <Link href="/" style={navLinkStyle("/")}>Hackathons</Link>
+            <Link href="/dev" style={navLinkStyle("/dev")}>
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
-            {isProtocolAdmin && (
-              <Link href="/admin" className={navClass("/admin")}>Admin</Link>
+            {showAdmin && (
+              <Link href="/admin" style={navLinkStyle("/admin")}>Admin</Link>
             )}
-            {isProtocolAdmin && (
+            {showMaster && (
               <Link
                 href="/master"
-                className={`text-sm font-medium text-amber-600 transition hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 ${pathname.startsWith("/master") ? "font-semibold" : ""}`}
+                style={{ fontSize: "0.875rem", fontWeight: pathname.startsWith("/master") ? 600 : 500, textDecoration: "none", color: "var(--c-amber-text)", transition: "color 0.15s" }}
               >
                 Master
               </Link>
@@ -78,9 +98,9 @@ export default function Navbar() {
         </div>
 
         {/* Right: wallet + theme toggle + hamburger */}
-        <div className="flex items-center gap-2">
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           {devUser && (
-            <span className="hidden text-xs text-slate-400 sm:block">
+            <span className="hidden-sm-block" style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
               {devUser.length > 20 ? devUser.slice(0, 18) + "…" : devUser}
             </span>
           )}
@@ -89,11 +109,10 @@ export default function Navbar() {
           <button
             onClick={toggle}
             aria-label="Toggle theme"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
+            style={iconBtnStyle}
           >
             {theme === "dark" ? (
-              /* Sun icon */
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <svg style={{ height: "16px", width: "16px" }} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="5" />
                 <line x1="12" y1="1" x2="12" y2="3" />
                 <line x1="12" y1="21" x2="12" y2="23" />
@@ -105,8 +124,7 @@ export default function Navbar() {
                 <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
               </svg>
             ) : (
-              /* Moon icon */
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <svg style={{ height: "16px", width: "16px" }} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
               </svg>
             )}
@@ -123,16 +141,17 @@ export default function Navbar() {
 
           {/* Hamburger — mobile only */}
           <button
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/[0.06] sm:hidden"
+            className="sm-hidden"
+            style={iconBtnStyle}
             onClick={() => setMenuOpen((o) => !o)}
             aria-label="Toggle menu"
           >
             {menuOpen ? (
-              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <svg style={{ height: "20px", width: "20px" }} viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
               </svg>
             ) : (
-              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <svg style={{ height: "20px", width: "20px" }} viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
               </svg>
             )}
@@ -142,22 +161,22 @@ export default function Navbar() {
 
       {/* Mobile dropdown */}
       {menuOpen && (
-        <div className="border-t border-slate-100 bg-white px-4 py-3 dark:border-white/[0.06] dark:bg-[#08080f] sm:hidden">
-          <div className="flex flex-col gap-1">
-            <Link href="/" className={`rounded-lg px-3 py-2 ${navClass("/")}`}>Hackathons</Link>
-            <Link href="/dev" className={`rounded-lg px-3 py-2 ${navClass("/dev")}`}>
+        <div style={{ borderTop: "1px solid var(--c-divider)", background: "var(--nav-bg)", padding: "12px 16px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <Link href="/" style={{ ...navLinkStyle("/"), padding: "8px 12px", borderRadius: "8px" }}>Hackathons</Link>
+            <Link href="/dev" style={{ ...navLinkStyle("/dev"), padding: "8px 12px", borderRadius: "8px" }}>
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
-            {isProtocolAdmin && (
-              <Link href="/admin" className={`rounded-lg px-3 py-2 ${navClass("/admin")}`}>Admin</Link>
+            {showAdmin && (
+              <Link href="/admin" style={{ ...navLinkStyle("/admin"), padding: "8px 12px", borderRadius: "8px" }}>Admin</Link>
             )}
-            {isProtocolAdmin && (
-              <Link href="/master" className="rounded-lg px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-400">
+            {showMaster && (
+              <Link href="/master" style={{ fontSize: "0.875rem", fontWeight: 500, textDecoration: "none", color: "var(--c-amber-text)", padding: "8px 12px", borderRadius: "8px" }}>
                 Master
               </Link>
             )}
             {devUser && (
-              <p className="mt-1 px-3 text-xs text-slate-400">
+              <p style={{ margin: "4px 0 0", padding: "0 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
                 {devUser.length > 30 ? devUser.slice(0, 28) + "…" : devUser}
               </p>
             )}

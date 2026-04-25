@@ -39,8 +39,8 @@ export function useUserStake(
               pubkey: pda,
               user: acc.user,
               project: acc.project,
-              amount: BigInt(acc.amount.toString()),
-              shares: BigInt(acc.shares.toString()),
+              amount: BigInt((acc.amount ?? 0).toString()),
+              shares: BigInt((acc.shares ?? 0).toString()),
               stakeTimestamp: Number(acc.stakeTimestamp),
               isClaimed: acc.isClaimed,
             });

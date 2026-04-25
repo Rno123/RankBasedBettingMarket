@@ -12,7 +12,7 @@ import { hackathonPda, escrowPda, whitelistPda } from "@/lib/pda";
 import { useHackathons } from "@/hooks/useHackathons";
 import { useProjects } from "@/hooks/useProjects";
 import { formatTokens, formatDate } from "@/lib/format";
-import { USDC_MINT } from "@/lib/constants";
+import { USDC_MINT, DEPLOYER } from "@/lib/constants";
 import { useIsProtocolAdmin } from "@/hooks/useIsProtocolAdmin";
 import { getSupabase, getSupabaseAdmin } from "@/lib/supabase";
 
@@ -22,7 +22,6 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
   const { publicKey } = useWallet();
   const anchorWallet = useAnchorWallet();
   const [step, setStep] = useState<1 | 2>(1);
-  // step 1 fields
   const [hackathonName, setHackathonName] = useState("");
   const [resultsDate, setResultsDate] = useState("");
   const [numTiers, setNumTiers] = useState<number>(3);
@@ -30,7 +29,6 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
   const [protocolFeeBps, setProtocolFeeBps] = useState("150");
   const [depositAmountUsdc, setDepositAmountUsdc] = useState("10");
   const [requiresApproval, setRequiresApproval] = useState(false);
-  // step 2 fields
   const [tierPcts, setTierPcts] = useState<string[]>(["55", "30", "15"]);
   const [tierCounts, setTierCounts] = useState<string[]>(["1", "1", ""]);
   const [busy, setBusy] = useState(false);
@@ -92,16 +90,7 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
       const hackathon = hackathonPda(publicKey, trimmedName);
       const escrow = escrowPda(hackathon);
       await (program.methods as any)
-        .initializeHackathon(
-          trimmedName,
-          new BN(resultsTs),
-          Buffer.from(pcts),
-          Buffer.from(counts),
-          feeRecipient,
-          feeBps,
-          depositLamports,
-          requiresApproval,
-        )
+        .initializeHackathon(trimmedName, new BN(resultsTs), Buffer.from(pcts), Buffer.from(counts), feeRecipient, feeBps, depositLamports, requiresApproval)
         .accounts({ admin: publicKey, hackathon, escrow, usdcMint: USDC_MINT, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
         .rpc();
       setOk(`Hackathon "${trimmedName}" created`);
@@ -115,81 +104,84 @@ function CreateHackathonPanel({ onCreated }: { onCreated: () => void }) {
     } finally { setBusy(false); }
   }
 
+  const inputStyle: React.CSSProperties = { width: "100%", borderRadius: "12px", border: "1px solid var(--c-input-border)", background: "var(--c-input-bg)", padding: "8px 12px", fontSize: "0.875rem", color: "var(--c-input-text)", outline: "none", fontFamily: "inherit" };
+  const labelStyle: React.CSSProperties = { display: "block", marginBottom: "4px", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)" };
+
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-none">
-      <h2 className="mb-4 text-lg font-bold text-slate-900 dark:text-white">Create Hackathon</h2>
+    <section className="ui-card" style={{ padding: "24px" }}>
+      <h2 style={{ margin: "0 0 16px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Create Hackathon</h2>
       {step === 1 && (
-        <div className="space-y-4">
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Name</label>
-            <input className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" placeholder="e.g. Frontier S1" value={hackathonName} onChange={(e) => setHackathonName(e.target.value)} />
+            <label style={labelStyle}>Name</label>
+            <input className="ui-input" placeholder="e.g. Frontier S1" value={hackathonName} onChange={(e) => setHackathonName(e.target.value)} />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Results date &amp; time</label>
-            <input type="datetime-local" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" value={resultsDate} onChange={(e) => setResultsDate(e.target.value)} />
+            <label style={labelStyle}>Results date &amp; time</label>
+            <input type="datetime-local" className="ui-input" value={resultsDate} onChange={(e) => setResultsDate(e.target.value)} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid-auto-2" style={{ gap: "12px" }}>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Number of tiers (1–8)</label>
-              <input type="number" min={1} max={8} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" value={numTiers} onChange={(e) => handleNumTiersChange(parseInt(e.target.value))} />
+              <label style={labelStyle}>Number of tiers (1–8)</label>
+              <input type="number" min={1} max={8} className="ui-input" value={numTiers} onChange={(e) => handleNumTiersChange(parseInt(e.target.value))} />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Builder deposit (USDC)</label>
-              <input type="number" min={0} step="0.01" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" value={depositAmountUsdc} onChange={(e) => setDepositAmountUsdc(e.target.value)} />
+              <label style={labelStyle}>Builder deposit (USDC)</label>
+              <input type="number" min={0} step="0.01" className="ui-input" value={depositAmountUsdc} onChange={(e) => setDepositAmountUsdc(e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid-auto-2" style={{ gap: "12px" }}>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Protocol fee (bps)</label>
-              <input type="number" min={0} max={10000} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" value={protocolFeeBps} onChange={(e) => setProtocolFeeBps(e.target.value)} />
-              <p className="mt-0.5 text-xs text-slate-400">150 = 1.5%</p>
+              <label style={labelStyle}>Protocol fee (bps)</label>
+              <input type="number" min={0} max={10000} className="ui-input" value={protocolFeeBps} onChange={(e) => setProtocolFeeBps(e.target.value)} />
+              <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>150 = 1.5%</p>
             </div>
-            <div className="flex flex-col justify-center">
-              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Require submission approval</label>
+            <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+              <label style={{ ...labelStyle, marginBottom: "8px" }}>Require submission approval</label>
               <button
                 type="button"
                 onClick={() => setRequiresApproval((v) => !v)}
-                className={`flex w-12 items-center rounded-full p-0.5 transition-colors ${requiresApproval ? "bg-indigo-600" : "bg-slate-200 dark:bg-white/[0.1]"}`}
+                className={`ui-toggle ${requiresApproval ? "ui-toggle-on" : "ui-toggle-off"}`}
               >
-                <span className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${requiresApproval ? "translate-x-6" : "translate-x-0"}`} />
+                <span className="ui-toggle-knob" />
               </button>
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Fee recipient <span className="font-normal text-slate-400">(leave blank to use your wallet)</span></label>
-            <input className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-indigo-400 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" placeholder="Solana wallet address…" value={feeRecipientInput} onChange={(e) => setFeeRecipientInput(e.target.value)} />
+            <label style={labelStyle}>Fee recipient <span style={{ fontWeight: 400, color: "var(--c-text-4)" }}>(leave blank to use your wallet)</span></label>
+            <input className="ui-input" style={{ fontFamily: "monospace" }} placeholder="Solana wallet address…" value={feeRecipientInput} onChange={(e) => setFeeRecipientInput(e.target.value)} />
           </div>
         </div>
       )}
       {step === 2 && (
-        <div className="space-y-3">
-          <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300">
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ borderRadius: "12px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "12px", fontSize: "0.875rem", color: "var(--c-indigo-text)" }}>
             Each tier gets a % of the total prize pool. The <strong>last tier</strong> automatically includes all remaining projects. Percentages must sum to 100.
           </div>
           {Array.from({ length: numTiers }).map((_, i) => {
             const isLast = i === numTiers - 1;
             return (
-              <div key={i} className="flex items-center gap-3">
-                <span className="w-16 text-sm text-slate-600 dark:text-slate-400">Tier {i + 1}</span>
-                <div className="flex items-center gap-1">
-                  <input type="number" min={1} max={100} className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-center text-sm text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" placeholder="%" value={tierPcts[i] ?? ""} onChange={(e) => { const n = [...tierPcts]; n[i] = e.target.value; setTierPcts(n); }} />
-                  <span className="text-xs text-slate-400">%</span>
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <span style={{ width: "64px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>Tier {i + 1}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <input type="number" min={1} max={100} className="ui-input-sm" style={{ width: "80px" }} placeholder="%" value={tierPcts[i] ?? ""} onChange={(e) => { const n = [...tierPcts]; n[i] = e.target.value; setTierPcts(n); }} />
+                  <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>%</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <input type="number" min={0} className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-center text-sm text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" placeholder={isLast ? "0 = rest" : "# projects"} value={tierCounts[i] ?? ""} onChange={(e) => { const n = [...tierCounts]; n[i] = e.target.value; setTierCounts(n); }} />
-                  <span className="text-xs text-slate-400">projects</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <input type="number" min={0} className="ui-input-sm" style={{ width: "80px" }} placeholder={isLast ? "0 = rest" : "# projects"} value={tierCounts[i] ?? ""} onChange={(e) => { const n = [...tierCounts]; n[i] = e.target.value; setTierCounts(n); }} />
+                  <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>projects</span>
                 </div>
               </div>
             );
           })}
         </div>
       )}
-      {err && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-600 whitespace-pre-wrap dark:bg-red-500/10 dark:text-red-400">{err}</p>}
-      {ok && <p className="mt-3 text-sm text-emerald-600 dark:text-emerald-400">{ok}</p>}
-      <div className="mt-4 flex gap-3">
-        {step === 2 && <button onClick={() => setStep(1)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-white/[0.08] dark:text-slate-400 dark:hover:bg-white/[0.06]">← Back</button>}
-        {step === 1 && <button onClick={handleStep1Next} disabled={!publicKey} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">Next — configure tiers</button>}
-        {step === 2 && <button onClick={handleCreate} disabled={busy || !publicKey} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{busy ? "Creating…" : "Create hackathon"}</button>}
+      {err && <p style={{ marginTop: "12px", borderRadius: "8px", background: "var(--c-red-light)", padding: "12px", fontSize: "0.875rem", color: "var(--c-red-text)", whiteSpace: "pre-wrap" }}>{err}</p>}
+      {ok && <p style={{ marginTop: "12px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
+      <div style={{ marginTop: "16px", display: "flex", gap: "12px" }}>
+        {step === 2 && <button onClick={() => setStep(1)} className="ui-btn ui-btn-outline ui-btn-sm">← Back</button>}
+        {step === 1 && <button onClick={handleStep1Next} disabled={!publicKey} className="ui-btn ui-btn-indigo">Next — configure tiers</button>}
+        {step === 2 && <button onClick={handleCreate} disabled={busy || !publicKey} className="ui-btn ui-btn-indigo">{busy ? "Creating…" : "Create hackathon"}</button>}
       </div>
     </section>
   );
@@ -235,30 +227,30 @@ function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathon
   }
 
   return (
-    <div className="mt-4 border-t border-slate-100 pt-4 dark:border-white/[0.05]">
-      <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Resolve projects</h3>
-      <div className="space-y-2">
+    <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "16px" }}>
+      <h3 style={{ margin: "0 0 12px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>Resolve projects</h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         {projects.map((p) => (
-          <div key={p.pubkey.toBase58()} className="flex items-center gap-2">
-            <span className="flex-1 truncate text-sm text-slate-600 dark:text-slate-400">{p.githubUrl.replace("https://github.com/", "")}</span>
-            <input type="number" min="0" placeholder="rank" className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-sm text-slate-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" value={ranks[p.pubkey.toBase58()] ?? ""} onChange={(e) => setRanks((r) => ({ ...r, [p.pubkey.toBase58()]: e.target.value }))} />
+          <div key={p.pubkey.toBase58()} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.875rem", color: "var(--c-text-3)" }}>{p.githubUrl.replace("https://github.com/", "")}</span>
+            <input type="number" min="0" placeholder="rank" className="ui-input-sm" style={{ width: "80px" }} value={ranks[p.pubkey.toBase58()] ?? ""} onChange={(e) => setRanks((r) => ({ ...r, [p.pubkey.toBase58()]: e.target.value }))} />
           </div>
         ))}
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button onClick={handleResolveAll} disabled={busy || !publicKey} className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50">{busy ? "…" : "Set ranks"}</button>
+      <div style={{ marginTop: "12px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
+        <button onClick={handleResolveAll} disabled={busy || !publicKey} className="ui-btn ui-btn-amber ui-btn-sm">{busy ? "…" : "Set ranks"}</button>
         {!finalizeConfirm ? (
-          <button onClick={() => setFinalizeConfirm(true)} disabled={busy || !publicKey} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">Finalize resolve</button>
+          <button onClick={() => setFinalizeConfirm(true)} disabled={busy || !publicKey} className="ui-btn ui-btn-emerald ui-btn-sm">Finalize resolve</button>
         ) : (
-          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 dark:border-red-500/20 dark:bg-red-500/10">
-            <span className="text-xs font-medium text-red-700 dark:text-red-400">This is irreversible on-chain. Confirm?</span>
-            <button onClick={handleFinalize} disabled={busy} className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">{busy ? "…" : "Yes, finalize"}</button>
-            <button onClick={() => setFinalizeConfirm(false)} className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-slate-400 dark:hover:bg-white/[0.08]">Cancel</button>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", borderRadius: "12px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "8px 12px" }}>
+            <span style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--c-red-text)" }}>This is irreversible on-chain. Confirm?</span>
+            <button onClick={handleFinalize} disabled={busy} className="ui-btn ui-btn-red ui-btn-xs">{busy ? "…" : "Yes, finalize"}</button>
+            <button onClick={() => setFinalizeConfirm(false)} className="ui-btn ui-btn-outline ui-btn-xs">Cancel</button>
           </div>
         )}
       </div>
-      {err && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{err}</p>}
-      {ok && <p className="mt-2 text-sm text-emerald-600 dark:text-emerald-400">{ok}</p>}
+      {err && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
+      {ok && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
     </div>
   );
 }
@@ -287,23 +279,25 @@ function MetadataPanel({ hackathon }: { hackathon: ReturnType<typeof useHackatho
     setBusy(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
   }
 
+  const subLabelStyle: React.CSSProperties = { display: "block", marginBottom: "4px", fontSize: "0.75rem", fontWeight: 500, color: "var(--c-text-3)" };
+
   return (
-    <div className="mt-4 border-t border-slate-100 pt-4 dark:border-white/[0.05]">
-      <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Hackathon metadata</h3>
-      <div className="space-y-2">
+    <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "16px" }}>
+      <h3 style={{ margin: "0 0 12px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>Hackathon metadata</h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Official link</label>
-          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" />
+          <label style={subLabelStyle}>Official link</label>
+          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" className="ui-input" />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Icon URL</label>
-          <div className="flex items-center gap-2">
-            <input value={iconUrl} onChange={(e) => setIconUrl(e.target.value)} placeholder="https://…/icon.png" className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white" />
-            {iconUrl && <div className="flex h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-white/[0.08]"><img src={iconUrl} alt="" className="h-full w-full object-cover" /></div>}
+          <label style={subLabelStyle}>Icon URL</label>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <input value={iconUrl} onChange={(e) => setIconUrl(e.target.value)} placeholder="https://…/icon.png" className="ui-input" />
+            {iconUrl && <div style={{ display: "flex", height: "36px", width: "36px", flexShrink: 0, overflow: "hidden", borderRadius: "8px", border: "1px solid var(--c-divider)" }}><img src={iconUrl} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} /></div>}
           </div>
         </div>
       </div>
-      <button onClick={save} disabled={busy} className="mt-3 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{busy ? "Saving…" : saved ? "Saved!" : "Save metadata"}</button>
+      <button onClick={save} disabled={busy} className="ui-btn ui-btn-indigo ui-btn-sm" style={{ marginTop: "12px" }}>{busy ? "Saving…" : saved ? "Saved!" : "Save metadata"}</button>
     </div>
   );
 }
@@ -328,13 +322,7 @@ function WhitelistPanel({ hackathon }: { hackathon: ReturnType<typeof useHackath
       const whitelistEntry = whitelistPda(hackathon.pubkey, wallet);
       await (program.methods as any)
         .whitelistWallet()
-        .accounts({
-          admin: publicKey,
-          hackathon: hackathon.pubkey,
-          wallet,
-          whitelistEntry,
-          systemProgram: SystemProgram.programId,
-        })
+        .accounts({ admin: publicKey, hackathon: hackathon.pubkey, wallet, whitelistEntry, systemProgram: SystemProgram.programId })
         .rpc();
       setOk(`Whitelisted: ${walletInput.trim().slice(0, 8)}…${walletInput.trim().slice(-4)}`);
       setWalletInput("");
@@ -346,25 +334,22 @@ function WhitelistPanel({ hackathon }: { hackathon: ReturnType<typeof useHackath
   }
 
   return (
-    <div className="mt-4 border-t border-slate-100 pt-4 dark:border-white/[0.05]">
-      <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Whitelist stakers</h3>
-      <div className="flex gap-2">
+    <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "16px" }}>
+      <h3 style={{ margin: "0 0 12px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>Whitelist stakers</h3>
+      <div style={{ display: "flex", gap: "8px" }}>
         <input
           value={walletInput}
           onChange={(e) => { setWalletInput(e.target.value); setErr(null); }}
           placeholder="Wallet address to whitelist…"
-          className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-indigo-400 focus:outline-none dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white"
+          className="ui-input"
+          style={{ flex: 1, fontFamily: "monospace" }}
         />
-        <button
-          onClick={handleWhitelist}
-          disabled={busy || !publicKey || !walletInput.trim()}
-          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
+        <button onClick={handleWhitelist} disabled={busy || !publicKey || !walletInput.trim()} className="ui-btn ui-btn-indigo ui-btn-sm">
           {busy ? "…" : "Whitelist"}
         </button>
       </div>
-      {err && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{err}</p>}
-      {ok && <p className="mt-2 text-sm text-emerald-600 dark:text-emerald-400">{ok}</p>}
+      {err && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
+      {ok && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
     </div>
   );
 }
@@ -374,20 +359,20 @@ function WhitelistPanel({ hackathon }: { hackathon: ReturnType<typeof useHackath
 function HackathonAdminCard({ hackathon }: { hackathon: ReturnType<typeof useHackathons>["hackathons"][0] }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-none">
-      <button onClick={() => setExpanded((v) => !v)} className="flex w-full items-center justify-between px-6 py-4 text-left">
+    <div className="ui-card">
+      <button onClick={() => setExpanded((v) => !v)} style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
         <div>
-          <p className="font-semibold text-slate-900 dark:text-white">{hackathon.name || hackathon.pubkey.toBase58().slice(0, 16) + "…"}</p>
-          <p className="text-xs text-slate-400">Results: {formatDate(hackathon.resultsTimestamp)} · {formatTokens(hackathon.totalPool)} USDC · {hackathon.isResolved ? <span className="text-emerald-600 dark:text-emerald-400">Resolved</span> : <span className="text-indigo-500 dark:text-indigo-400">Active</span>}</p>
+          <p style={{ margin: 0, fontWeight: 600, color: "var(--c-text)" }}>{hackathon.name || hackathon.pubkey.toBase58().slice(0, 16) + "…"}</p>
+          <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Results: {formatDate(hackathon.resultsTimestamp)} · {formatTokens(hackathon.totalPool)} USDC · {hackathon.isResolved ? <span style={{ color: "var(--c-emerald-text)" }}>Resolved</span> : <span style={{ color: "var(--c-indigo-text)" }}>Active</span>}</p>
         </div>
-        <span className="text-slate-400">{expanded ? "▲" : "▼"}</span>
+        <span style={{ color: "var(--c-text-4)" }}>{expanded ? "▲" : "▼"}</span>
       </button>
       {expanded && (
-        <div className="border-t border-slate-100 px-6 pb-6 dark:border-white/[0.05]">
+        <div style={{ borderTop: "1px solid var(--c-divider-2)", padding: "0 24px 24px" }}>
           <MetadataPanel hackathon={hackathon} />
           <WhitelistPanel hackathon={hackathon} />
           {!hackathon.isResolved && <ResolvePanel hackathon={hackathon} />}
-          {hackathon.isResolved && <p className="mt-4 text-sm text-slate-400">Hackathon resolved. Stakers can now claim.</p>}
+          {hackathon.isResolved && <p style={{ marginTop: "16px", fontSize: "0.875rem", color: "var(--c-text-4)" }}>Hackathon resolved. Stakers can now claim.</p>}
         </div>
       )}
     </div>
@@ -447,36 +432,48 @@ function SubmissionsSection({ hackathons }: { hackathons: ReturnType<typeof useH
   }
 
   const visible = filter === "all" ? submissions : submissions.filter((s) => s.status === filter);
-  if (loading) return <div className="h-16 animate-pulse rounded-2xl bg-slate-200 dark:bg-white/[0.04]" />;
+  if (loading) return <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />;
+
+  function subBorderBg(status: string) {
+    if (status === "pending") return { border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)" };
+    if (status === "approved") return { border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)" };
+    return { border: "1px solid var(--card-border)", background: "var(--card-bg-alt)" };
+  }
+
+  function statusBadgeStyle(status: string) {
+    if (status === "pending") return { background: "var(--c-amber-light)", color: "var(--c-amber-text)" };
+    if (status === "approved") return { background: "var(--c-emerald-light)", color: "var(--c-emerald-text)" };
+    return { background: "var(--c-divider)", color: "var(--c-text-3)" };
+  }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/[0.07] dark:bg-white/[0.03] dark:shadow-none">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-bold text-slate-900 dark:text-white">Project Submissions</h2>
-        <div className="flex gap-1 rounded-xl border border-slate-200 p-1 dark:border-white/[0.08]">
+    <section className="ui-card" style={{ padding: "24px" }}>
+      <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Project Submissions</h2>
+        <div style={{ display: "flex", gap: "4px", borderRadius: "12px", border: "1px solid var(--c-divider)", padding: "4px" }}>
           {(["pending", "approved", "rejected", "all"] as const).map((f) => (
-            <button key={f} onClick={() => setFilter(f)} className={`rounded-lg px-3 py-1 text-xs font-medium capitalize transition ${filter === f ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/[0.06]"}`}>{f}</button>
+            <button key={f} onClick={() => setFilter(f)} className={`ui-sort-tab ${filter === f ? "ui-sort-tab-active" : "ui-sort-tab-inactive"}`} style={{ textTransform: "capitalize" }}>{f}</button>
           ))}
         </div>
       </div>
-      {!getSupabase() && <p className="text-sm text-slate-400">Supabase not configured.</p>}
-      {getSupabase() && visible.length === 0 && <p className="text-sm text-slate-400">No {filter === "all" ? "" : filter} submissions.</p>}
-      <div className="space-y-3">
+      {!getSupabase() && <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>Supabase not configured.</p>}
+      {getSupabase() && visible.length === 0 && <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>No {filter === "all" ? "" : filter} submissions.</p>}
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         {visible.map((s) => (
-          <div key={s.id} className={`rounded-xl border p-4 ${s.status === "pending" ? "border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10" : s.status === "approved" ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10" : "border-slate-200 bg-slate-50 dark:border-white/[0.07] dark:bg-white/[0.03]"}`}>
-            <div className="flex flex-wrap items-start justify-between gap-2">
+          <div key={s.id} style={{ borderRadius: "12px", padding: "16px", ...subBorderBg(s.status) }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: "8px" }}>
               <div>
-                <a href={s.github_url} target="_blank" rel="noopener noreferrer" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">{s.github_url.replace("https://github.com/", "")}</a>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{s.hackathon_name || s.hackathon_pubkey.slice(0, 12) + "…"} · {s.wallet_address.slice(0, 8)}…{s.wallet_address.slice(-4)}{s.auth_email && ` · ${s.auth_email}`}</p>
-                <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-400">{s.twitter_handle && <span>𝕏 @{s.twitter_handle}</span>}{s.telegram && <span>✈ {s.telegram}</span>}{s.discord && <span>💬 {s.discord}</span>}</div>
-                <p className="mt-1 text-xs text-slate-400">{new Date(s.created_at).toLocaleString()}</p>
+                <a href={s.github_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 500, color: "var(--c-indigo-text)", textDecoration: "none" }}>{s.github_url.replace("https://github.com/", "")}</a>
+                <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-3)" }}>{s.hackathon_name || s.hackathon_pubkey.slice(0, 12) + "…"} · {s.wallet_address.slice(0, 8)}…{s.wallet_address.slice(-4)}{s.auth_email && ` · ${s.auth_email}`}</p>
+                <div style={{ marginTop: "4px", display: "flex", flexWrap: "wrap", gap: "8px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>{s.twitter_handle && <span>𝕏 @{s.twitter_handle}</span>}{s.telegram && <span>✈ {s.telegram}</span>}{s.discord && <span>💬 {s.discord}</span>}</div>
+                <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>{new Date(s.created_at).toLocaleString()}</p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${s.status === "pending" ? "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400" : s.status === "approved" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400" : "bg-slate-200 text-slate-600 dark:bg-white/[0.08] dark:text-slate-400"}`}>{s.status}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ borderRadius: "9999px", padding: "2px 10px", fontSize: "0.75rem", fontWeight: 500, textTransform: "capitalize", ...statusBadgeStyle(s.status) }}>{s.status}</span>
                 {s.status === "pending" && (
                   <>
-                    <button onClick={() => updateStatus(s.id, "approved")} disabled={busy === s.id} className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{busy === s.id ? "…" : "Approve"}</button>
-                    <button onClick={() => updateStatus(s.id, "rejected")} disabled={busy === s.id} className="rounded-lg border border-red-300 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10">Reject</button>
+                    <button onClick={() => updateStatus(s.id, "approved")} disabled={busy === s.id} className="ui-btn ui-btn-emerald ui-btn-xs">{busy === s.id ? "…" : "Approve"}</button>
+                    <button onClick={() => updateStatus(s.id, "rejected")} disabled={busy === s.id} className="ui-btn ui-btn-outline-red ui-btn-xs">Reject</button>
                   </>
                 )}
               </div>
@@ -494,33 +491,34 @@ export default function AdminPage() {
   const { publicKey } = useWallet();
   const { hackathons, loading, reload: reloadHackathons } = useHackathons();
   const [version, setVersion] = useState(0);
-  const { isProtocolAdmin: isAdmin } = useIsProtocolAdmin(publicKey ?? null);
+  const { isProtocolAdmin } = useIsProtocolAdmin(publicKey ?? null);
+  const isAdmin = isProtocolAdmin || publicKey?.toBase58() === DEPLOYER;
 
   return (
-    <div className="min-h-screen">
+    <div style={{ minHeight: "100vh" }}>
       <Navbar />
-      <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white">Admin Panel</h1>
-          <p className="mt-1 text-sm text-slate-500">Create hackathons, approve submissions, set results.</p>
+      <main style={{ margin: "0 auto", maxWidth: "768px", padding: "40px 16px" }}>
+        <div style={{ marginBottom: "32px" }}>
+          <h1 style={{ margin: 0, fontSize: "1.875rem", fontWeight: 800, color: "var(--c-text)" }}>Admin Panel</h1>
+          <p style={{ margin: "4px 0 0", fontSize: "0.875rem", color: "var(--c-text-3)" }}>Create hackathons, approve submissions, set results.</p>
           {!isAdmin && (
-            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">
+            <div style={{ marginTop: "16px", borderRadius: "12px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "16px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>
               Access restricted. Connect the admin wallet to use this panel.
             </div>
           )}
         </div>
         {isAdmin && (
-          <div className="space-y-6">
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <CreateHackathonPanel onCreated={() => { setVersion((v) => v + 1); reloadHackathons(); }} />
             <SubmissionsSection hackathons={hackathons} />
             <div>
-              <h2 className="mb-3 text-lg font-bold text-slate-900 dark:text-white">Hackathons</h2>
+              <h2 style={{ margin: "0 0 12px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Hackathons</h2>
               {loading ? (
-                <div className="space-y-3">{[...Array(2)].map((_, i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-slate-200 dark:bg-white/[0.04]" />)}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "64px" }} />)}</div>
               ) : hackathons.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-400 dark:border-white/[0.08] dark:text-slate-500">No hackathons yet.</div>
+                <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>No hackathons yet.</div>
               ) : (
-                <div key={version} className="space-y-3">{hackathons.map((h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} />)}</div>
+                <div key={version} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{hackathons.map((h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} />)}</div>
               )}
             </div>
           </div>

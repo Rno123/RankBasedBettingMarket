@@ -59,7 +59,7 @@ export function useHackathons() {
               resultsTimestamp: Number(d.resultsTimestamp),
               cutoffTimestamp: Number(d.cutoffTimestamp),
               startTimestamp: Number(d.startTimestamp),
-              totalPool: BigInt(d.totalPool.toString()),
+              totalPool: BigInt((d.totalPool ?? 0).toString()),
               isResolved: d.isResolved as boolean,
               tierCount: d.tierCount as number,
               tierPcts: Array.from(d.tierPcts as number[]).slice(0, d.tierCount),
