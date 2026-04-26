@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
 
 interface Props {
   hackathonPubkey: string;
@@ -10,6 +11,7 @@ interface Props {
 type SubmitState = "idle" | "loading" | "success" | "duplicate" | "error";
 
 export default function WhitelistRequestCard({ hackathonPubkey, walletAddress }: Props) {
+  const { signMessage } = useWallet();
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
   const [state, setState] = useState<SubmitState>("idle");
@@ -21,6 +23,18 @@ export default function WhitelistRequestCard({ hackathonPubkey, walletAddress }:
     setErrorMsg("");
 
     try {
+      // Sign a canonical message to prove wallet ownership before submitting.
+      if (!signMessage) {
+        setErrorMsg("Your wallet does not support message signing.");
+        setState("error");
+        return;
+      }
+      const message = new TextEncoder().encode(
+        `hackbet:whitelist-request:${hackathonPubkey}`,
+      );
+      const signature = await signMessage(message);
+      const signatureBase64 = Buffer.from(signature).toString("base64");
+
       const res = await fetch("/api/whitelist-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -29,6 +43,7 @@ export default function WhitelistRequestCard({ hackathonPubkey, walletAddress }:
           wallet_address: walletAddress,
           email,
           notes: notes || undefined,
+          signature: signatureBase64,
         }),
       });
 

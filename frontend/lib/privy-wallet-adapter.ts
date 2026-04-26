@@ -11,6 +11,7 @@ interface PrivySolanaWallet {
   address: string;
   signTransaction(input: { transaction: Uint8Array }): Promise<{ signedTransaction: Uint8Array }>;
   signTransaction(...inputs: { transaction: Uint8Array }[]): Promise<{ signedTransaction: Uint8Array }[]>;
+  signMessage(input: { message: Uint8Array; address: string }): Promise<{ signature: Uint8Array }>;
 }
 
 export const PrivyWalletName = "Privy" as WalletName<"Privy">;
@@ -61,6 +62,14 @@ export class PrivyWalletAdapter extends BaseSignerWalletAdapter {
     return (tx instanceof VersionedTransaction
       ? VersionedTransaction.deserialize(signedTransaction)
       : Transaction.from(signedTransaction)) as T;
+  }
+
+  async signMessage(message: Uint8Array): Promise<Uint8Array> {
+    const { signature } = await this._wallet.signMessage({
+      message,
+      address: this._wallet.address,
+    });
+    return signature;
   }
 
   async signAllTransactions<T extends Transaction | VersionedTransaction>(
