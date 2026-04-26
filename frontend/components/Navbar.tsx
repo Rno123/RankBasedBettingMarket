@@ -9,6 +9,7 @@ import { getSupabase } from "@/lib/supabase";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsProtocolAdmin } from "@/hooks/useIsProtocolAdmin";
 import { DEPLOYER } from "@/lib/constants";
+import { usePrivy } from "@privy-io/react-auth";
 
 const WalletMultiButton = dynamic(
   () =>
@@ -28,6 +29,14 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
+
+  // Privy auth state
+  const { ready, authenticated, user, login, logout } = usePrivy();
+  const privyLabel =
+    user?.email?.address ??
+    user?.google?.email ??
+    user?.twitter?.username ??
+    null;
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -83,6 +92,7 @@ export default function Navbar() {
             <Link href="/dev" style={navLinkStyle("/dev")}>
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
+            <Link href="/dashboard" style={navLinkStyle("/dashboard")}>Dashboard</Link>
             {showAdmin && (
               <Link href="/admin" style={navLinkStyle("/admin")}>Admin</Link>
             )}
@@ -97,12 +107,50 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* Right: wallet + theme toggle + hamburger */}
+        {/* Right: privy login + wallet + theme toggle + hamburger */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           {devUser && (
             <span className="hidden-sm-block" style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
               {devUser.length > 20 ? devUser.slice(0, 18) + "…" : devUser}
             </span>
+          )}
+
+          {/* Privy auth */}
+          {ready && (
+            authenticated ? (
+              <div className="hidden-sm-flex" style={{ alignItems: "center", gap: "6px" }}>
+                {privyLabel && (
+                  <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {privyLabel}
+                  </span>
+                )}
+                <button
+                  onClick={() => logout()}
+                  style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--c-text-3)", background: "none", border: "none", cursor: "pointer", padding: "4px 8px", borderRadius: "6px" }}
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => login()}
+                className="hidden-sm-block"
+                style={{
+                  height: "36px",
+                  padding: "0 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--c-indigo-border)",
+                  background: "var(--c-indigo-light)",
+                  color: "var(--c-indigo-text)",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Sign in
+              </button>
+            )
           )}
 
           {/* Theme toggle */}
@@ -167,6 +215,7 @@ export default function Navbar() {
             <Link href="/dev" style={{ ...navLinkStyle("/dev"), padding: "8px 12px", borderRadius: "8px" }}>
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
+            <Link href="/dashboard" style={{ ...navLinkStyle("/dashboard"), padding: "8px 12px", borderRadius: "8px" }}>Dashboard</Link>
             {showAdmin && (
               <Link href="/admin" style={{ ...navLinkStyle("/admin"), padding: "8px 12px", borderRadius: "8px" }}>Admin</Link>
             )}
@@ -174,6 +223,19 @@ export default function Navbar() {
               <Link href="/master" style={{ fontSize: "0.875rem", fontWeight: 500, textDecoration: "none", color: "var(--c-amber-text)", padding: "8px 12px", borderRadius: "8px" }}>
                 Master
               </Link>
+            )}
+            {ready && !authenticated && (
+              <button
+                onClick={() => { login(); setMenuOpen(false); }}
+                style={{ textAlign: "left", padding: "8px 12px", borderRadius: "8px", background: "none", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-indigo-text)" }}
+              >
+                Sign in
+              </button>
+            )}
+            {ready && authenticated && privyLabel && (
+              <p style={{ margin: "4px 0 0", padding: "0 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                {privyLabel}
+              </p>
             )}
             {devUser && (
               <p style={{ margin: "4px 0 0", padding: "0 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>

@@ -18,6 +18,8 @@ import {
   repoName,
 } from "@/lib/format";
 import { getSupabase } from "@/lib/supabase";
+import { useWhitelistStatus } from "@/hooks/useWhitelistStatus";
+import WhitelistRequestCard from "@/components/WhitelistRequestCard";
 import type { HackathonInfo } from "@/hooks/useHackathons";
 import type { ProjectInfo } from "@/hooks/useProjects";
 import type { ProjectMetadata, GithubStats } from "@/lib/types";
@@ -339,9 +341,11 @@ export default function HackathonPage({
 }) {
   const { id } = use(params);
 
+  const { publicKey } = useWallet();
   const { hackathons, loading: hLoading, reload: reloadHackathons } = useHackathons();
   const hackathon = hackathons.find((h) => h.pubkey.toBase58() === id) ?? null;
   const hackathonPk = hackathon?.pubkey ?? null;
+  const { isWhitelisted } = useWhitelistStatus(hackathonPk, publicKey ?? null);
   const { projects, loading: pLoading, error: pError, reload: reloadProjects } = useProjects(hackathonPk);
   const [version, setVersion] = useState(0);
 
@@ -586,6 +590,16 @@ export default function HackathonPage({
             </div>
           )}
         </div>
+
+        {/* Whitelist request card — shown to connected non-whitelisted users while open */}
+        {status === "open" && publicKey && isWhitelisted === false && (
+          <div style={{ marginBottom: "24px" }}>
+            <WhitelistRequestCard
+              hackathonPubkey={id}
+              walletAddress={publicKey.toBase58()}
+            />
+          </div>
+        )}
 
         {/* Projects header + sort controls */}
         <div className="sm-flex-row" style={{ marginBottom: "12px", gap: "8px", alignItems: "center", justifyContent: "space-between" }}>
