@@ -30,7 +30,7 @@
           "name": "authority",
           "writable": true,
           "signer": true,
-          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+          "address": "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
         },
         {
           "name": "new_admin"
@@ -116,12 +116,10 @@
         "",
         "Stage 2 — within-tier distribution:",
         "C_i       = isqrt(project.total_staked)  — sqrt crowding between projects",
-        "C_total_t = Σ isqrt(S_j) for all projects j in the same tier",
+        "C_total_t = tier_c_totals[tier]  — snapshotted at finalize_resolve (C-01 fix)",
         "",
         "User payout (shares-weighted within project):",
-        "payout = shares × C_i × P_t × total_pool / (total_shares × C_total_t × 10_000)",
-        "",
-        "remaining_accounts: all registered ProjectAccounts for this hackathon."
+        "payout = shares × C_i × P_t × total_pool / (total_shares × C_total_t × 10_000)"
       ],
       "discriminator": [
         62,
@@ -226,8 +224,7 @@
       "name": "claim_deposit_refund",
       "docs": [
         "Builder reclaims their commitment deposit after the organizer has",
-        "approved their submission via approve_submissions.",
-        "Uses CEI: transfer executes before deposit_refunded flag is set."
+        "approved their submission via approve_submissions."
       ],
       "discriminator": [
         216,
@@ -467,7 +464,7 @@
           "name": "admin",
           "writable": true,
           "signer": true,
-          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+          "address": "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
         },
         {
           "name": "hackathon",
@@ -598,6 +595,40 @@
             "that Anchor cannot deserialize with the current struct definition.",
             "The instruction reads and rewrites the bytes manually."
           ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_hackathon_v2",
+      "discriminator": [
+        225,
+        93,
+        47,
+        48,
+        146,
+        242,
+        137,
+        20
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Any signer can pay for the rent increase; safe because the instruction",
+            "only operates on accounts that are exactly 301 bytes (v1 layout size)",
+            "and owned by this program."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "hackathon",
           "writable": true
         },
         {
@@ -741,8 +772,7 @@
       "name": "refund",
       "docs": [
         "Returns the user's original stake to them on a refund-enabled project.",
-        "No penalty is applied — this is an admin-authorised exceptional path.",
-        "Uses CEI order: transfer executes before is_claimed is set."
+        "No penalty is applied — this is an admin-authorised exceptional path."
       ],
       "discriminator": [
         2,
@@ -765,12 +795,14 @@
         },
         {
           "name": "hackathon",
+          "writable": true,
           "relations": [
             "project"
           ]
         },
         {
           "name": "project",
+          "writable": true,
           "relations": [
             "user_stake"
           ]
@@ -930,7 +962,7 @@
           "name": "authority",
           "writable": true,
           "signer": true,
-          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+          "address": "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
         },
         {
           "name": "admin_wallet"
@@ -1052,7 +1084,7 @@
       "docs": [
         "Builder places their own funds behind their project.",
         "Minimum: hackathon.deposit_amount (e.g. $10).",
-        "Maximum cumulative: MAX_SELF_STAKE ($5 000) — prevents whale builders",
+        "Maximum cumulative: MAX_SELF_STAKE ($2 000) — prevents whale builders",
         "from drowning out the crowd signal with their own stake.",
         "Uses the same UserStake PDA and escrow as regular stake so the builder",
         "participates in payout claims identically to any backer."
@@ -1370,7 +1402,7 @@
         "Fixed 3% exit penalty: 1.5% to fee_recipient, 1.5% stays in pool.",
         "return_amount = stake × (10_000 − UNSTAKE_PENALTY_BPS) / 10_000  (97%)",
         "protocol_fee  = stake × UNSTAKE_PROTOCOL_BPS / 10_000             (1.5%)",
-        "pool_fee      = penalty − protocol_fee                             (1%, stays in escrow)"
+        "pool_fee      = penalty − protocol_fee                             (1.5%, stays in escrow)"
       ],
       "discriminator": [
         90,
@@ -1496,7 +1528,7 @@
           "name": "admin",
           "writable": true,
           "signer": true,
-          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+          "address": "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
         },
         {
           "name": "hackathon"
@@ -1764,6 +1796,21 @@
       "code": 6030,
       "name": "AlreadyMigrated",
       "msg": "Hackathon has already been migrated to the current layout"
+    },
+    {
+      "code": 6031,
+      "name": "InvalidFee",
+      "msg": "protocol_fee_bps exceeds maximum of 3000 (30%)"
+    },
+    {
+      "code": 6032,
+      "name": "IncompleteProjectList",
+      "msg": "finalize_resolve received fewer ranked projects than resolve() has assigned ranks to"
+    },
+    {
+      "code": 6033,
+      "name": "RefundBlockedAfterResolution",
+      "msg": "Refund cannot be enabled for a ranked project after the hackathon is resolved"
     }
   ],
   "types": [
@@ -1836,6 +1883,15 @@
             }
           },
           {
+            "name": "tier_c_totals",
+            "type": {
+              "array": [
+                "u64",
+                8
+              ]
+            }
+          },
+          {
             "name": "fee_recipient",
             "type": "pubkey"
           },
@@ -1858,6 +1914,10 @@
           {
             "name": "escrow_bump",
             "type": "u8"
+          },
+          {
+            "name": "ranked_count",
+            "type": "u32"
           }
         ]
       }

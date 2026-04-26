@@ -108,6 +108,10 @@ pub enum BettingError {
     AlreadyMigrated,
     #[msg("protocol_fee_bps exceeds maximum of 3000 (30%)")]
     InvalidFee,
+    #[msg("finalize_resolve received fewer ranked projects than resolve() has assigned ranks to")]
+    IncompleteProjectList,
+    #[msg("Refund cannot be enabled for a ranked project after the hackathon is resolved")]
+    RefundBlockedAfterResolution,
 }
 
 // ── Pure helpers ───────────────────────────────────────────────────────────
@@ -219,6 +223,7 @@ pub mod hackathon_betting {
         h.requires_approval = requires_approval;
         h.bump = ctx.bumps.hackathon;
         h.escrow_bump = ctx.bumps.escrow;
+        h.ranked_count = 0;
         Ok(())
     }
 
@@ -531,6 +536,13 @@ pub mod hackathon_betting {
             BettingError::ResultsNotYet,
         );
         require!(rank >= 1, BettingError::InvalidRank);
+        // Track the count of ranked projects so finalize_resolve can verify
+        // all ranked projects are supplied (completeness check).
+        if ctx.accounts.project.rank == 0 {
+            ctx.accounts.hackathon.ranked_count = ctx.accounts.hackathon.ranked_count
+                .checked_add(1)
+                .ok_or(BettingError::Overflow)?;
+        }
         ctx.accounts.project.rank = rank;
         Ok(())
     }
@@ -559,8 +571,12 @@ pub mod hackathon_betting {
         let tier_pcts = ctx.accounts.hackathon.tier_pcts;
 
         // Determine which tiers are represented by at least one ranked project.
+        // Also count ranked projects found and verify against hackathon.ranked_count
+        // to prevent an admin from omitting projects and skewing tier allocations or
+        // tier_c_totals denominators (completeness check).
         let mut tier_has_projects = [false; MAX_TIERS];
         let mut tier_c_totals_new = [0u64; MAX_TIERS];
+        let mut ranked_found: u32 = 0;
         for acc in ctx.remaining_accounts.iter() {
             if acc.owner != &crate::ID {
                 continue;
@@ -573,6 +589,7 @@ pub mod hackathon_betting {
             if project.hackathon != hackathon_key || project.rank == 0 {
                 continue;
             }
+            ranked_found = ranked_found.checked_add(1).ok_or(BettingError::Overflow)?;
             let tier = rank_to_tier_idx(project.rank, tier_count as u8);
             tier_has_projects[tier] = true;
             // Accumulate sqrt-crowding denominator per tier (snapshotted here to prevent
@@ -581,6 +598,10 @@ pub mod hackathon_betting {
                 .checked_add(isqrt(project.total_staked))
                 .ok_or(BettingError::Overflow)?;
         }
+        require!(
+            ranked_found == ctx.accounts.hackathon.ranked_count,
+            BettingError::IncompleteProjectList,
+        );
 
         // Sum basis points in occupied tiers (each tier_pct × 100 gives bps).
         let mut total_non_empty_bps: u32 = 0;
@@ -741,6 +762,13 @@ pub mod hackathon_betting {
     /// or explicit admin override for projects that never received a rank.
     /// Once enabled, cannot be revoked.
     pub fn enable_refund(ctx: Context<EnableRefund>) -> Result<()> {
+        // Post-resolution refunds on ranked projects would desync tier_c_totals
+        // (snapshotted at finalize_resolve) causing stale claim denominators.
+        // Unranked projects (rank == 0) are safe — they are excluded from tier math.
+        require!(
+            !ctx.accounts.hackathon.is_resolved || ctx.accounts.project.rank == 0,
+            BettingError::RefundBlockedAfterResolution,
+        );
         ctx.accounts.project.is_refund_enabled = true;
         Ok(())
     }
@@ -1340,6 +1368,113 @@ pub mod hackathon_betting {
             requires_approval:    false,
             bump,
             escrow_bump,
+            ranked_count:         0,
+        };
+
+        let disc = HackathonState::DISCRIMINATOR;
+        let body = borsh::to_vec(&new_state)?;
+        let mut data = info.data.borrow_mut();
+        data[..8].copy_from_slice(&disc);
+        data[8..8 + body.len()].copy_from_slice(&body);
+
+        Ok(())
+    }
+
+    // ── 4.21  migrate_hackathon_v2 ────────────────────────────────────────
+    //
+    // One-time migration for HackathonState accounts at layout v1 (301 bytes,
+    // lacking the ranked_count field) to the current layout (305 bytes).
+    // Sets ranked_count = 0. Accounts that have already been resolved are safe
+    // because finalize_resolve is idempotent-gated by is_resolved; accounts
+    // with outstanding ranked-but-not-finalized projects will need the admin
+    // to re-call resolve() after migration to rebuild ranked_count correctly.
+    pub fn migrate_hackathon_v2(ctx: Context<MigrateHackathonV2>) -> Result<()> {
+        use anchor_lang::solana_program::system_instruction;
+        use anchor_lang::solana_program::program::invoke;
+
+        let info    = ctx.accounts.hackathon.to_account_info();
+        let old_len = info.data_len();
+        require!(old_len == 301, BettingError::AlreadyMigrated);
+
+        let old: Vec<u8> = info.data.borrow().to_vec();
+
+        let admin_pk  = Pubkey::try_from(&old[8..40]).unwrap();
+        let usdc_mint = Pubkey::try_from(&old[40..72]).unwrap();
+
+        let name_len = u32::from_le_bytes(old[72..76].try_into().unwrap()) as usize;
+        require!(name_len <= NAME_MAX_LEN, BettingError::NameTooLong);
+        let name = std::str::from_utf8(&old[76..76 + name_len])
+            .map_err(|_| error!(BettingError::NameTooLong))?
+            .to_string();
+
+        let fo = 76 + name_len;
+
+        let results_ts  = i64::from_le_bytes(old[fo..fo+8].try_into().unwrap());
+        let cutoff_ts   = i64::from_le_bytes(old[fo+8..fo+16].try_into().unwrap());
+        let start_ts    = i64::from_le_bytes(old[fo+16..fo+24].try_into().unwrap());
+        let total_pool  = u64::from_le_bytes(old[fo+24..fo+32].try_into().unwrap());
+        let is_resolved = old[fo+32] != 0;
+        let tier_count  = old[fo+33];
+        let tier_pcts: [u8; MAX_TIERS]  = old[fo+34..fo+42].try_into().unwrap();
+        let tier_exp: [u8; MAX_TIERS]   = old[fo+42..fo+50].try_into().unwrap();
+        let mut eff_pcts = [0u16; MAX_TIERS];
+        for i in 0..MAX_TIERS {
+            eff_pcts[i] = u16::from_le_bytes(old[fo+50+i*2..fo+52+i*2].try_into().unwrap());
+        }
+        let mut c_totals = [0u64; MAX_TIERS];
+        for i in 0..MAX_TIERS {
+            c_totals[i] = u64::from_le_bytes(old[fo+66+i*8..fo+74+i*8].try_into().unwrap());
+        }
+        let fee_recipient = Pubkey::try_from(&old[fo+130..fo+162]).unwrap();
+        let protocol_fee_bps = u16::from_le_bytes(old[fo+162..fo+164].try_into().unwrap());
+        let deposit_amount   = u64::from_le_bytes(old[fo+164..fo+172].try_into().unwrap());
+        let requires_approval = old[fo+172] != 0;
+        let bump        = old[fo+173];
+        let escrow_bump = old[fo+174];
+
+        let rent = Rent::get()?;
+        let new_len = HackathonState::SPACE;
+        let min_lamports = rent.minimum_balance(new_len);
+        let current_lamports = info.lamports();
+        if current_lamports < min_lamports {
+            let shortfall = min_lamports - current_lamports;
+            invoke(
+                &system_instruction::transfer(
+                    ctx.accounts.payer.key,
+                    info.key,
+                    shortfall,
+                ),
+                &[
+                    ctx.accounts.payer.to_account_info(),
+                    info.clone(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+            )?;
+        }
+
+        info.realloc(new_len, true)?;
+
+        let new_state = HackathonState {
+            admin: admin_pk,
+            usdc_mint,
+            name,
+            results_timestamp:    results_ts,
+            cutoff_timestamp:     cutoff_ts,
+            start_timestamp:      start_ts,
+            total_pool,
+            is_resolved,
+            tier_count,
+            tier_pcts,
+            tier_expected_counts: tier_exp,
+            effective_tier_pcts:  eff_pcts,
+            tier_c_totals:        c_totals,
+            fee_recipient,
+            protocol_fee_bps,
+            deposit_amount,
+            requires_approval,
+            bump,
+            escrow_bump,
+            ranked_count: 0,
         };
 
         let disc = HackathonState::DISCRIMINATOR;
@@ -1375,6 +1510,7 @@ pub struct HackathonState {
     pub requires_approval: bool,                // 1  — if true, admin must run approve_submissions before deposit refund; if false, builder_declared suffices
     pub bump: u8,                               // 1
     pub escrow_bump: u8,                        // 1
+    pub ranked_count: u32,                      // 4  — number of projects given a rank via resolve(); checked by finalize_resolve for completeness
 }
 
 impl HackathonState {
@@ -1397,7 +1533,8 @@ impl HackathonState {
         + 8   // deposit_amount
         + 1   // requires_approval
         + 1   // bump
-        + 1;  // escrow_bump
+        + 1   // escrow_bump
+        + 4;  // ranked_count
 }
 
 #[account]
@@ -1993,6 +2130,19 @@ pub struct MigrateHackathonV1<'info> {
     /// CHECK: intentionally unchecked — this account has old layout bytes
     /// that Anchor cannot deserialize with the current struct definition.
     /// The instruction reads and rewrites the bytes manually.
+    #[account(mut, owner = crate::ID @ BettingError::Unauthorized)]
+    pub hackathon: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct MigrateHackathonV2<'info> {
+    /// Any signer can pay for the rent increase; safe because the instruction
+    /// only operates on accounts that are exactly 301 bytes (v1 layout size)
+    /// and owned by this program.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: intentionally unchecked — v1 layout, manually migrated to v2.
     #[account(mut, owner = crate::ID @ BettingError::Unauthorized)]
     pub hackathon: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
