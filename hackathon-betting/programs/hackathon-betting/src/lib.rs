@@ -759,14 +759,13 @@ pub mod hackathon_betting {
     /// project may call `refund` to recover their original stake amount.
     ///
     /// Intended for exceptional cases: judging errors, hackathon cancellations,
-    /// or explicit admin override for projects that never received a rank.
+    /// or explicit admin override. Must be called before resolution; after
+    /// resolution all stakes are settled (won or forfeited) and cannot be undone.
     /// Once enabled, cannot be revoked.
     pub fn enable_refund(ctx: Context<EnableRefund>) -> Result<()> {
-        // Post-resolution refunds on ranked projects would desync tier_c_totals
-        // (snapshotted at finalize_resolve) causing stale claim denominators.
-        // Unranked projects (rank == 0) are safe — they are excluded from tier math.
+        // Enforced at the account layer too; this require! provides a clear error message.
         require!(
-            !ctx.accounts.hackathon.is_resolved || ctx.accounts.project.rank == 0,
+            !ctx.accounts.hackathon.is_resolved,
             BettingError::RefundBlockedAfterResolution,
         );
         ctx.accounts.project.is_refund_enabled = true;
@@ -778,6 +777,11 @@ pub mod hackathon_betting {
     /// Returns the user's original stake to them on a refund-enabled project.
     /// No penalty is applied — this is an admin-authorised exceptional path.
     pub fn refund(ctx: Context<Refund>) -> Result<()> {
+        // Enforced at the account layer too; this require! provides a clear error message.
+        require!(
+            !ctx.accounts.hackathon.is_resolved,
+            BettingError::RefundBlockedAfterResolution,
+        );
         require!(
             ctx.accounts.project.is_refund_enabled,
             BettingError::RefundNotEnabled,
@@ -1861,7 +1865,10 @@ pub struct Claim<'info> {
 #[derive(Accounts)]
 pub struct EnableRefund<'info> {
     pub admin: Signer<'info>,
-    #[account(has_one = admin)]
+    #[account(
+        has_one = admin,
+        constraint = !hackathon.is_resolved @ BettingError::RefundBlockedAfterResolution,
+    )]
     pub hackathon: Account<'info, HackathonState>,
     #[account(mut, has_one = hackathon)]
     pub project: Account<'info, ProjectAccount>,
@@ -1871,7 +1878,10 @@ pub struct EnableRefund<'info> {
 pub struct Refund<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = !hackathon.is_resolved @ BettingError::RefundBlockedAfterResolution,
+    )]
     pub hackathon: Account<'info, HackathonState>,
     #[account(mut, has_one = hackathon)]
     pub project: Account<'info, ProjectAccount>,

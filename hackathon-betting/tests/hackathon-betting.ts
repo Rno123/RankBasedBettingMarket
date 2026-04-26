@@ -1128,22 +1128,15 @@ describe("hackathon-betting — Bankrun suite", () => {
   // ── Refund tests ──────────────────────────────────────────────────────────
 
   describe("Refund: admin-authorised exceptional stake recovery", () => {
-    it("staker on refund-enabled project recovers full original stake; pool decremented (C-02)", async () => {
+    it("staker on refund-enabled project recovers full original stake pre-resolution; pool decremented (C-02)", async () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program);
       const u   = await newWhitelistedUser(ctx, program, fix, 1_000);
       const p   = await addProject(ctx, program, fix, "https://github.com/ref/happy");
       await doStake(program, fix, u, p, 1_000);
-
       await doEnableRefund(program, fix, p);
 
-      const p2 = await addProject(ctx, program, fix, "https://github.com/ref/other");
-      const u2 = await newWhitelistedUser(ctx, program, fix, 500);
-      await doStake(program, fix, u2, p2, 500);
-      setClock(ctx, RESULTS_TS);
-      await doResolve(program, fix, p2, 1);
-      await doFinalizeResolve(program, fix, [p, p2]);
-
+      // Refund must execute pre-resolution; stakes are forfeited once resolved.
       const poolBefore = (await program.account.hackathonState.fetch(fix.hackathon)).totalPool.toNumber();
       const before = await tokenBalance(ctx, u.ata);
       await doRefund(program, fix, u, p);
@@ -1156,6 +1149,14 @@ describe("hackathon-betting — Bankrun suite", () => {
 
       const stake = await program.account.userStake.fetch(stakePda(u.user.publicKey, p));
       assert.equal(stake.isClaimed, true);
+
+      // Verify an independent ranked project can still resolve and finalize correctly
+      const p2 = await addProject(ctx, program, fix, "https://github.com/ref/other");
+      const u2 = await newWhitelistedUser(ctx, program, fix, 500);
+      await doStake(program, fix, u2, p2, 500);
+      setClock(ctx, RESULTS_TS);
+      await doResolve(program, fix, p2, 1);
+      await doFinalizeResolve(program, fix, [p2]);
     });
 
     it("refund blocked if enable_refund not called", async () => {
@@ -1164,23 +1165,18 @@ describe("hackathon-betting — Bankrun suite", () => {
       const u   = await newWhitelistedUser(ctx, program, fix, 500);
       const p   = await addProject(ctx, program, fix, "https://github.com/ref/blocked");
       await doStake(program, fix, u, p, 500);
-      setClock(ctx, RESULTS_TS);
-      await doResolve(program, fix, p, 1);
-      await doFinalizeResolve(program, fix, [p]);
+      // Test the RefundNotEnabled guard; no resolution needed.
       try { await doRefund(program, fix, u, p); assert.fail(); }
       catch (e: any) { assert.include(e.message, "RefundNotEnabled"); }
     });
 
-    it("refund blocked after already claimed", async () => {
+    it("refund blocked after already claimed (pre-resolution double-refund)", async () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program);
       const u   = await newWhitelistedUser(ctx, program, fix, 500);
       const p   = await addProject(ctx, program, fix, "https://github.com/ref/dblclaim");
       await doStake(program, fix, u, p, 500);
       await doEnableRefund(program, fix, p);
-      setClock(ctx, RESULTS_TS);
-      await doResolve(program, fix, p, 1);
-      await doFinalizeResolve(program, fix, [p]);
       await doRefund(program, fix, u, p);
       try { await doRefund(program, fix, u, p); assert.fail(); }
       catch (e: any) {
@@ -1191,6 +1187,31 @@ describe("hackathon-betting — Bankrun suite", () => {
           `Expected AlreadyClaimed or duplicate-tx rejection, got: ${e.message}`,
         );
       }
+    });
+
+    it("enable_refund blocked post-resolution", async () => {
+      setClock(ctx, T0);
+      const fix = await newHackathon(ctx, program);
+      const p   = await addProject(ctx, program, fix, "https://github.com/ref/postres-enable");
+      setClock(ctx, RESULTS_TS);
+      await doResolve(program, fix, p, 1);
+      await doFinalizeResolve(program, fix, [p]);
+      try { await doEnableRefund(program, fix, p); assert.fail(); }
+      catch (e: any) { assert.include(e.message, "RefundBlockedAfterResolution"); }
+    });
+
+    it("refund blocked post-resolution even if enable_refund was set pre-resolution", async () => {
+      setClock(ctx, T0);
+      const fix = await newHackathon(ctx, program);
+      const u   = await newWhitelistedUser(ctx, program, fix, 500);
+      const p   = await addProject(ctx, program, fix, "https://github.com/ref/postres-refund");
+      await doStake(program, fix, u, p, 500);
+      await doEnableRefund(program, fix, p);
+      setClock(ctx, RESULTS_TS);
+      await doResolve(program, fix, p, 1);
+      await doFinalizeResolve(program, fix, [p]);
+      try { await doRefund(program, fix, u, p); assert.fail(); }
+      catch (e: any) { assert.include(e.message, "RefundBlockedAfterResolution"); }
     });
   });
 
