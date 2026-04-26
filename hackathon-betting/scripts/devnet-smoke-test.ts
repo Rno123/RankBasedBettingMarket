@@ -1,6 +1,17 @@
 /**
  * Devnet smoke test — full protocol lifecycle
  *
+ * WARNING: This script is out of sync with the current program interface.
+ * Before running, update:
+ *   - hackathonPda() to include the `name` argument
+ *     (seed: ["hackathon", admin, name])
+ *   - initializeHackathon() call to pass all current arguments:
+ *     name, results_timestamp, tier_pcts, tier_counts, fee_recipient,
+ *     protocol_fee_bps, deposit_amount, requires_approval
+ *   - register_project() to pass url_hash: sha256(github_url)
+ *   - stake() to pass the whitelistEntry PDA
+ *   - claim() to remove remaining_accounts (tier_c_totals are now on-chain)
+ *
  * Runs: initialize_hackathon → register_project → stake →
  *       (wait for results_timestamp) → resolve → finalize_resolve → claim
  *

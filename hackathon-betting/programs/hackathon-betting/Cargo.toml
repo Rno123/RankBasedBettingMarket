@@ -15,6 +15,9 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+# Used only in bankrun tests — replaces PROTOCOL_ADMIN with the local test wallet
+# so initialize_hackathon / whitelist_wallet can be called without the real admin key.
+testing = []
 
 
 [dependencies]

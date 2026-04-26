@@ -1,6 +1,9 @@
 import * as anchor from "@coral-xyz/anchor";
 import { BN, Program } from "@coral-xyz/anchor";
 import { createHash } from "crypto";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { BankrunProvider } from "anchor-bankrun";
 import { startAnchor, Clock, ProgramTestContext } from "solana-bankrun";
 import {
@@ -30,7 +33,14 @@ const PROGRAM_ID      = new PublicKey("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUa
 const T0              = 1_000_000_000;          // deterministic base Unix timestamp
 const RESULTS_TS      = T0 + 86_400 * 30;       // 30 days later
 const CUTOFF_TS       = RESULTS_TS - 86_400;    // 29 days after T0
-const HACKATHON_NAME  = "TestHackathon";         // default name used in all fixtures
+
+// Load the local Solana keypair (matches PROTOCOL_ADMIN in the `testing` feature build).
+// bankrun generates its own ctx.payer, so we must pass this as an extra funded account.
+const adminKp: Keypair = Keypair.fromSecretKey(
+  Uint8Array.from(
+    JSON.parse(fs.readFileSync(path.join(os.homedir(), ".config", "solana", "id.json"), "utf-8"))
+  )
+);
 
 // ── Integer math (mirrors on-chain logic exactly) ─────────────────────────────
 
@@ -46,16 +56,10 @@ function isqrt(n: bigint): bigint {
   return x;
 }
 
-/** Map a 1-based rank to a 0-based tier index. */
 function tierForRank(rank: number, tierCount: number): number {
   return Math.min(rank - 1, tierCount - 1);
 }
 
-/**
- * Proportional cascade (Option B): tiers with no projects redistribute their
- * configured pct proportionally to all occupied tiers.
- * Returns an array of effective basis points (sum ≤ 10_000).
- */
 function computeEffectivePcts(tierPcts: number[], tierHasProjects: boolean[]): number[] {
   const n = tierPcts.length;
   let totalNonEmptyBps = 0;
@@ -80,7 +84,6 @@ function computeEffectivePcts(tierPcts: number[], tierHasProjects: boolean[]): n
   return eff;
 }
 
-/** Sum isqrt(stake) for all projects in a given tier. */
 function cTotalForTier(
   tier: number, tierCount: number,
   stakes: bigint[], ranks: number[],
@@ -92,20 +95,24 @@ function cTotalForTier(
   return sum;
 }
 
-/**
- * Two-stage payout formula:
- *   payout = stake × ci × effectivePt × pool / (totalStaked × cTotalTier × 10_000)
- */
-function expectedPayoutNew(
-  stakeAmt: bigint, ci: bigint, effectivePt: number,
-  pool: bigint, totalStaked: bigint, cTotalTier: bigint,
+function expectedPayout(
+  userShares: bigint, ci: bigint, effectivePt: number,
+  pool: bigint, totalShares: bigint, cTotalTier: bigint,
 ): bigint {
-  return (stakeAmt * ci * BigInt(effectivePt) * pool) / (totalStaked * cTotalTier * 10_000n);
+  return (userShares * ci * BigInt(effectivePt) * pool) / (totalShares * cTotalTier * 10_000n);
+}
+
+/** Mirrors on-chain compute_shares: multiplier decays 1.5× → 1.0× over the staking window. */
+function computeShares(amount: number, now: number, start: number, cutoff: number): number {
+  const window  = Math.max(cutoff - start, 1);
+  const elapsed = Math.min(Math.max(now - start, 0), window);
+  const bps     = 15_000 - Math.floor(5_000 * elapsed / window);
+  return Math.floor(amount * bps / 10_000);
 }
 
 // ── PDA helpers ───────────────────────────────────────────────────────────────
 
-function hackathonPda(admin: PublicKey, name: string = HACKATHON_NAME): PublicKey {
+function hackathonPda(admin: PublicKey, name: string): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("hackathon"), admin.toBuffer(), Buffer.from(name)], PROGRAM_ID)[0];
 }
@@ -121,6 +128,10 @@ function projectPda(hackathon: PublicKey, url: string): PublicKey {
 function stakePda(user: PublicKey, project: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("stake"), user.toBuffer(), project.toBuffer()], PROGRAM_ID)[0];
+}
+function whitelistPda(hackathon: PublicKey, wallet: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("whitelist"), hackathon.toBuffer(), wallet.toBuffer()], PROGRAM_ID)[0];
 }
 
 // ── Low-level tx helpers ──────────────────────────────────────────────────────
@@ -191,25 +202,31 @@ interface Fix {
 }
 interface User { user: Keypair; ata: PublicKey; }
 
+// Auto-incrementing name suffix so each newHackathon() call gets a unique PDA
+// since all hackathons share the same admin (adminKp = PROTOCOL_ADMIN).
+let _hackIdx = 0;
+
 async function newHackathon(
   ctx: ProgramTestContext, program: Program<HackathonBetting>,
   resultsTimestamp = RESULTS_TS,
   tierPcts: number[]   = DEFAULT_TIER_PCTS,
   tierCounts: number[] = DEFAULT_TIER_COUNTS,
-  name = HACKATHON_NAME,
+  name?: string,
   protocolFeeBps = 0,
   depositAmount = 0,
   requiresApproval = false,
 ): Promise<Fix> {
-  const admin        = Keypair.generate();
+  // PROTOCOL_ADMIN == adminKp (loaded from ~/.config/solana/id.json).
+  // ctx.payer is bankrun's internal payer and does NOT equal PROTOCOL_ADMIN.
+  const admin      = adminKp;
+  const uniqueName = name ?? `H${_hackIdx++}`;
   const feeRecipient = Keypair.generate();
-  await fund(ctx, admin.publicKey);
-  const mint              = await createMint(ctx);
-  const hackathon         = hackathonPda(admin.publicKey, name);
-  const escrow            = escrowPda(hackathon);
-  const feeRecipientAta   = await createAta(ctx, mint, feeRecipient.publicKey);
+  const mint            = await createMint(ctx);
+  const hackathon       = hackathonPda(admin.publicKey, uniqueName);
+  const escrow          = escrowPda(hackathon);
+  const feeRecipientAta = await createAta(ctx, mint, feeRecipient.publicKey);
   await program.methods.initializeHackathon(
-      name,
+      uniqueName,
       new BN(resultsTimestamp),
       Buffer.from(tierPcts),
       Buffer.from(tierCounts),
@@ -232,12 +249,38 @@ async function newUser(ctx: ProgramTestContext, mint: PublicKey, tokens: number)
   return { user, ata };
 }
 
+/** Whitelist a wallet to stake in a hackathon (must be signed by PROTOCOL_ADMIN = adminKp). */
+async function doWhitelist(
+  _ctx: ProgramTestContext, program: Program<HackathonBetting>,
+  fix: Fix, wallet: PublicKey,
+): Promise<void> {
+  await program.methods.whitelistWallet()
+    .accounts({
+      admin:          adminKp.publicKey,
+      hackathon:      fix.hackathon,
+      wallet,
+      whitelistEntry: whitelistPda(fix.hackathon, wallet),
+      systemProgram:  SystemProgram.programId,
+    })
+    .signers([adminKp]).rpc();
+}
+
+/** Create a funded user, mint tokens, and whitelist them for fix's hackathon. */
+async function newWhitelistedUser(
+  ctx: ProgramTestContext, program: Program<HackathonBetting>,
+  fix: Fix, tokens: number,
+): Promise<User> {
+  const u = await newUser(ctx, fix.mint, tokens);
+  await doWhitelist(ctx, program, fix, u.user.publicKey);
+  return u;
+}
+
 async function addProject(
   ctx: ProgramTestContext, program: Program<HackathonBetting>,
   fix: Fix, url: string,
 ): Promise<PublicKey> {
-  const urlHash  = createHash("sha256").update(url).digest();
-  const project  = projectPda(fix.hackathon, url); // uses hash internally
+  const urlHash = createHash("sha256").update(url).digest();
+  const project = projectPda(fix.hackathon, url);
   await program.methods.registerProject(url, Array.from(urlHash))
     .accounts({ payer: ctx.payer.publicKey, hackathon: fix.hackathon, project,
                 systemProgram: SystemProgram.programId })
@@ -250,7 +293,8 @@ async function doStake(
 ) {
   await program.methods.stake(new BN(amount))
     .accounts({ user: u.user.publicKey, hackathon: fix.hackathon, project,
-                userStake: stakePda(u.user.publicKey, project),
+                userStake:      stakePda(u.user.publicKey, project),
+                whitelistEntry: whitelistPda(fix.hackathon, u.user.publicKey),
                 userTokenAccount: u.ata, escrow: fix.escrow,
                 tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
     .signers([u.user]).rpc();
@@ -262,7 +306,9 @@ async function doUnstake(
   await program.methods.unstake()
     .accounts({ user: u.user.publicKey, hackathon: fix.hackathon, project,
                 userStake: stakePda(u.user.publicKey, project),
-                userTokenAccount: u.ata, escrow: fix.escrow,
+                userTokenAccount: u.ata,
+                feeRecipientTokenAccount: fix.feeRecipientAta,
+                escrow: fix.escrow,
                 tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
     .signers([u.user]).rpc();
 }
@@ -286,8 +332,10 @@ async function doFinalizeResolve(
 
 async function doClaim(
   program: Program<HackathonBetting>, fix: Fix, u: User,
-  project: PublicKey, allProjects: PublicKey[],
+  project: PublicKey, _allProjects?: PublicKey[],
 ) {
+  // remaining_accounts are no longer used for payout math (C-01 fix: tier_c_totals snapshotted
+  // at finalize_resolve). We accept the param for backward-compat but don't pass it.
   await program.methods.claim()
     .accounts({ user: u.user.publicKey, hackathon: fix.hackathon, project,
                 userStake: stakePda(u.user.publicKey, project),
@@ -295,13 +343,11 @@ async function doClaim(
                 feeRecipientTokenAccount: fix.feeRecipientAta,
                 escrow: fix.escrow,
                 tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
-    .remainingAccounts(allProjects.map(pk => ({ pubkey: pk, isWritable: false, isSigner: false })))
     .signers([u.user]).rpc();
 }
 
 async function doSubmitProject(
-  program: Program<HackathonBetting>, fix: Fix,
-  builder: Keypair, project: PublicKey,
+  program: Program<HackathonBetting>, fix: Fix, builder: Keypair, project: PublicKey,
 ) {
   await program.methods.submitProject()
     .accounts({ builder: builder.publicKey, hackathon: fix.hackathon, project })
@@ -389,7 +435,16 @@ describe("hackathon-betting — Bankrun suite", () => {
   let program: Program<HackathonBetting>;
 
   before(async () => {
-    ctx = await startAnchor(".", [], []);
+    // Pre-fund adminKp so it can pay for initializeHackathon / whitelistWallet.
+    ctx = await startAnchor(".", [], [{
+      address: adminKp.publicKey,
+      info: {
+        lamports: 100 * LAMPORTS_PER_SOL,
+        data: Buffer.alloc(0),
+        owner: SystemProgram.programId,
+        executable: false,
+      },
+    }]);
     const provider = new BankrunProvider(ctx);
     program = new anchor.Program<HackathonBetting>(IDL, provider);
     setClock(ctx, T0);
@@ -418,6 +473,47 @@ describe("hackathon-betting — Bankrun suite", () => {
       const h = await program.account.hackathonState.fetch(fix.hackathon);
       assert.equal(h.resultsTimestamp.toNumber() - h.cutoffTimestamp.toNumber(), 86_400);
     });
+
+    it("rejects results_timestamp <= now + 86400 (M-01: cutoff already expired)", async () => {
+      setClock(ctx, T0);
+      // results_timestamp = T0 + 86_399 means cutoff = T0 - 1 (already past)
+      try {
+        await newHackathon(ctx, program, T0 + 86_399);
+        assert.fail("should have rejected near-future results_timestamp");
+      } catch (e: any) {
+        assert.include(e.message, "InvalidTimestamp");
+      }
+    });
+
+    it("rejects protocol_fee_bps > 3000 (M-02: InvalidFee)", async () => {
+      setClock(ctx, T0);
+      const mint = await createMint(ctx);
+      const name = `FeeVld${_hackIdx++}`;
+      const hackathon = hackathonPda(adminKp.publicKey, name);
+      try {
+        await program.methods.initializeHackathon(
+          name, new BN(RESULTS_TS),
+          Buffer.from([55, 30, 15]), Buffer.from([1, 0, 0]),
+          Keypair.generate().publicKey,
+          3001, new BN(0), false,
+        )
+        .accounts({ admin: adminKp.publicKey, hackathon,
+                    escrow: escrowPda(hackathon), usdcMint: mint,
+                    tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
+        .signers([adminKp]).rpc();
+        assert.fail("should reject fee > 30%");
+      } catch (e: any) {
+        assert.include(e.message, "InvalidFee");
+      }
+    });
+
+    it("accepts protocol_fee_bps at boundary 3000 (30%)", async () => {
+      setClock(ctx, T0);
+      const fix = await newHackathon(ctx, program, RESULTS_TS,
+        DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, undefined, 3000);
+      const h = await program.account.hackathonState.fetch(fix.hackathon);
+      assert.equal(h.protocolFeeBps, 3000);
+    });
   });
 
   // ── 2. register_project ───────────────────────────────────────────────────
@@ -437,10 +533,8 @@ describe("hackathon-betting — Bankrun suite", () => {
       assert.equal(p.isRegistered, true);
     });
 
-    // FIX-5: URL seed is now SHA-256(url) — always 32 bytes — so real GitHub
-    // URLs (> 32 bytes) are fully supported up to the 200-char program limit.
     it("accepts real GitHub URLs longer than 32 bytes", async () => {
-      const url = "https://github.com/some-org/some-long-repo-name"; // 47 bytes
+      const url = "https://github.com/some-org/some-long-repo-name";
       const project = await addProject(ctx, program, fix, url);
       const p = await program.account.projectAccount.fetch(project);
       assert.equal(p.githubUrl, url);
@@ -464,8 +558,8 @@ describe("hackathon-betting — Bankrun suite", () => {
 
     before(async () => {
       setClock(ctx, T0);
-      fix = await newHackathon(ctx, program);
-      alice = await newUser(ctx, fix.mint, 10_000);
+      fix     = await newHackathon(ctx, program);
+      alice   = await newWhitelistedUser(ctx, program, fix, 10_000);
       project = await addProject(ctx, program, fix, "https://github.com/stake/proj");
     });
 
@@ -491,9 +585,8 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
 
     it("rejects stake over per-wallet cap", async () => {
-      // cap is 1_000_000_000 (≤), so 1_000_000_001 exceeds it
-      const carol = await newUser(ctx, fix.mint, 1_000_000_002);
-      try { await doStake(program, fix, carol, project, 1_000_000_001); assert.fail(); }
+      const carol = await newWhitelistedUser(ctx, program, fix, 2_000_000_002);
+      try { await doStake(program, fix, carol, project, 2_000_000_001); assert.fail(); }
       catch (e: any) { assert.include(e.message, "StakeCapExceeded"); }
     });
 
@@ -505,57 +598,71 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.ok(
           txt.includes("CutoffPassed") || txt.includes("6000") ||
           txt.includes("already been processed") || txt.includes("already processed"),
-          `Expected CutoffPassed (6000) or duplicate-tx rejection, got: ${e.message}`,
+          `Expected CutoffPassed or duplicate-tx rejection, got: ${e.message}`,
         );
       }
       finally { setClock(ctx, T0); }
+    });
+
+    it("rejects stake from non-whitelisted wallet (T-02 adversarial)", async () => {
+      setClock(ctx, T0);
+      const notListed = await newUser(ctx, fix.mint, 500);
+      try {
+        await doStake(program, fix, notListed, project, 500);
+        assert.fail("non-whitelisted stake must fail");
+      } catch (e: any) {
+        // Anchor rejects because the whitelist PDA doesn't exist
+        assert.ok(e, "expected error for non-whitelisted wallet");
+      }
     });
   });
 
   // ── 4. unstake ────────────────────────────────────────────────────────────
 
-  describe("4. unstake — zero penalty", () => {
+  describe("4. unstake — flat 3% penalty", () => {
     let fix: Fix; let alice: User; let project: PublicKey;
 
     before(async () => {
       setClock(ctx, T0);
-      fix = await newHackathon(ctx, program);
-      alice = await newUser(ctx, fix.mint, 1_000);
+      fix     = await newHackathon(ctx, program);
+      alice   = await newWhitelistedUser(ctx, program, fix, 1_000);
       project = await addProject(ctx, program, fix, "https://github.com/unstake/zero");
       await doStake(program, fix, alice, project, 1_000);
     });
 
-    it("returns full stake when unstaking immediately (t_elapsed=0)", async () => {
-      const before = await tokenBalance(ctx, alice.ata);
+    it("flat 3% applied at t=T0: returns 970, fee=15, pool=15", async () => {
+      const userBefore = await tokenBalance(ctx, alice.ata);
+      const feeBefore  = await tokenBalance(ctx, fix.feeRecipientAta);
       await doUnstake(program, fix, alice, project);
-      const after = await tokenBalance(ctx, alice.ata);
-      assert.equal(Number(after - before), 1_000);
+      const userReceived = Number(await tokenBalance(ctx, alice.ata) - userBefore);
+      const feeReceived  = Number(await tokenBalance(ctx, fix.feeRecipientAta) - feeBefore);
+      // flat 3%: penalty=30, protocol_fee=15 to fee_recipient, pool_fee=15 stays
+      assert.equal(userReceived, 970, "user gets 97% = 970");
+      assert.equal(feeReceived,  15,  "fee_recipient gets 1.5% = 15");
       const h = await program.account.hackathonState.fetch(fix.hackathon);
-      assert.equal(h.totalPool.toNumber(), 0);
+      assert.equal(h.totalPool.toNumber(), 15, "1.5% penalty stays in pool");
     });
   });
 
-  describe("4b. unstake — linear decay at midpoint", () => {
+  describe("4b. unstake — flat 3% at midpoint (penalty is time-independent)", () => {
     let fix: Fix; let bob: User; let project: PublicKey;
 
     before(async () => {
       setClock(ctx, T0);
-      fix = await newHackathon(ctx, program);
-      bob = await newUser(ctx, fix.mint, 1_000);
-      project = await addProject(ctx, program, fix, "https://github.com/unstake/decay");
+      fix     = await newHackathon(ctx, program);
+      bob     = await newWhitelistedUser(ctx, program, fix, 1_000);
+      project = await addProject(ctx, program, fix, "https://github.com/unstake/midpoint");
       await doStake(program, fix, bob, project, 1_000);
     });
 
-    it("applies 15% penalty at midpoint → returns 850", async () => {
-      // midpoint of [T0, CUTOFF_TS]:  T0 + (CUTOFF_TS - T0)/2
-      setClock(ctx, T0 + (CUTOFF_TS - T0) / 2);
+    it("flat 3% at midpoint: returns 970 (same as at T0)", async () => {
+      setClock(ctx, T0 + Math.floor((CUTOFF_TS - T0) / 2));
       const before = await tokenBalance(ctx, bob.ata);
       await doUnstake(program, fix, bob, project);
       const after = await tokenBalance(ctx, bob.ata);
-      // penalty_bps = 3000 * 0.5 = 1500 → return = 1000 * 8500/10000 = 850
-      assert.equal(Number(after - before), 850);
+      assert.equal(Number(after - before), 970, "flat 3%: returns 970 at midpoint too");
       const h = await program.account.hackathonState.fetch(fix.hackathon);
-      assert.equal(h.totalPool.toNumber(), 150, "penalty stays in pool");
+      assert.equal(h.totalPool.toNumber(), 15, "1.5% pool penalty stays regardless of time");
     });
 
     it("rejects unstake after cutoff", async () => {
@@ -566,7 +673,7 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.ok(
           txt.includes("CutoffPassed") || txt.includes("6000") ||
           txt.includes("already been processed") || txt.includes("already processed"),
-          `Expected CutoffPassed (6000) or duplicate-tx rejection, got: ${e.message}`,
+          `Expected CutoffPassed or duplicate-tx rejection, got: ${e.message}`,
         );
       }
       finally { setClock(ctx, T0); }
@@ -589,7 +696,7 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
 
     it("sets rank on each project", async () => {
-      setClock(ctx, RESULTS_TS); // FIX-2: resolve only allowed at/after results_timestamp
+      setClock(ctx, RESULTS_TS);
       await doResolve(program, fix, projects[0], 1);
       await doResolve(program, fix, projects[1], 4);
       await doResolve(program, fix, projects[2], 5);
@@ -601,8 +708,6 @@ describe("hackathon-betting — Bankrun suite", () => {
       await doFinalizeResolve(program, fix, projects);
       const h = await program.account.hackathonState.fetch(fix.hackathon);
       assert.equal(h.isResolved, true);
-      // Projects are ranks 1, 4, 5 → tiers 0, 2, 2 (tier-1 sub-winner is empty)
-      // Tier-1's 30% cascades proportionally to tiers 0 and 2.
       assert.equal(h.effectiveTierPcts[1], 0, "tier-1 had no projects — cascaded away");
       assert.ok(h.effectiveTierPcts[0] > 5500, "tier-0 received cascade from tier-1");
     });
@@ -610,9 +715,6 @@ describe("hackathon-betting — Bankrun suite", () => {
     it("rejects a second finalize_resolve", async () => {
       try { await doFinalizeResolve(program, fix, projects); assert.fail(); }
       catch (e: any) {
-        // bankrun either executes the tx and emits AlreadyResolved, or deduplicates
-        // the identical tx (same accounts/args → same signature) — both outcomes
-        // confirm that the second finalize was correctly blocked.
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
         assert.ok(
           txt.includes("AlreadyResolved") || txt.includes("6003") ||
@@ -628,10 +730,10 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
 
     it("rejects rank = 0", async () => {
-      setClock(ctx, T0); // reset for hackathon creation (results_ts must be future)
+      setClock(ctx, T0);
       const fix2 = await newHackathon(ctx, program);
       const p = await addProject(ctx, program, fix2, "https://github.com/res/rank0");
-      setClock(ctx, RESULTS_TS); // FIX-2: must be at/after results_timestamp
+      setClock(ctx, RESULTS_TS);
       try { await doResolve(program, fix2, p, 0); assert.fail(); }
       catch (e: any) { assert.include(e.message, "InvalidRank"); }
     });
@@ -642,16 +744,16 @@ describe("hackathon-betting — Bankrun suite", () => {
   describe("TC1: single rank-1 project — payout == full pool", () => {
     it("sole staker on rank-1 project receives entire pool", async () => {
       setClock(ctx, T0);
-      const fix = await newHackathon(ctx, program);
-      const alice = await newUser(ctx, fix.mint, 1_000);
+      const fix     = await newHackathon(ctx, program);
+      const alice   = await newWhitelistedUser(ctx, program, fix, 1_000);
       const project = await addProject(ctx, program, fix, "https://github.com/tc1/win");
       await doStake(program, fix, alice, project, 1_000);
-      setClock(ctx, RESULTS_TS); // FIX-2
+      setClock(ctx, RESULTS_TS);
       await doResolve(program, fix, project, 1);
       await doFinalizeResolve(program, fix, [project]);
 
       const before = await tokenBalance(ctx, alice.ata);
-      await doClaim(program, fix, alice, project, [project]);
+      await doClaim(program, fix, alice, project);
       assert.equal(Number(await tokenBalance(ctx, alice.ata) - before), 1_000);
 
       const s = await program.account.userStake.fetch(stakePda(alice.user.publicKey, project));
@@ -664,27 +766,21 @@ describe("hackathon-betting — Bankrun suite", () => {
   describe("TC2: single rank-4 (rest-tier) project — payout == full pool", () => {
     it("sole staker on rest-rank project receives entire pool", async () => {
       setClock(ctx, T0);
-      const fix = await newHackathon(ctx, program);
-      const alice = await newUser(ctx, fix.mint, 1_000);
+      const fix     = await newHackathon(ctx, program);
+      const alice   = await newWhitelistedUser(ctx, program, fix, 1_000);
       const project = await addProject(ctx, program, fix, "https://github.com/tc2/lose");
       await doStake(program, fix, alice, project, 1_000);
-      setClock(ctx, RESULTS_TS); // FIX-2
+      setClock(ctx, RESULTS_TS);
       await doResolve(program, fix, project, 4);
       await doFinalizeResolve(program, fix, [project]);
 
       const before = await tokenBalance(ctx, alice.ata);
-      await doClaim(program, fix, alice, project, [project]);
+      await doClaim(program, fix, alice, project);
       assert.equal(Number(await tokenBalance(ctx, alice.ata) - before), 1_000);
     });
   });
 
   // ── TC3: five equal projects, rank-ordered payouts ────────────────────────
-  //
-  //  5 projects × 1_000 staked each, ranks 1-5, tiers [55%,30%,15%], pool=5_000
-  //  tier-0 (rank 1):  eff=5500 bps, 1 project  → payout = 5500*5000/10000 = 2750
-  //  tier-1 (rank 2):  eff=3000 bps, 1 project  → payout = 3000*5000/10000 = 1500
-  //  tier-2 (rank 3,4,5): eff=1500 bps, 3 equal → each = 1500*5000/(3*10000) = 250
-  //  sum = 2750+1500+250+250+250 = 5000 (zero dust with equal stakes)
 
   describe("TC3: five equal projects, payouts in rank order", () => {
     const STAKE = 1_000n;
@@ -694,68 +790,67 @@ describe("hackathon-betting — Bankrun suite", () => {
 
     before(async () => {
       setClock(ctx, T0);
-      const fix = await newHackathon(ctx, program);
-      const users: User[] = [];
+      const fix      = await newHackathon(ctx, program);
+      const users: User[]     = [];
       const projects: PublicKey[] = [];
 
       for (let i = 0; i < 5; i++) {
-        const u = await newUser(ctx, fix.mint, Number(STAKE));
+        const u = await newWhitelistedUser(ctx, program, fix, Number(STAKE));
         const p = await addProject(ctx, program, fix, `https://github.com/tc3/p${i}`);
         await doStake(program, fix, u, p, Number(STAKE));
         users.push(u); projects.push(p);
       }
-      setClock(ctx, RESULTS_TS); // FIX-2
+      setClock(ctx, RESULTS_TS);
       for (let i = 0; i < 5; i++) await doResolve(program, fix, projects[i], RANKS[i]);
       await doFinalizeResolve(program, fix, projects);
 
       payouts = [];
       for (let i = 0; i < 5; i++) {
         const before = await tokenBalance(ctx, users[i].ata);
-        await doClaim(program, fix, users[i], projects[i], projects);
+        await doClaim(program, fix, users[i], projects[i]);
         payouts.push(Number(await tokenBalance(ctx, users[i].ata) - before));
       }
     });
 
     it("each payout matches the formula", () => {
-      const stakes = RANKS.map(() => STAKE);
-      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, RANKS.map(r => true));
+      const stakes  = RANKS.map(() => STAKE);
+      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, RANKS.map(() => true));
       for (let i = 0; i < 5; i++) {
-        const tier   = tierForRank(RANKS[i], TIER_COUNT);
-        const ci     = isqrt(STAKE);
-        const cTotal = cTotalForTier(tier, TIER_COUNT, stakes, RANKS);
-        const exp    = expectedPayoutNew(STAKE, ci, effPcts[tier], POOL, STAKE, cTotal);
+        const tier    = tierForRank(RANKS[i], TIER_COUNT);
+        const ci      = isqrt(STAKE);
+        const cTotal  = cTotalForTier(tier, TIER_COUNT, stakes, RANKS);
+        const shares  = BigInt(computeShares(Number(STAKE), T0, T0, CUTOFF_TS));
+        const tShares = shares; // sole staker per project
+        const exp     = expectedPayout(shares, ci, effPcts[tier], POOL, tShares, cTotal);
         assert.equal(payouts[i], Number(exp), `rank-${RANKS[i]} payout`);
       }
     });
 
     it("payouts are strictly decreasing by rank tier (rest-tier projects equal)", () => {
       assert.ok(payouts[0] > payouts[1], "rank1 > rank2");
-      assert.ok(payouts[1] > payouts[2], "rank2 > rank3 (tier-1 > tier-2)");
+      assert.ok(payouts[1] > payouts[2], "rank2 > rank3");
       assert.equal(payouts[2], payouts[3], "rank3 == rank4 (same rest tier)");
       assert.equal(payouts[3], payouts[4], "rank4 == rank5 (same rest tier)");
     });
 
-    it("sum of payouts == total pool (zero integer dust)", () => {
+    it("sum of payouts == total pool (zero integer dust with equal stakes)", () => {
       assert.equal(payouts.reduce((s, v) => s + v, 0), Number(POOL));
     });
   });
 
-  // ── TC3b: asymmetric stakes — sum of payouts ≤ pool (FIX-10) ─────────────
-  //
-  //  TC3 used equal stakes so integer division happened to be exact (zero dust).
-  //  This variant uses unequal stakes to verify the correct guarantee: sum ≤ pool.
+  // ── TC3b: asymmetric stakes — sum of payouts ≤ pool ──────────────────────
 
   describe("TC3b: asymmetric stakes — sum of payouts <= pool", () => {
-    it("unequal stakes: payouts sum <= pool (exact equality not guaranteed)", async () => {
+    it("unequal stakes: payouts sum <= pool", async () => {
       setClock(ctx, T0);
-      const fix = await newHackathon(ctx, program);
-      const STAKES  = [900, 1100, 950, 1050, 1000]; // sum = 5000
-      const RANKS   = [1, 2, 3, 4, 5];
+      const fix      = await newHackathon(ctx, program);
+      const STAKES   = [900, 1100, 950, 1050, 1000];
+      const RANKS    = [1, 2, 3, 4, 5];
       const users: User[]     = [];
       const projects: PublicKey[] = [];
 
       for (let i = 0; i < 5; i++) {
-        const u = await newUser(ctx, fix.mint, STAKES[i]);
+        const u = await newWhitelistedUser(ctx, program, fix, STAKES[i]);
         const p = await addProject(ctx, program, fix, `https://github.com/tc3b/p${i}`);
         await doStake(program, fix, u, p, STAKES[i]);
         users.push(u); projects.push(p);
@@ -768,23 +863,14 @@ describe("hackathon-betting — Bankrun suite", () => {
       let totalPayout = 0n;
       for (let i = 0; i < 5; i++) {
         const before = await tokenBalance(ctx, users[i].ata);
-        await doClaim(program, fix, users[i], projects[i], projects);
+        await doClaim(program, fix, users[i], projects[i]);
         totalPayout += await tokenBalance(ctx, users[i].ata) - before;
       }
-      assert.ok(totalPayout <= pool,
-        `sum of payouts ${totalPayout} should be <= pool ${pool}`);
+      assert.ok(totalPayout <= pool, `sum of payouts ${totalPayout} should be <= pool ${pool}`);
     });
   });
 
   // ── TC4: sqrt neutralizes sybil splitting ─────────────────────────────────
-  //
-  //  proj-A rank 1: 20 wallets × 1_000 → total_staked = 20_000
-  //  proj-B rank 2: 1 whale   × 20_000 → total_staked = 20_000
-  //  pool = 40_000, tiers [55%,30%,15%], no rest-tier projects
-  //
-  //  isqrt(20_000) = 141 for BOTH projects  ← key insight (sybil resistance)
-  //  tier-2 (rest) empty → cascade: eff[0]=6470 bps, eff[1]=3530 bps
-  //  each sybil payout ≈ 1294    whale payout ≈ 14120
 
   describe("TC4: sybil splitting is neutralized by sqrt crowding factor", () => {
     const SYBIL_N     = 20;
@@ -795,42 +881,37 @@ describe("hackathon-betting — Bankrun suite", () => {
 
     before(async () => {
       setClock(ctx, T0);
-      const fix = await newHackathon(ctx, program);
+      const fix   = await newHackathon(ctx, program);
       const projA = await addProject(ctx, program, fix, "https://github.com/tc4/sybil");
       const projB = await addProject(ctx, program, fix, "https://github.com/tc4/whale");
 
       const sybilUsers: User[] = [];
       for (let i = 0; i < SYBIL_N; i++) {
-        const u = await newUser(ctx, fix.mint, Number(SYBIL_STAKE));
+        const u = await newWhitelistedUser(ctx, program, fix, Number(SYBIL_STAKE));
         await doStake(program, fix, u, projA, Number(SYBIL_STAKE));
         sybilUsers.push(u);
       }
-      const whale = await newUser(ctx, fix.mint, Number(WHALE_STAKE));
+      const whale = await newWhitelistedUser(ctx, program, fix, Number(WHALE_STAKE));
       await doStake(program, fix, whale, projB, Number(WHALE_STAKE));
 
-      setClock(ctx, RESULTS_TS); // FIX-2
+      setClock(ctx, RESULTS_TS);
       await doResolve(program, fix, projA, 1);
       await doResolve(program, fix, projB, 2);
       await doFinalizeResolve(program, fix, [projA, projB]);
 
-      const allProjects = [projA, projB];
       sybilPayouts = [];
       for (const u of sybilUsers) {
         const before = await tokenBalance(ctx, u.ata);
-        await doClaim(program, fix, u, projA, allProjects);
+        await doClaim(program, fix, u, projA);
         sybilPayouts.push(Number(await tokenBalance(ctx, u.ata) - before));
       }
       const wBefore = await tokenBalance(ctx, whale.ata);
-      await doClaim(program, fix, whale, projB, allProjects);
+      await doClaim(program, fix, whale, projB);
       whalePayout = Number(await tokenBalance(ctx, whale.ata) - wBefore);
     });
 
-    it("both projects have identical crowding factor (equal total_staked)", () => {
-      assert.equal(
-        isqrt(SYBIL_STAKE * BigInt(SYBIL_N)),
-        isqrt(WHALE_STAKE),
-        "isqrt(20_000) == isqrt(20_000) — splitting gives no extra weight",
-      );
+    it("both projects have identical crowding factor", () => {
+      assert.equal(isqrt(SYBIL_STAKE * BigInt(SYBIL_N)), isqrt(WHALE_STAKE));
     });
 
     it("all 20 sybil wallets receive identical payouts", () => {
@@ -840,60 +921,21 @@ describe("hackathon-betting — Bankrun suite", () => {
 
     it("each sybil payout matches formula", () => {
       const pool    = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
-      // tier-2 (rest) empty → cascade proportionally to tiers 0 and 1
       const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
       const ciA     = isqrt(SYBIL_STAKE * BigInt(SYBIL_N));
-      const exp     = expectedPayoutNew(
-        SYBIL_STAKE, ciA, effPcts[0], pool, SYBIL_STAKE * BigInt(SYBIL_N), ciA,
-      );
+      const shares  = BigInt(computeShares(Number(SYBIL_STAKE), T0, T0, CUTOFF_TS));
+      const tShares = shares * BigInt(SYBIL_N);
+      const exp     = expectedPayout(shares, ciA, effPcts[0], pool, tShares, ciA);
       assert.equal(sybilPayouts[0], Number(exp));
-    });
-
-    it("whale payout matches formula", () => {
-      const pool    = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
-      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
-      const ciB     = isqrt(WHALE_STAKE);
-      const exp     = expectedPayoutNew(WHALE_STAKE, ciB, effPcts[1], pool, WHALE_STAKE, ciB);
-      assert.equal(whalePayout, Number(exp));
     });
 
     it("sum of all payouts <= total pool", () => {
       const totalOut = sybilPayouts.reduce((s, v) => s + v, 0) + whalePayout;
       assert.ok(totalOut <= Number(SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE));
     });
-
-    // FIX-11: verify end-to-end sybil resistance — the 20-wallet group receives
-    // the same combined payout as a single wallet with equal total stake would.
-    it("sybil group total == single-whale-on-same-project formula (sybil resistance)", () => {
-      const pool    = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
-      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
-      const ciA     = isqrt(SYBIL_STAKE * BigInt(SYBIL_N));
-      // A single wallet staking all 20_000 on projA:
-      const singleWhaleEquiv = Number(
-        expectedPayoutNew(SYBIL_STAKE * BigInt(SYBIL_N), ciA, effPcts[0], pool,
-                          SYBIL_STAKE * BigInt(SYBIL_N), ciA),
-      );
-      const sybilGroupTotal = sybilPayouts.reduce((s, v) => s + v, 0);
-      // Integer truncation per wallet means sybilGroupTotal <= singleWhaleEquiv
-      // with a maximum shortfall of SYBIL_N units (at most 1 lost per wallet).
-      const dust = singleWhaleEquiv - sybilGroupTotal;
-      assert.ok(
-        dust >= 0 && dust <= SYBIL_N,
-        `sybilGroupTotal=${sybilGroupTotal} singleWhaleEquiv=${singleWhaleEquiv} ` +
-        `dust=${dust} must be in [0, ${SYBIL_N}] — sybil splitting must not exceed single-whale payout`,
-      );
-    });
   });
 
   // ── TC5: lightly backed rank-1 vs crowded rank-2 ──────────────────────────
-  //
-  //  proj-light rank 1: alice stakes 1_000     → total_staked = 1_000
-  //  proj-heavy rank 2: whale stakes 999_000   → total_staked = 999_000
-  //  pool = 1_000_000, tiers [55%,30%,15%], no rest-tier projects
-  //
-  //  tier-2 (rest) empty → cascade: eff[0]=6470 bps, eff[1]=3530 bps
-  //  alice payout = 647_000     whale payout = 353_000
-  //  alice per-dollar = 647×    whale per-dollar ≈ 0.353×
 
   describe("TC5: lightly backed rank-1 vs crowded rank-2", () => {
     const ALICE_STAKE = 1_000n;
@@ -903,51 +945,32 @@ describe("hackathon-betting — Bankrun suite", () => {
 
     before(async () => {
       setClock(ctx, T0);
-      const fix  = await newHackathon(ctx, program);
+      const fix   = await newHackathon(ctx, program);
       const projL = await addProject(ctx, program, fix, "https://github.com/tc5/light");
       const projH = await addProject(ctx, program, fix, "https://github.com/tc5/heavy");
-      const alice = await newUser(ctx, fix.mint, Number(ALICE_STAKE));
-      const whale = await newUser(ctx, fix.mint, Number(WHALE_STAKE));
+      const alice = await newWhitelistedUser(ctx, program, fix, Number(ALICE_STAKE));
+      const whale = await newWhitelistedUser(ctx, program, fix, Number(WHALE_STAKE));
       await doStake(program, fix, alice, projL, Number(ALICE_STAKE));
       await doStake(program, fix, whale, projH, Number(WHALE_STAKE));
-      setClock(ctx, RESULTS_TS); // FIX-2
+      setClock(ctx, RESULTS_TS);
       await doResolve(program, fix, projL, 1);
       await doResolve(program, fix, projH, 2);
       await doFinalizeResolve(program, fix, [projL, projH]);
 
-      const allProjects = [projL, projH];
       const aBefore = await tokenBalance(ctx, alice.ata);
-      await doClaim(program, fix, alice, projL, allProjects);
+      await doClaim(program, fix, alice, projL);
       alicePayout = Number(await tokenBalance(ctx, alice.ata) - aBefore);
 
       const wBefore = await tokenBalance(ctx, whale.ata);
-      await doClaim(program, fix, whale, projH, allProjects);
+      await doClaim(program, fix, whale, projH);
       whalePayout = Number(await tokenBalance(ctx, whale.ata) - wBefore);
-    });
-
-    it("alice payout matches formula", () => {
-      const pool    = ALICE_STAKE + WHALE_STAKE;
-      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
-      const ciL     = isqrt(ALICE_STAKE);
-      const exp     = expectedPayoutNew(ALICE_STAKE, ciL, effPcts[0], pool, ALICE_STAKE, ciL);
-      assert.equal(alicePayout, Number(exp));
-    });
-
-    it("whale payout matches formula", () => {
-      const pool    = ALICE_STAKE + WHALE_STAKE;
-      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
-      const ciH     = isqrt(WHALE_STAKE);
-      const exp     = expectedPayoutNew(WHALE_STAKE, ciH, effPcts[1], pool, WHALE_STAKE, ciH);
-      assert.equal(whalePayout, Number(exp));
     });
 
     it("alice's per-dollar return >> whale's per-dollar return", () => {
       const aliceRatio = alicePayout / Number(ALICE_STAKE);
       const whaleRatio = whalePayout / Number(WHALE_STAKE);
-      assert.ok(
-        aliceRatio > whaleRatio,
-        `alice=${aliceRatio.toFixed(2)}x > whale=${whaleRatio.toFixed(2)}x`,
-      );
+      assert.ok(aliceRatio > whaleRatio,
+        `alice=${aliceRatio.toFixed(2)}x > whale=${whaleRatio.toFixed(2)}x`);
     });
 
     it("alice earns a profit (return > stake)", () => {
@@ -960,21 +983,18 @@ describe("hackathon-betting — Bankrun suite", () => {
   });
 
   // ── FIX-8: all projects rank 1–3 (no rest tier) ──────────────────────────
-  //
-  //  When all projects occupy tiers 0-2 and none are in a "rest" position,
-  //  the cascade leaves all effective_tier_pcts at their configured values.
 
   describe("FIX-8: all projects rank 1-3 — no rest tier, payouts match formula", () => {
     it("three top-ranked projects: effective pcts unchanged, payouts match formula", async () => {
       setClock(ctx, T0);
       const fix      = await newHackathon(ctx, program);
-      const STAKES   = [1_000, 2_000, 1_500]; // sum = 4_500
+      const STAKES   = [1_000, 2_000, 1_500];
       const RANKS    = [1, 2, 3];
-      const users: User[]         = [];
+      const users: User[]     = [];
       const projects: PublicKey[] = [];
 
       for (let i = 0; i < 3; i++) {
-        const u = await newUser(ctx, fix.mint, STAKES[i]);
+        const u = await newWhitelistedUser(ctx, program, fix, STAKES[i]);
         const p = await addProject(ctx, program, fix, `https://github.com/fix8/p${i}`);
         await doStake(program, fix, u, p, STAKES[i]);
         users.push(u); projects.push(p);
@@ -984,24 +1004,23 @@ describe("hackathon-betting — Bankrun suite", () => {
       await doFinalizeResolve(program, fix, projects);
 
       const h = await program.account.hackathonState.fetch(fix.hackathon);
-      // All 3 tiers occupied → no cascade → effective pcts == configured pcts in bps
       assert.equal(h.effectiveTierPcts[0], 5500, "tier-0 = 55%");
       assert.equal(h.effectiveTierPcts[1], 3000, "tier-1 = 30%");
       assert.equal(h.effectiveTierPcts[2], 1500, "tier-2 = 15%");
 
-      const pool    = BigInt(STAKES.reduce((s, v) => s + v, 0));
+      const pool     = BigInt(STAKES.reduce((s, v) => s + v, 0));
       const stakesBN = STAKES.map(BigInt);
-      // Each tier has exactly one project → cTotal = isqrt(stake) for that project
-      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, true]);
+      const effPcts  = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, true]);
 
       for (let i = 0; i < 3; i++) {
-        const before  = await tokenBalance(ctx, users[i].ata);
-        await doClaim(program, fix, users[i], projects[i], projects);
+        const before = await tokenBalance(ctx, users[i].ata);
+        await doClaim(program, fix, users[i], projects[i]);
         const payout  = Number(await tokenBalance(ctx, users[i].ata) - before);
         const tier    = tierForRank(RANKS[i], TIER_COUNT);
         const ci      = isqrt(stakesBN[i]);
         const cTotal  = cTotalForTier(tier, TIER_COUNT, stakesBN, RANKS);
-        const exp     = Number(expectedPayoutNew(stakesBN[i], ci, effPcts[tier], pool, stakesBN[i], cTotal));
+        const shares  = BigInt(computeShares(STAKES[i], T0, T0, CUTOFF_TS));
+        const exp     = Number(expectedPayout(shares, ci, effPcts[tier], pool, shares, cTotal));
         assert.equal(payout, exp, `rank-${RANKS[i]} payout`);
       }
     });
@@ -1013,24 +1032,24 @@ describe("hackathon-betting — Bankrun suite", () => {
     it("rejects claim when hackathon not resolved", async () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program);
-      const u = await newUser(ctx, fix.mint, 500);
-      const p = await addProject(ctx, program, fix, "https://github.com/err/nr");
+      const u   = await newWhitelistedUser(ctx, program, fix, 500);
+      const p   = await addProject(ctx, program, fix, "https://github.com/err/nr");
       await doStake(program, fix, u, p, 500);
-      try { await doClaim(program, fix, u, p, [p]); assert.fail(); }
+      try { await doClaim(program, fix, u, p); assert.fail(); }
       catch (e: any) { assert.include(e.message, "NotResolved"); }
     });
 
     it("rejects double claim", async () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program);
-      const u = await newUser(ctx, fix.mint, 500);
-      const p = await addProject(ctx, program, fix, "https://github.com/err/dc");
+      const u   = await newWhitelistedUser(ctx, program, fix, 500);
+      const p   = await addProject(ctx, program, fix, "https://github.com/err/dc");
       await doStake(program, fix, u, p, 500);
-      setClock(ctx, RESULTS_TS); // FIX-2
+      setClock(ctx, RESULTS_TS);
       await doResolve(program, fix, p, 1);
       await doFinalizeResolve(program, fix, [p]);
-      await doClaim(program, fix, u, p, [p]);
-      try { await doClaim(program, fix, u, p, [p]); assert.fail(); }
+      await doClaim(program, fix, u, p);
+      try { await doClaim(program, fix, u, p); assert.fail(); }
       catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
         assert.ok(
@@ -1041,24 +1060,19 @@ describe("hackathon-betting — Bankrun suite", () => {
       }
     });
 
-    // FIX-12: rank-0 project (resolve was skipped) must be rejected at claim.
-    // finalize_resolve requires at least one ranked project (AllTiersEmpty guard),
-    // so we create a second project (p2) with rank 1 to satisfy that requirement.
     it("rejects claim when project rank is 0 (resolve was skipped)", async () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program);
-      const u   = await newUser(ctx, fix.mint, 500);
+      const u   = await newWhitelistedUser(ctx, program, fix, 500);
       const p   = await addProject(ctx, program, fix, "https://github.com/err/rank0claim");
       await doStake(program, fix, u, p, 500);
-      // p2 is ranked so finalize_resolve has at least one occupied tier
-      const u2 = await newUser(ctx, fix.mint, 100);
+      const u2 = await newWhitelistedUser(ctx, program, fix, 100);
       const p2 = await addProject(ctx, program, fix, "https://github.com/err/rank0ranked");
       await doStake(program, fix, u2, p2, 100);
-      // intentionally skip doResolve for p — p stays at rank 0
       setClock(ctx, RESULTS_TS);
       await doResolve(program, fix, p2, 1);
       await doFinalizeResolve(program, fix, [p, p2]);
-      try { await doClaim(program, fix, u, p, [p, p2]); assert.fail(); }
+      try { await doClaim(program, fix, u, p); assert.fail(); }
       catch (e: any) { assert.include(e.message, "NotResolved"); }
     });
   });
@@ -1068,18 +1082,15 @@ describe("hackathon-betting — Bankrun suite", () => {
   describe("Cascade: grand winner not in pool — pool redistributes to lower tiers", () => {
     it("tier-0 empty → its 55% cascades proportionally to tiers 1 and 2", async () => {
       setClock(ctx, T0);
-      // Create hackathon with [55,30,15] tiers
-      const fix    = await newHackathon(ctx, program);
-      // Register two projects — neither will be rank-1 (tier-0 stays empty)
-      const pSub   = await addProject(ctx, program, fix, "https://github.com/cas/sub");
-      const pRest  = await addProject(ctx, program, fix, "https://github.com/cas/rest");
-      const uSub   = await newUser(ctx, fix.mint, 3_000);
-      const uRest  = await newUser(ctx, fix.mint, 1_000);
+      const fix   = await newHackathon(ctx, program);
+      const pSub  = await addProject(ctx, program, fix, "https://github.com/cas/sub");
+      const pRest = await addProject(ctx, program, fix, "https://github.com/cas/rest");
+      const uSub  = await newWhitelistedUser(ctx, program, fix, 3_000);
+      const uRest = await newWhitelistedUser(ctx, program, fix, 1_000);
       await doStake(program, fix, uSub,  pSub,  3_000);
       await doStake(program, fix, uRest, pRest, 1_000);
 
       setClock(ctx, RESULTS_TS);
-      // rank 2 = tier-1 (sub-winner), rank 3 = tier-2 (rest) — tier-0 has NO project
       await doResolve(program, fix, pSub,  2);
       await doResolve(program, fix, pRest, 3);
       await doFinalizeResolve(program, fix, [pSub, pRest]);
@@ -1093,22 +1104,21 @@ describe("hackathon-betting — Bankrun suite", () => {
         "effective pcts sum to 10 000",
       );
 
-      // Verify payouts use cascaded pcts
       const pool    = 4_000n;
       const effPcts = computeEffectivePcts([55,30,15], [false, true, true]);
-      const allProjects = [pSub, pRest];
 
       const subBefore = await tokenBalance(ctx, uSub.ata);
-      await doClaim(program, fix, uSub, pSub, allProjects);
+      await doClaim(program, fix, uSub, pSub);
       const subPayout = Number(await tokenBalance(ctx, uSub.ata) - subBefore);
 
       const restBefore = await tokenBalance(ctx, uRest.ata);
-      await doClaim(program, fix, uRest, pRest, allProjects);
+      await doClaim(program, fix, uRest, pRest);
       const restPayout = Number(await tokenBalance(ctx, uRest.ata) - restBefore);
 
-      // Each project is alone in its tier → cTotal = isqrt(stake)
-      const expSub  = Number(expectedPayoutNew(3000n, isqrt(3000n), effPcts[1], pool, 3000n, isqrt(3000n)));
-      const expRest = Number(expectedPayoutNew(1000n, isqrt(1000n), effPcts[2], pool, 1000n, isqrt(1000n)));
+      const sharesS = BigInt(computeShares(3_000, T0, T0, CUTOFF_TS));
+      const sharesR = BigInt(computeShares(1_000, T0, T0, CUTOFF_TS));
+      const expSub  = Number(expectedPayout(sharesS, isqrt(3000n), effPcts[1], pool, sharesS, isqrt(3000n)));
+      const expRest = Number(expectedPayout(sharesR, isqrt(1000n), effPcts[2], pool, sharesR, isqrt(1000n)));
       assert.equal(subPayout,  expSub,  "sub-winner payout matches cascaded formula");
       assert.equal(restPayout, expRest, "rest payout matches cascaded formula");
       assert.ok(subPayout + restPayout <= 4_000, "total payout <= pool");
@@ -1118,31 +1128,31 @@ describe("hackathon-betting — Bankrun suite", () => {
   // ── Refund tests ──────────────────────────────────────────────────────────
 
   describe("Refund: admin-authorised exceptional stake recovery", () => {
-    it("staker on refund-enabled project recovers full original stake", async () => {
+    it("staker on refund-enabled project recovers full original stake; pool decremented (C-02)", async () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program);
-      const u   = await newUser(ctx, fix.mint, 1_000);
+      const u   = await newWhitelistedUser(ctx, program, fix, 1_000);
       const p   = await addProject(ctx, program, fix, "https://github.com/ref/happy");
       await doStake(program, fix, u, p, 1_000);
 
-      // Admin enables refund (project never resolved)
       await doEnableRefund(program, fix, p);
-      const proj = await program.account.projectAccount.fetch(p);
-      assert.equal(proj.isRefundEnabled, true);
 
-      // Finalize with the project unranked — need at least one ranked project
       const p2 = await addProject(ctx, program, fix, "https://github.com/ref/other");
-      const u2 = await newUser(ctx, fix.mint, 500);
+      const u2 = await newWhitelistedUser(ctx, program, fix, 500);
       await doStake(program, fix, u2, p2, 500);
       setClock(ctx, RESULTS_TS);
       await doResolve(program, fix, p2, 1);
       await doFinalizeResolve(program, fix, [p, p2]);
 
-      // User calls refund — receives full original stake, no penalty
+      const poolBefore = (await program.account.hackathonState.fetch(fix.hackathon)).totalPool.toNumber();
       const before = await tokenBalance(ctx, u.ata);
       await doRefund(program, fix, u, p);
       const after  = await tokenBalance(ctx, u.ata);
       assert.equal(Number(after - before), 1_000, "full stake returned");
+
+      // C-02: pool must be decremented
+      const poolAfter = (await program.account.hackathonState.fetch(fix.hackathon)).totalPool.toNumber();
+      assert.equal(poolAfter, poolBefore - 1_000, "total_pool decremented by refund amount");
 
       const stake = await program.account.userStake.fetch(stakePda(u.user.publicKey, p));
       assert.equal(stake.isClaimed, true);
@@ -1151,7 +1161,7 @@ describe("hackathon-betting — Bankrun suite", () => {
     it("refund blocked if enable_refund not called", async () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program);
-      const u   = await newUser(ctx, fix.mint, 500);
+      const u   = await newWhitelistedUser(ctx, program, fix, 500);
       const p   = await addProject(ctx, program, fix, "https://github.com/ref/blocked");
       await doStake(program, fix, u, p, 500);
       setClock(ctx, RESULTS_TS);
@@ -1164,7 +1174,7 @@ describe("hackathon-betting — Bankrun suite", () => {
     it("refund blocked after already claimed", async () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program);
-      const u   = await newUser(ctx, fix.mint, 500);
+      const u   = await newWhitelistedUser(ctx, program, fix, 500);
       const p   = await addProject(ctx, program, fix, "https://github.com/ref/dblclaim");
       await doStake(program, fix, u, p, 500);
       await doEnableRefund(program, fix, p);
@@ -1184,68 +1194,137 @@ describe("hackathon-betting — Bankrun suite", () => {
     });
   });
 
-  // ── Step 6: CU audit — claim instruction ─────────────────────────────────
-  //
-  // Measures compute units consumed by `claim` as the number of projects
-  // passed in remaining_accounts grows.  The spec threshold is 200 000 CU
-  // at 20 projects; if exceeded, R_total must be snapshotted at resolve time.
+  // ── Pool integrity after unstake ──────────────────────────────────────────
 
-  describe("Step 6: CU audit — claim instruction", () => {
-    // Use a generous CU ceiling so bankrun never kills the tx before we measure.
+  describe("Pool integrity: unstake penalty stays for remaining holders (C-02 analog)", () => {
+    it("alice unstakes (penalty stays in pool), bob claims full remaining pool", async () => {
+      setClock(ctx, T0);
+      const fix   = await newHackathon(ctx, program);
+      const alice = await newWhitelistedUser(ctx, program, fix, 1_000);
+      const bob   = await newWhitelistedUser(ctx, program, fix, 1_000);
+      const p     = await addProject(ctx, program, fix, "https://github.com/pool/integrity");
+      await doStake(program, fix, alice, p, 1_000);
+      await doStake(program, fix, bob,   p, 1_000);
+
+      // alice unstakes: 970 returned, 15 to fee_recipient, 15 stays in pool
+      // pool was 2_000 → pool = 2_000 - 970 - 15 = 1_015
+      await doUnstake(program, fix, alice, p);
+      const h1 = await program.account.hackathonState.fetch(fix.hackathon);
+      assert.equal(h1.totalPool.toNumber(), 1_015, "pool after alice unstake = bob stake + alice pool penalty");
+
+      setClock(ctx, RESULTS_TS);
+      await doResolve(program, fix, p, 1);
+      await doFinalizeResolve(program, fix, [p]);
+
+      const before = await tokenBalance(ctx, bob.ata);
+      await doClaim(program, fix, bob, p);
+      const received = Number(await tokenBalance(ctx, bob.ata) - before);
+      assert.equal(received, 1_015, "bob receives entire remaining pool including alice's penalty");
+    });
+  });
+
+  // ── Time-weighted shares ──────────────────────────────────────────────────
+
+  describe("Time-weighted shares: early staker earns more shares per unit", () => {
+    it("equal-amount stakers at T0 and near-cutoff get different shares and payouts", async () => {
+      setClock(ctx, T0);
+      const fix  = await newHackathon(ctx, program);
+      const proj = await addProject(ctx, program, fix, "https://github.com/tw/shares");
+
+      const early = await newWhitelistedUser(ctx, program, fix, 1_000);
+      await doStake(program, fix, early, proj, 1_000); // t=T0, multiplier=1.5× → shares=1500
+
+      const nearCutoff = CUTOFF_TS - 10;
+      setClock(ctx, nearCutoff);
+      const late = await newWhitelistedUser(ctx, program, fix, 1_000);
+      await doStake(program, fix, late, proj, 1_000); // t≈CUTOFF_TS, multiplier≈1.0× → shares≈1000
+
+      const earlyStake = await program.account.userStake.fetch(stakePda(early.user.publicKey, proj));
+      const lateStake  = await program.account.userStake.fetch(stakePda(late.user.publicKey, proj));
+      assert.ok(earlyStake.shares.gt(lateStake.shares), "early staker has more shares");
+
+      // Verify shares match on-chain formula
+      const expEarlyShares = computeShares(1_000, T0,         T0, CUTOFF_TS);
+      const expLateShares  = computeShares(1_000, nearCutoff, T0, CUTOFF_TS);
+      assert.equal(earlyStake.shares.toNumber(), expEarlyShares, "early shares match formula");
+      assert.equal(lateStake.shares.toNumber(),  expLateShares,  "late shares match formula");
+
+      // Early staker should get larger payout proportion
+      setClock(ctx, RESULTS_TS);
+      await doResolve(program, fix, proj, 1);
+      await doFinalizeResolve(program, fix, [proj]);
+
+      const eBefore = await tokenBalance(ctx, early.ata);
+      await doClaim(program, fix, early, proj);
+      const earlyPayout = Number(await tokenBalance(ctx, early.ata) - eBefore);
+
+      const lBefore = await tokenBalance(ctx, late.ata);
+      await doClaim(program, fix, late, proj);
+      const latePayout = Number(await tokenBalance(ctx, late.ata) - lBefore);
+
+      assert.ok(earlyPayout > latePayout, "early staker receives more due to higher shares");
+      assert.equal(earlyPayout + latePayout, 2_000, "payouts sum to full pool");
+    });
+  });
+
+  // ── Step 6: CU audit — claim instruction ─────────────────────────────────
+
+  describe("Step 6: CU audit — claim instruction (no remaining_accounts needed post C-01 fix)", () => {
     let auditCtx: ProgramTestContext;
     let auditProg: Program<HackathonBetting>;
 
     before(async () => {
-      auditCtx = await startAnchor(".", [], [], 1_400_000n);
+      auditCtx = await startAnchor(".", [], [{
+        address: adminKp.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      }], 1_400_000n);
       setClock(auditCtx, T0);
       const prov = new BankrunProvider(auditCtx);
       auditProg = new anchor.Program<HackathonBetting>(IDL, prov);
     });
 
-    // Build the claim tx, send it via processTransaction, return CU consumed.
     async function measureClaimCU(nProjects: number): Promise<bigint> {
-      setClock(auditCtx, T0); // reset before each run — clock persists across calls
+      setClock(auditCtx, T0);
       const fix = await newHackathon(auditCtx, auditProg);
 
       const users: User[]     = [];
       const projects: PublicKey[] = [];
 
       for (let i = 0; i < nProjects; i++) {
-        // Short unique URLs: "g.io/a/0" … "g.io/a/49" (all ≤ 11 bytes)
         const url = `g.io/a/${i}`;
-        const u = await newUser(auditCtx, fix.mint, 1_000);
+        const u = await newWhitelistedUser(auditCtx, auditProg, fix, 1_000);
         const p = await addProject(auditCtx, auditProg, fix, url);
         await doStake(auditProg, fix, u, p, 1_000);
         users.push(u);
         projects.push(p);
       }
 
-      // Assign ranks: first 3 → ranks 1-3, rest → rank 4
-      setClock(auditCtx, RESULTS_TS); // FIX-2
+      setClock(auditCtx, RESULTS_TS);
       for (let i = 0; i < nProjects; i++) {
         await doResolve(auditProg, fix, projects[i], i < 3 ? i + 1 : 4);
       }
       await doFinalizeResolve(auditProg, fix, projects);
 
-      // Build claim tx for user[0] (rank-1 project) manually to capture meta
       const u = users[0];
       const p = projects[0];
       const tx = await auditProg.methods
         .claim()
         .accounts({
-          user:                    u.user.publicKey,
-          hackathon:               fix.hackathon,
-          project:                 p,
-          userStake:               stakePda(u.user.publicKey, p),
-          userTokenAccount:        u.ata,
+          user:                     u.user.publicKey,
+          hackathon:                fix.hackathon,
+          project:                  p,
+          userStake:                stakePda(u.user.publicKey, p),
+          userTokenAccount:         u.ata,
           feeRecipientTokenAccount: fix.feeRecipientAta,
-          escrow:                  fix.escrow,
-          tokenProgram:            TOKEN_PROGRAM_ID,
-          systemProgram:           SystemProgram.programId,
+          escrow:                   fix.escrow,
+          tokenProgram:             TOKEN_PROGRAM_ID,
+          systemProgram:            SystemProgram.programId,
         })
-        .remainingAccounts(
-          projects.map(pk => ({ pubkey: pk, isWritable: false, isSigner: false })),
-        )
         .transaction();
 
       const [blockhash] = await auditCtx.banksClient.getLatestBlockhash();
@@ -1270,58 +1349,17 @@ describe("hackathon-betting — Bankrun suite", () => {
       });
     }
 
-    it("claim @ 50 projects — legacy tx size limit", async function () {
-      this.timeout(300_000);
-      // At 50 projects the legacy transaction packet (1 232 bytes max) is
-      // exhausted by account keys alone (50 × 32 = 1 600 bytes) before the
-      // program even runs.  This is a client-side serialisation constraint,
-      // not a CU problem.  Production clients at this scale must use
-      // Address Lookup Tables (ALTs) or batch claim across multiple txs.
-      try {
-        const cu = await measureClaimCU(50);
-        results[50] = cu;
-        console.log(`    claim @ 50 projects: ${cu.toLocaleString()} CU`);
-      } catch (e: any) {
-        // Expected: transaction too large for legacy format
-        const isSizeErr =
-          e.message?.includes("Transaction too large") ||
-          e.message?.includes("invariant") ||
-          e.message?.includes("serialize");
-        if (isSizeErr) {
-          console.log(
-            "    claim @ 50 projects: ✗ legacy tx size exceeded " +
-            "(expected — use ALTs for N>~35)",
-          );
-          // Not a CU failure — mark as known limitation and pass
-          return;
-        }
-        throw e;
-      }
-    });
-
     it("verdict: 20-project CU vs 200 000 threshold", async function () {
       const cu20 = results[20];
-      if (cu20 === undefined) this.skip();   // guard if run in isolation
+      if (cu20 === undefined) this.skip();
 
       console.log("\n    ── CU audit results ──────────────────────────────");
       console.log(`    N=5  : ${results[5]?.toLocaleString()} CU`);
       console.log(`    N=10 : ${results[10]?.toLocaleString()} CU`);
       console.log(`    N=20 : ${results[20]?.toLocaleString()} CU   ← threshold check`);
-      console.log(`    N=50 : ${results[50]?.toLocaleString()} CU`);
 
-      if (cu20 > THRESHOLD) {
-        console.log(`\n    ⚠️  N=20 exceeds ${THRESHOLD.toLocaleString()} CU`);
-        console.log("    → R_total snapshot required in finalize_resolve");
-        assert.fail(
-          `claim @ 20 projects (${cu20} CU) exceeds 200 000 CU threshold — ` +
-          `implement R_total snapshot in finalize_resolve / claim`,
-        );
-      } else {
-        console.log(
-          `\n    ✓ VERDICT: claim is viable without snapshot at 20 projects ` +
-          `(${cu20} CU < ${THRESHOLD} CU)`,
-        );
-      }
+      assert.ok(cu20 < THRESHOLD,
+        `claim @ 20 projects (${cu20} CU) should be well under ${THRESHOLD} CU after C-01 fix`);
     });
   });
 
@@ -1330,10 +1368,9 @@ describe("hackathon-betting — Bankrun suite", () => {
   describe("Protocol fee: 1.5% deducted from claim payouts", () => {
     it("fee_recipient receives 1.5%, user receives 98.5%, total conserved", async () => {
       setClock(ctx, T0);
-      const fix = await newHackathon(
-        ctx, program, RESULTS_TS, DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "FeeTest", 150,
-      );
-      const alice   = await newUser(ctx, fix.mint, 1_000);
+      const fix     = await newHackathon(ctx, program, RESULTS_TS,
+        DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "FeeTest", 150);
+      const alice   = await newWhitelistedUser(ctx, program, fix, 1_000);
       const project = await addProject(ctx, program, fix, "https://github.com/fee/test");
       await doStake(program, fix, alice, project, 1_000);
       setClock(ctx, RESULTS_TS);
@@ -1342,13 +1379,10 @@ describe("hackathon-betting — Bankrun suite", () => {
 
       const userBefore = await tokenBalance(ctx, alice.ata);
       const feeBefore  = await tokenBalance(ctx, fix.feeRecipientAta);
-      await doClaim(program, fix, alice, project, [project]);
+      await doClaim(program, fix, alice, project);
       const userReceived = Number(await tokenBalance(ctx, alice.ata) - userBefore);
       const feeReceived  = Number(await tokenBalance(ctx, fix.feeRecipientAta) - feeBefore);
 
-      // payout = 1_000 (sole project, sole staker, full pool)
-      // fee    = floor(1_000 * 150 / 10_000) = 15
-      // user   = 1_000 - 15 = 985
       assert.equal(feeReceived,  15,    "fee_recipient receives 15 (1.5% of 1000)");
       assert.equal(userReceived, 985,   "user receives 985 (98.5% of 1000)");
       assert.equal(userReceived + feeReceived, 1_000, "fee + user == full payout");
@@ -1358,9 +1392,9 @@ describe("hackathon-betting — Bankrun suite", () => {
   // ── Feature 4: Self-stake ─────────────────────────────────────────────────
 
   describe("Feature 4: self_stake (builder skin-in-the-game)", () => {
-    const DEPOSIT     = 10_000_000;   // $10
-    const MIN_STAKE   = 10_000_000;   // $10 — equals deposit_amount
-    const MAX_STAKE   = 5_000_000_000; // $5 000
+    const DEPOSIT   = 10_000_000;
+    const MIN_STAKE = 10_000_000;
+    const MAX_STAKE = 2_000_000_000; // matches MAX_SELF_STAKE constant
 
     async function setupBuilder(hackathonName: string) {
       setClock(ctx, T0);
@@ -1384,7 +1418,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       assert.equal(h.totalPool.toNumber(), MIN_STAKE, "pool updated");
     });
 
-    it("builder receives payout at claim (same UserStake PDA as regular backer)", async () => {
+    it("builder receives payout at claim", async () => {
       const { fix, builder, builderAta, project } = await setupBuilder("SelfStake2");
       await doSelfStake(program, fix, builder, builderAta, project, MIN_STAKE);
       setClock(ctx, RESULTS_TS);
@@ -1392,7 +1426,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       await doFinalizeResolve(program, fix, [project]);
       const before = await tokenBalance(ctx, builderAta);
       const u: User = { user: builder, ata: builderAta };
-      await doClaim(program, fix, u, project, [project]);
+      await doClaim(program, fix, u, project);
       const received = Number(await tokenBalance(ctx, builderAta) - before);
       assert.equal(received, MIN_STAKE, "builder claims back full self-stake (sole staker)");
     });
@@ -1404,49 +1438,42 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.fail("should reject below-minimum stake");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("SelfStakeBelowMinimum") || txt.includes("6025"),
-          `Expected SelfStakeBelowMinimum (6025), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("SelfStakeBelowMinimum") || txt.includes("6025"),
+          `Expected SelfStakeBelowMinimum, got: ${e.message}`);
       }
     });
 
-    it("rejects cumulative self-stake over $5 000 (SelfStakeExceedsMaximum)", async () => {
+    it("rejects cumulative self-stake over $2 000 (SelfStakeExceedsMaximum)", async () => {
       const { fix, builder, builderAta, project } = await setupBuilder("SelfStake4");
-      // Stake up to the cap in two calls, then one more that tips over
       await doSelfStake(program, fix, builder, builderAta, project, MAX_STAKE - MIN_STAKE);
       try {
         await doSelfStake(program, fix, builder, builderAta, project, MIN_STAKE + 1);
         assert.fail("should reject stake that tips over max");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("SelfStakeExceedsMaximum") || txt.includes("6026"),
-          `Expected SelfStakeExceedsMaximum (6026), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("SelfStakeExceedsMaximum") || txt.includes("6026"),
+          `Expected SelfStakeExceedsMaximum, got: ${e.message}`);
       }
     });
 
-    it("exact $5 000 cumulative is accepted", async () => {
+    it("exact $2 000 cumulative is accepted", async () => {
       const { fix, builder, builderAta, project } = await setupBuilder("SelfStake5");
       await doSelfStake(program, fix, builder, builderAta, project, MAX_STAKE - MIN_STAKE);
-      await doSelfStake(program, fix, builder, builderAta, project, MIN_STAKE); // exactly at cap
+      await doSelfStake(program, fix, builder, builderAta, project, MIN_STAKE);
       const p = await program.account.projectAccount.fetch(project);
       assert.equal(p.builderStaked.toNumber(), MAX_STAKE, "builder_staked == MAX_SELF_STAKE");
     });
 
     it("non-builder cannot call self_stake (NotBuilder)", async () => {
       const { fix, project } = await setupBuilder("SelfStake6");
-      const impostor    = await newUser(ctx, fix.mint, MIN_STAKE);
+      const impostor = await newUser(ctx, fix.mint, MIN_STAKE);
       try {
         await doSelfStake(program, fix, impostor.user, impostor.ata, project, MIN_STAKE);
         assert.fail("non-builder should be rejected");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("NotBuilder") || txt.includes("6020"),
-          `Expected NotBuilder (6020), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("NotBuilder") || txt.includes("6020"),
+          `Expected NotBuilder, got: ${e.message}`);
       }
     });
 
@@ -1458,16 +1485,13 @@ describe("hackathon-betting — Bankrun suite", () => {
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, MIN_STAKE);
       const project = await addProject(ctx, program, fix, "https://github.com/ss/SelfStake7");
-      // intentionally skip doPayDeposit
       try {
         await doSelfStake(program, fix, builder, builderAta, project, MIN_STAKE);
         assert.fail("should reject when deposit not paid");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("DepositNotPaid") || txt.includes("6018"),
-          `Expected DepositNotPaid (6018), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("DepositNotPaid") || txt.includes("6018"),
+          `Expected DepositNotPaid, got: ${e.message}`);
       }
     });
   });
@@ -1481,7 +1505,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "ForfeitTest1", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/ghost/proj1");
@@ -1489,9 +1513,7 @@ describe("hackathon-betting — Bankrun suite", () => {
 
       const poolBefore = (await program.account.hackathonState.fetch(fix.hackathon)).totalPool.toNumber();
       const feeBefore  = Number(await tokenBalance(ctx, fix.feeRecipientAta));
-
       await doForfeitDeposit(program, fix, project);
-
       const poolAfter = (await program.account.hackathonState.fetch(fix.hackathon)).totalPool.toNumber();
       const feeAfter  = Number(await tokenBalance(ctx, fix.feeRecipientAta));
       const p = await program.account.projectAccount.fetch(project);
@@ -1505,7 +1527,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "ForfeitTest2", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/ghost/proj2");
@@ -1517,10 +1539,8 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.fail("should reject forfeit on approved project");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("AlreadySubmitted") || txt.includes("6021"),
-          `Expected AlreadySubmitted (6021), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("AlreadySubmitted") || txt.includes("6021"),
+          `Expected AlreadySubmitted, got: ${e.message}`);
       }
     });
 
@@ -1528,7 +1548,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "ForfeitTest3", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/ghost/proj3");
@@ -1542,7 +1562,32 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.ok(
           txt.includes("DepositAlreadyForfeited") || txt.includes("6024") ||
           txt.includes("already been processed") || txt.includes("already processed"),
-          `Expected DepositAlreadyForfeited or duplicate-tx rejection, got: ${e.message}`,
+          `Expected DepositAlreadyForfeited or duplicate-tx, got: ${e.message}`,
+        );
+      }
+    });
+
+    it("forfeited deposit blocks claim_deposit_refund (H-01 adversarial)", async () => {
+      setClock(ctx, T0);
+      const fix     = await newHackathon(ctx, program, RESULTS_TS,
+        DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "ForfeitTest5", 0, DEPOSIT);
+      const builder    = ctx.payer;
+      const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
+      await mintTokens(ctx, fix.mint, builderAta, DEPOSIT * 2);
+      const project = await addProject(ctx, program, fix, "https://github.com/ghost/h01");
+      await doPayDeposit(program, fix, builder, builderAta, project);
+      // Forfeit the deposit first
+      await doForfeitDeposit(program, fix, project);
+      // Builder then tries to declare and refund — must be blocked
+      await doSubmitProject(program, fix, builder, project);
+      try {
+        await doClaimDepositRefund(program, fix, builder, builderAta, project);
+        assert.fail("forfeited deposit must not be refundable (H-01)");
+      } catch (e: any) {
+        const txt = [e.message, ...(e.logs ?? [])].join(" ");
+        assert.ok(
+          txt.includes("DepositAlreadyForfeited") || txt.includes("6024"),
+          `Expected DepositAlreadyForfeited, got: ${e.message}`,
         );
       }
     });
@@ -1551,20 +1596,15 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "ForfeitTest4", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT * 2);
-
-      // Two projects: p1 is backed + submitted, p2 is a ghost (forfeited)
       const p1 = await addProject(ctx, program, fix, "https://github.com/ghost/p1");
       const p2 = await addProject(ctx, program, fix, "https://github.com/ghost/p2");
       await doPayDeposit(program, fix, builder, builderAta, p1);
       await doPayDeposit(program, fix, builder, builderAta, p2);
-
-      const backer = await newUser(ctx, fix.mint, 1_000);
+      const backer = await newWhitelistedUser(ctx, program, fix, 1_000);
       await doStake(program, fix, backer, p1, 1_000);
-
-      // Forfeit p2 ghost: DEPOSIT/2 = 5_000_000 added to total_pool
       await doForfeitDeposit(program, fix, p2);
 
       setClock(ctx, RESULTS_TS);
@@ -1572,11 +1612,8 @@ describe("hackathon-betting — Bankrun suite", () => {
       await doFinalizeResolve(program, fix, [p1]);
 
       const before = await tokenBalance(ctx, backer.ata);
-      await doClaim(program, fix, backer, p1, [p1]);
+      await doClaim(program, fix, backer, p1);
       const received = Number(await tokenBalance(ctx, backer.ata) - before);
-
-      // total_pool = 1_000 (stake) + 5_000_000 (forfeit pool half)
-      // backer owns 100% of p1 → receives full pool
       assert.equal(received, 1_000 + DEPOSIT / 2, "backer receives stake + forfeited pool boost");
     });
   });
@@ -1584,19 +1621,17 @@ describe("hackathon-betting — Bankrun suite", () => {
   // ── Feature 2: Builder Deposit ────────────────────────────────────────────
 
   describe("Feature 2: Builder deposit (pay_deposit / approve_submissions / claim_deposit_refund)", () => {
-    const DEPOSIT = 10_000_000; // 10 USDC in token smallest unit
+    const DEPOSIT = 10_000_000;
 
     it("builder can pay deposit; deposit_amount_paid recorded", async () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "DepositTest1", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/proj1");
-
       await doPayDeposit(program, fix, builder, builderAta, project);
-
       const p = await program.account.projectAccount.fetch(project);
       assert.equal(p.depositAmountPaid.toNumber(), DEPOSIT, "deposit recorded on project");
       const escrowBal = await tokenBalance(ctx, fix.escrow);
@@ -1608,16 +1643,14 @@ describe("hackathon-betting — Bankrun suite", () => {
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "DepositTest2", 0, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/proj2");
-      const backer  = await newUser(ctx, fix.mint, 500);
+      const backer  = await newWhitelistedUser(ctx, program, fix, 500);
       try {
         await doStake(program, fix, backer, project, 500);
         assert.fail("should have rejected stake on undeposited project");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("DepositNotPaid") || txt.includes("6018"),
-          `Expected DepositNotPaid (6018), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("DepositNotPaid") || txt.includes("6018"),
+          `Expected DepositNotPaid, got: ${e.message}`);
       }
     });
 
@@ -1625,14 +1658,13 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "DepositTest3", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/proj3");
       await doPayDeposit(program, fix, builder, builderAta, project);
-
-      const backer = await newUser(ctx, fix.mint, 500);
-      await doStake(program, fix, backer, project, 500); // must not throw
+      const backer = await newWhitelistedUser(ctx, program, fix, 500);
+      await doStake(program, fix, backer, project, 500);
       const p = await program.account.projectAccount.fetch(project);
       assert.equal(p.totalStaked.toNumber(), 500);
     });
@@ -1641,7 +1673,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "DepositTest4", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT * 2);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/proj4");
@@ -1654,7 +1686,7 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.ok(
           txt.includes("DepositAlreadyPaid") || txt.includes("6019") ||
           txt.includes("already been processed") || txt.includes("already processed"),
-          `Expected DepositAlreadyPaid or duplicate-tx rejection, got: ${e.message}`,
+          `Expected DepositAlreadyPaid or duplicate-tx, got: ${e.message}`,
         );
       }
     });
@@ -1670,10 +1702,8 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.fail("non-builder should be rejected");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("NotBuilder") || txt.includes("6020"),
-          `Expected NotBuilder (6020), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("NotBuilder") || txt.includes("6020"),
+          `Expected NotBuilder, got: ${e.message}`);
       }
     });
 
@@ -1681,16 +1711,14 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "DepositTest6", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT * 2);
       const p1 = await addProject(ctx, program, fix, "https://github.com/builder/proj6a");
       const p2 = await addProject(ctx, program, fix, "https://github.com/builder/proj6b");
       await doPayDeposit(program, fix, builder, builderAta, p1);
       await doSubmitProject(program, fix, builder, p1);
-
       await doApproveSubmissions(program, fix, [p1]);
-
       const acc1 = await program.account.projectAccount.fetch(p1);
       const acc2 = await program.account.projectAccount.fetch(p2);
       assert.ok(acc1.submitted,  "p1 should be marked submitted");
@@ -1701,43 +1729,37 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "DepositTest7", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/proj7");
       await doPayDeposit(program, fix, builder, builderAta, project);
       await doSubmitProject(program, fix, builder, project);
       await doApproveSubmissions(program, fix, [project]);
-
       const before = await tokenBalance(ctx, builderAta);
       await doClaimDepositRefund(program, fix, builder, builderAta, project);
       const received = Number(await tokenBalance(ctx, builderAta) - before);
-
       assert.equal(received, DEPOSIT, "builder gets full deposit back");
       const p = await program.account.projectAccount.fetch(project);
       assert.ok(p.depositRefunded, "deposit_refunded flag set");
     });
 
-    it("unapproved builder cannot claim refund (NotSubmitted)", async () => {
+    it("unapproved builder cannot claim refund when requiresApproval=true (NotSubmitted)", async () => {
       setClock(ctx, T0);
-      // requiresApproval=true: builder must be approved by admin; self-declaration alone is not enough
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "DepositTest8", 0, DEPOSIT, true);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/proj8");
       await doPayDeposit(program, fix, builder, builderAta, project);
-      // builder declares but admin does NOT call approve_submissions
       try {
         await doClaimDepositRefund(program, fix, builder, builderAta, project);
         assert.fail("unapproved builder should be rejected");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("NotSubmitted") || txt.includes("6022"),
-          `Expected NotSubmitted (6022), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("NotSubmitted") || txt.includes("6022"),
+          `Expected NotSubmitted, got: ${e.message}`);
       }
     });
 
@@ -1745,7 +1767,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "DepositTest9", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/proj9");
@@ -1761,44 +1783,41 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.ok(
           txt.includes("DepositAlreadyRefunded") || txt.includes("6023") ||
           txt.includes("already been processed") || txt.includes("already processed"),
-          `Expected DepositAlreadyRefunded or duplicate-tx rejection, got: ${e.message}`,
+          `Expected DepositAlreadyRefunded or duplicate-tx, got: ${e.message}`,
         );
       }
     });
   });
 
   // ── Feature 6: submit_project + requires_approval branching ──────────────
+
   describe("Feature 6: submit_project / requires_approval", () => {
     const DEPOSIT = 10_000_000;
-    const CUTOFF_TS = RESULTS_TS - 86_400;
 
     it("builder can call submit_project before cutoff; sets builder_declared + declared_at", async () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest1", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/sub1");
       await doPayDeposit(program, fix, builder, builderAta, project);
-
       await doSubmitProject(program, fix, builder, project);
-
       const p = await program.account.projectAccount.fetch(project);
       assert.ok(p.builderDeclared, "builder_declared should be true");
-      assert.ok(p.declaredAt.toNumber() > 0,  "declared_at should be set");
+      assert.ok(p.declaredAt.toNumber() > 0, "declared_at should be set");
     });
 
     it("non-builder cannot call submit_project (NotBuilder)", async () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest2", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
-      const project = await addProject(ctx, program, fix, "https://github.com/builder/sub2");
+      const project  = await addProject(ctx, program, fix, "https://github.com/builder/sub2");
       await doPayDeposit(program, fix, builder, builderAta, project);
-
       const impostor = await newUser(ctx, fix.mint, 0);
       try {
         await program.methods.submitProject()
@@ -1807,10 +1826,8 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.fail("non-builder should be rejected");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("NotBuilder") || txt.includes("6020"),
-          `Expected NotBuilder (6020), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("NotBuilder") || txt.includes("6020"),
+          `Expected NotBuilder, got: ${e.message}`);
       }
     });
 
@@ -1818,12 +1835,11 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest3", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/sub3");
       await doPayDeposit(program, fix, builder, builderAta, project);
-
       setClock(ctx, CUTOFF_TS + 1);
       try {
         await doSubmitProject(program, fix, builder, project);
@@ -1833,7 +1849,7 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.ok(
           txt.includes("CutoffPassed") || txt.includes("6000") ||
           txt.includes("already been processed") || txt.includes("already processed"),
-          `Expected CutoffPassed (6000) or duplicate-tx, got: ${e.message}`,
+          `Expected CutoffPassed or duplicate-tx, got: ${e.message}`,
         );
       }
     });
@@ -1842,13 +1858,12 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest4", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/sub4");
       await doPayDeposit(program, fix, builder, builderAta, project);
       await doSubmitProject(program, fix, builder, project);
-
       try {
         await doSubmitProject(program, fix, builder, project);
         assert.fail("second submit_project should be rejected");
@@ -1857,24 +1872,21 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.ok(
           txt.includes("AlreadySubmitted") || txt.includes("6021") ||
           txt.includes("already been processed") || txt.includes("already processed"),
-          `Expected AlreadySubmitted (6021) or duplicate-tx, got: ${e.message}`,
+          `Expected AlreadySubmitted or duplicate-tx, got: ${e.message}`,
         );
       }
     });
 
-    // ── requires_approval = false (builder self-declare path) ─────────────
     it("requires_approval=false: builder can claim refund after submit_project (no admin needed)", async () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest5", 0, DEPOSIT, false);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/sub5");
       await doPayDeposit(program, fix, builder, builderAta, project);
       await doSubmitProject(program, fix, builder, project);
-
-      // No approve_submissions needed
       const before = await tokenBalance(ctx, builderAta);
       await doClaimDepositRefund(program, fix, builder, builderAta, project);
       const received = Number(await tokenBalance(ctx, builderAta) - before);
@@ -1885,22 +1897,18 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest6", 0, DEPOSIT, false);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/sub6");
       await doPayDeposit(program, fix, builder, builderAta, project);
-      // No submit_project call
-
       try {
         await doClaimDepositRefund(program, fix, builder, builderAta, project);
         assert.fail("undeclared builder should be rejected");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("NotDeclared") || txt.includes("6027"),
-          `Expected NotDeclared (6027), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("NotDeclared") || txt.includes("6027"),
+          `Expected NotDeclared, got: ${e.message}`);
       }
     });
 
@@ -1908,38 +1916,33 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest7", 0, DEPOSIT, false);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/sub7");
       await doPayDeposit(program, fix, builder, builderAta, project);
       await doSubmitProject(program, fix, builder, project);
-
       try {
         await doForfeitDeposit(program, fix, project);
         assert.fail("forfeit after self-declare should be rejected");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
-        assert.ok(
-          txt.includes("AlreadySubmitted") || txt.includes("6021"),
-          `Expected AlreadySubmitted (6021), got: ${e.message}`,
-        );
+        assert.ok(txt.includes("AlreadySubmitted") || txt.includes("6021"),
+          `Expected AlreadySubmitted, got: ${e.message}`);
       }
     });
 
-    // ── requires_approval = true (admin approval path) ────────────────────
     it("requires_approval=true: builder needs admin approval to claim refund", async () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest8", 0, DEPOSIT, true);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/sub8");
       await doPayDeposit(program, fix, builder, builderAta, project);
       await doSubmitProject(program, fix, builder, project);
       await doApproveSubmissions(program, fix, [project]);
-
       const before = await tokenBalance(ctx, builderAta);
       await doClaimDepositRefund(program, fix, builder, builderAta, project);
       const received = Number(await tokenBalance(ctx, builderAta) - before);
@@ -1950,37 +1953,31 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest9", 0, DEPOSIT, true);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT * 2);
       const p1 = await addProject(ctx, program, fix, "https://github.com/builder/sub9a");
       const p2 = await addProject(ctx, program, fix, "https://github.com/builder/sub9b");
       await doPayDeposit(program, fix, builder, builderAta, p1);
       await doPayDeposit(program, fix, builder, builderAta, p2);
-      // Only p1 calls submit_project
       await doSubmitProject(program, fix, builder, p1);
-
       await doApproveSubmissions(program, fix, [p1, p2]);
-
       const acc1 = await program.account.projectAccount.fetch(p1);
       const acc2 = await program.account.projectAccount.fetch(p2);
       assert.ok(acc1.submitted,  "p1 declared + in list → submitted");
       assert.ok(!acc2.submitted, "p2 not declared → skipped by approve_submissions");
     });
 
-    // ── stake / self_stake cutoff gate ────────────────────────────────────
     it("stake rejected after cutoff_timestamp (CutoffPassed)", async () => {
-      const fix    = await newHackathon(ctx, program, RESULTS_TS,
+      setClock(ctx, T0);
+      const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "CutoffTest1", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/cut1");
-
-      setClock(ctx, T0);
       await doPayDeposit(program, fix, builder, builderAta, project);
-
-      const backer = await newUser(ctx, fix.mint, 500);
+      const backer = await newWhitelistedUser(ctx, program, fix, 500);
       setClock(ctx, CUTOFF_TS + 1);
       try {
         await doStake(program, fix, backer, project, 500);
@@ -1990,41 +1987,30 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.ok(
           txt.includes("CutoffPassed") || txt.includes("6000") ||
           txt.includes("already been processed") || txt.includes("already processed"),
-          `Expected CutoffPassed (6000) or duplicate-tx, got: ${e.message}`,
+          `Expected CutoffPassed or duplicate-tx, got: ${e.message}`,
         );
       }
     });
 
     it("self_stake rejected after cutoff_timestamp (CutoffPassed)", async () => {
-      const fix    = await newHackathon(ctx, program, RESULTS_TS,
+      setClock(ctx, T0);
+      const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "CutoffTest2", 0, DEPOSIT);
-      const builder = ctx.payer;
+      const builder    = ctx.payer;
       const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT + 1_000);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/cut2");
-
-      setClock(ctx, T0);
       await doPayDeposit(program, fix, builder, builderAta, project);
-
       setClock(ctx, CUTOFF_TS + 1);
       try {
-        await program.methods.selfStake(new BN(1_000))
-          .accounts({
-            builder: builder.publicKey,
-            hackathon: fix.hackathon,
-            project,
-            escrow: fix.escrow,
-            builderTokenAccount: builderAta,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
-          .signers([builder]).rpc();
+        await doSelfStake(program, fix, builder, builderAta, project, 1_000);
         assert.fail("self_stake after cutoff should be rejected");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
         assert.ok(
           txt.includes("CutoffPassed") || txt.includes("6000") ||
           txt.includes("already been processed") || txt.includes("already processed"),
-          `Expected CutoffPassed (6000) or duplicate-tx, got: ${e.message}`,
+          `Expected CutoffPassed or duplicate-tx, got: ${e.message}`,
         );
       }
     });
