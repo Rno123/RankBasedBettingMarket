@@ -15,6 +15,7 @@ export interface HackathonInfo {
   cutoffTimestamp: number;
   startTimestamp: number;
   totalPool: bigint;
+  depositAmount: bigint;
   isResolved: boolean;
   tierCount: number;
   tierPcts: number[];
@@ -60,6 +61,7 @@ export function useHackathons() {
               cutoffTimestamp: Number(d.cutoffTimestamp),
               startTimestamp: Number(d.startTimestamp),
               totalPool: BigInt((d.totalPool ?? 0).toString()),
+              depositAmount: BigInt((d.depositAmount ?? 0).toString()),
               isResolved: d.isResolved as boolean,
               tierCount: d.tierCount as number,
               tierPcts: Array.from(d.tierPcts as number[]).slice(0, d.tierCount),

@@ -3,7 +3,11 @@
 import { use, useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import Link from "next/link";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet, useAnchorWallet } from "@solana/wallet-adapter-react";
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { SystemProgram } from "@solana/web3.js";
+import { getProgram } from "@/lib/program";
+import { escrowPda, stakePda } from "@/lib/pda";
 import Navbar from "@/components/Navbar";
 import StakeModal from "@/components/StakeModal";
 import ClaimButton from "@/components/ClaimButton";
@@ -63,8 +67,34 @@ function ProjectRow({
   stakeRefreshKey?: number;
 }) {
   const { publicKey } = useWallet();
+  const anchorWallet = useAnchorWallet();
   const { stake } = useUserStake(publicKey, project.pubkey, stakeRefreshKey);
   const [modalOpen, setModalOpen] = useState(false);
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [refundErr, setRefundErr] = useState<string | null>(null);
+
+  async function handleRefund() {
+    if (!publicKey || !anchorWallet) return;
+    setRefundBusy(true); setRefundErr(null);
+    try {
+      const program = getProgram(anchorWallet);
+      const userAta = getAssociatedTokenAddressSync(hackathon.usdcMint, publicKey);
+      const escrow = escrowPda(hackathon.pubkey);
+      const userStake = stakePda(publicKey, project.pubkey);
+      await (program.methods as any).refund().accounts({
+        user: publicKey,
+        hackathon: hackathon.pubkey,
+        project: project.pubkey,
+        userStake,
+        userTokenAccount: userAta,
+        escrow,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      }).rpc();
+      onStakeUpdated();
+    } catch (e: any) { setRefundErr(e.message ?? "Refund failed"); }
+    finally { setRefundBusy(false); }
+  }
 
   const totalPool = hackathon.totalPool;
   const share =
@@ -111,7 +141,14 @@ function ProjectRow({
 
           {/* Action button */}
           <div style={{ flexShrink: 0 }}>
-            {status === "resolved" && stake && !stake.isClaimed && stake.amount > 0n ? (
+            {project.isRefundEnabled && stake && stake.amount > 0n && !stake.isClaimed ? (
+              <div>
+                <button onClick={handleRefund} disabled={refundBusy || !publicKey} className="ui-btn ui-btn-amber ui-btn-sm">
+                  {refundBusy ? "Refunding…" : "Refund stake"}
+                </button>
+                {refundErr && <p style={{ marginTop: "4px", fontSize: "0.75rem", color: "var(--c-red-text)" }}>{refundErr}</p>}
+              </div>
+            ) : status === "resolved" && stake && !stake.isClaimed && stake.amount > 0n ? (
               <ClaimButton
                 hackathon={hackathon}
                 project={project}

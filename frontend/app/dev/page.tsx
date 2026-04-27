@@ -2,16 +2,19 @@
 
 import { useState, useEffect } from "react";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { BN } from "@coral-xyz/anchor";
 import { useWallet, useAnchorWallet } from "@solana/wallet-adapter-react";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import type { Session } from "@supabase/supabase-js";
+import type { AnchorWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import Navbar from "@/components/Navbar";
 import { getSupabase } from "@/lib/supabase";
 import { useHackathons } from "@/hooks/useHackathons";
-import { hackathonStatus, formatDate, timeUntil } from "@/lib/format";
-import { getProgram } from "@/lib/program";
-import { projectPdaFromUrl, hashUrl } from "@/lib/pda";
+import type { HackathonInfo } from "@/hooks/useHackathons";
+import { hackathonStatus, formatDate, timeUntil, formatTokens } from "@/lib/format";
+import { getProgram, getReadonlyProgram } from "@/lib/program";
+import { projectPdaFromUrl, hashUrl, escrowPda, stakePda } from "@/lib/pda";
 
 const WalletMultiButton = dynamic(
   () => import("@solana/wallet-adapter-react-ui").then((m) => m.WalletMultiButton),
@@ -142,7 +145,6 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
       <h2 style={{ margin: "0 0 8px", fontSize: "1.25rem", fontWeight: 700, color: "var(--c-text)" }}>Sign in to submit</h2>
       <p style={{ margin: "0 0 24px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>Sign in to register your project and put skin in the game.</p>
 
-      {/* OAuth */}
       <div style={{ marginBottom: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
         <button onClick={() => signInOAuth("google")} style={oauthBtnStyle}>
           <svg style={{ height: "16px", width: "16px" }} viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
@@ -241,6 +243,7 @@ function SubmitForm({
           signature = Buffer.from(sig).toString("base64");
         } catch { /* skip if user denies */ }
       }
+      void signature;
       const { error: sbErr } = await supabase.from("project_submissions").upsert({
         hackathon_pubkey: hackathonPubkey.toBase58(),
         project_pubkey: projectPk!.toBase58(),
@@ -311,7 +314,7 @@ function SubmitForm({
 
 // ── Hackathon card for devs ────────────────────────────────────────────────────
 
-function DevHackathonCard({ hackathon, authEmail }: { hackathon: ReturnType<typeof useHackathons>["hackathons"][0]; authEmail: string }) {
+function DevHackathonCard({ hackathon, authEmail }: { hackathon: HackathonInfo; authEmail: string }) {
   const { publicKey } = useWallet();
   const [submitting, setSubmitting] = useState(false);
   const status = hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
@@ -351,10 +354,316 @@ function DevHackathonCard({ hackathon, authEmail }: { hackathon: ReturnType<type
   );
 }
 
+// ── Builder project card ──────────────────────────────────────────────────────
+
+interface OnChainProject {
+  depositAmountPaid: bigint;
+  builderStaked: bigint;
+  submitted: boolean;
+  depositForfeited: boolean;
+  depositRefunded: boolean;
+  isRefundEnabled: boolean;
+}
+
+interface BuilderSubmission {
+  project_pubkey: string;
+  hackathon_pubkey: string;
+  github_url: string;
+  status: string;
+}
+
+function BuilderProjectCard({
+  sub,
+  hackathon,
+  publicKey,
+  anchorWallet,
+  usdcMint,
+}: {
+  sub: BuilderSubmission;
+  hackathon: HackathonInfo | undefined;
+  publicKey: PublicKey;
+  anchorWallet: AnchorWallet;
+  usdcMint: PublicKey;
+}) {
+  const [project, setProject] = useState<OnChainProject | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const [selfStakeAmt, setSelfStakeAmt] = useState("");
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const program = getReadonlyProgram();
+    (program.account as any).projectAccount
+      .fetch(new PublicKey(sub.project_pubkey))
+      .then((d: any) => {
+        if (!cancelled) {
+          setProject({
+            depositAmountPaid: BigInt((d.depositAmountPaid ?? 0).toString()),
+            builderStaked: BigInt((d.builderStaked ?? 0).toString()),
+            submitted: d.submitted as boolean,
+            depositForfeited: d.depositForfeited as boolean,
+            depositRefunded: d.depositRefunded as boolean,
+            isRefundEnabled: d.isRefundEnabled as boolean,
+          });
+          setLoading(false);
+        }
+      })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [sub.project_pubkey, tick]);
+
+  async function payDeposit() {
+    if (!hackathon) return;
+    setBusy("deposit"); setErr(null); setOk(null);
+    try {
+      const program = getProgram(anchorWallet);
+      const projectPk = new PublicKey(sub.project_pubkey);
+      const hackathonPk = new PublicKey(sub.hackathon_pubkey);
+      const builderAta = getAssociatedTokenAddressSync(usdcMint, publicKey);
+      const escrow = escrowPda(hackathonPk);
+      await (program.methods as any).payDeposit().accounts({
+        builder: publicKey,
+        hackathon: hackathonPk,
+        project: projectPk,
+        builderTokenAccount: builderAta,
+        escrow,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      }).rpc();
+      setOk("Deposit paid!");
+      setTick((t) => t + 1);
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(null); }
+  }
+
+  async function selfStake() {
+    const raw = Math.round(parseFloat(selfStakeAmt) * 1_000_000);
+    if (isNaN(raw) || raw <= 0) { setErr("Enter a valid amount"); return; }
+    if (!hackathon) return;
+    setBusy("selfstake"); setErr(null); setOk(null);
+    try {
+      const program = getProgram(anchorWallet);
+      const projectPk = new PublicKey(sub.project_pubkey);
+      const hackathonPk = new PublicKey(sub.hackathon_pubkey);
+      const builderAta = getAssociatedTokenAddressSync(usdcMint, publicKey);
+      const escrow = escrowPda(hackathonPk);
+      const userStake = stakePda(publicKey, projectPk);
+      await (program.methods as any).selfStake(new BN(raw)).accounts({
+        builder: publicKey,
+        hackathon: hackathonPk,
+        project: projectPk,
+        userStake,
+        builderTokenAccount: builderAta,
+        escrow,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      }).rpc();
+      setOk(`Self-staked ${selfStakeAmt} USDC!`);
+      setSelfStakeAmt("");
+      setTick((t) => t + 1);
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(null); }
+  }
+
+  async function submitProject() {
+    setBusy("submit"); setErr(null); setOk(null);
+    try {
+      const program = getProgram(anchorWallet);
+      const projectPk = new PublicKey(sub.project_pubkey);
+      const hackathonPk = new PublicKey(sub.hackathon_pubkey);
+      await (program.methods as any).submitProject().accounts({
+        builder: publicKey,
+        hackathon: hackathonPk,
+        project: projectPk,
+      }).rpc();
+      setOk("Project marked as submitted!");
+      setTick((t) => t + 1);
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(null); }
+  }
+
+  async function claimDepositRefund() {
+    if (!hackathon) return;
+    setBusy("refund"); setErr(null); setOk(null);
+    try {
+      const program = getProgram(anchorWallet);
+      const projectPk = new PublicKey(sub.project_pubkey);
+      const hackathonPk = new PublicKey(sub.hackathon_pubkey);
+      const builderAta = getAssociatedTokenAddressSync(usdcMint, publicKey);
+      const escrow = escrowPda(hackathonPk);
+      await (program.methods as any).claimDepositRefund().accounts({
+        builder: publicKey,
+        hackathon: hackathonPk,
+        project: projectPk,
+        builderTokenAccount: builderAta,
+        escrow,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      }).rpc();
+      setOk("Deposit refunded!");
+      setTick((t) => t + 1);
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(null); }
+  }
+
+  const repoShort = sub.github_url.replace("https://github.com/", "");
+  const depositAmt = hackathon?.depositAmount ?? 0n;
+  const hasDeposit = depositAmt > 0n;
+
+  const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", padding: "10px 0", borderBottom: "1px solid var(--c-divider-2)" };
+  const labelStyle: React.CSSProperties = { fontSize: "0.875rem", color: "var(--c-text-3)" };
+  const checkStyle: React.CSSProperties = { fontSize: "0.875rem", fontWeight: 600, color: "var(--c-emerald-text)" };
+
+  return (
+    <div className="ui-card" style={{ padding: "20px" }}>
+      <div style={{ marginBottom: "12px" }}>
+        <a href={sub.github_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700, color: "var(--c-text)", textDecoration: "none" }}>{repoShort}</a>
+        <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+          {hackathon?.name || sub.hackathon_pubkey.slice(0, 12) + "…"}
+          {" · "}<span style={{ textTransform: "capitalize" }}>{sub.status}</span>
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="ui-skeleton" style={{ height: "80px", borderRadius: "8px" }} />
+      ) : project ? (
+        <div>
+          {/* Deposit row */}
+          {hasDeposit && (
+            <div style={rowStyle}>
+              <span style={labelStyle}>Commitment deposit ({formatTokens(depositAmt)} USDC)</span>
+              {project.depositForfeited ? (
+                <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-red-text)" }}>Forfeited</span>
+              ) : project.depositRefunded ? (
+                <span style={checkStyle}>✓ Refunded</span>
+              ) : project.depositAmountPaid > 0n ? (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={checkStyle}>✓ Paid</span>
+                  {project.submitted && (
+                    <button onClick={claimDepositRefund} disabled={busy === "refund"} className="ui-btn ui-btn-emerald ui-btn-sm">
+                      {busy === "refund" ? "…" : "Claim refund"}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button onClick={payDeposit} disabled={busy === "deposit"} className="ui-btn ui-btn-indigo ui-btn-sm">
+                  {busy === "deposit" ? "Paying…" : `Pay ${formatTokens(depositAmt)} USDC`}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Self-stake row */}
+          <div style={rowStyle}>
+            <span style={labelStyle}>Self-stake</span>
+            {project.builderStaked > 0n ? (
+              <span style={checkStyle}>✓ {formatTokens(project.builderStaked)} USDC staked</span>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Amount USDC"
+                  value={selfStakeAmt}
+                  onChange={(e) => setSelfStakeAmt(e.target.value)}
+                  className="ui-input-sm"
+                  style={{ width: "120px" }}
+                />
+                <button onClick={selfStake} disabled={busy === "selfstake" || !selfStakeAmt} className="ui-btn ui-btn-indigo ui-btn-sm">
+                  {busy === "selfstake" ? "…" : "Self-stake"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Submit row */}
+          <div style={{ ...rowStyle, borderBottom: "none" }}>
+            <span style={labelStyle}>Project submitted</span>
+            {project.submitted ? (
+              <span style={checkStyle}>✓ Submitted</span>
+            ) : (
+              <button onClick={submitProject} disabled={busy === "submit"} className="ui-btn ui-btn-amber ui-btn-sm">
+                {busy === "submit" ? "…" : "Mark as submitted"}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>Could not load on-chain state.</p>
+      )}
+
+      {err && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
+      {ok && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
+    </div>
+  );
+}
+
+// ── Builder projects section ──────────────────────────────────────────────────
+
+function BuilderProjectsSection({
+  publicKey,
+  anchorWallet,
+  hackathons,
+  usdcMint,
+}: {
+  publicKey: PublicKey;
+  anchorWallet: AnchorWallet;
+  hackathons: HackathonInfo[];
+  usdcMint: PublicKey;
+}) {
+  const [submissions, setSubmissions] = useState<BuilderSubmission[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase) { setLoading(false); return; }
+    supabase
+      .from("project_submissions")
+      .select("project_pubkey, hackathon_pubkey, github_url, status")
+      .eq("wallet_address", publicKey.toBase58())
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        setSubmissions((data as BuilderSubmission[]) ?? []);
+        setLoading(false);
+      });
+  }, [publicKey.toBase58()]);
+
+  if (loading) return <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />;
+  if (submissions.length === 0) return null;
+
+  return (
+    <div>
+      <h2 style={{ margin: "0 0 12px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>My Projects</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        {submissions.map((sub) => {
+          const hackathon = hackathons.find((h) => h.pubkey.toBase58() === sub.hackathon_pubkey);
+          const mint = hackathon?.usdcMint ?? usdcMint;
+          return (
+            <BuilderProjectCard
+              key={sub.project_pubkey}
+              sub={sub}
+              hackathon={hackathon}
+              publicKey={publicKey}
+              anchorWallet={anchorWallet}
+              usdcMint={mint}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function DevPortalPage() {
   const { publicKey } = useWallet();
+  const anchorWallet = useAnchorWallet();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const { hackathons, loading: hLoading } = useHackathons();
@@ -383,6 +692,9 @@ export default function DevPortalPage() {
     const s = hackathonStatus(h.resultsTimestamp, h.cutoffTimestamp, h.isResolved);
     return s === "open";
   });
+
+  // Use first hackathon's usdcMint as fallback (all share the same mint on devnet)
+  const usdcMint = hackathons[0]?.usdcMint ?? new PublicKey("Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr");
 
   return (
     <div style={{ minHeight: "100vh" }}>
@@ -439,6 +751,16 @@ export default function DevPortalPage() {
                   </div>
                 )}
               </div>
+            )}
+
+            {/* My Projects — deposit, self-stake, submit, refund */}
+            {publicKey && anchorWallet && (
+              <BuilderProjectsSection
+                publicKey={publicKey}
+                anchorWallet={anchorWallet}
+                hackathons={hackathons}
+                usdcMint={usdcMint}
+              />
             )}
           </div>
         )}

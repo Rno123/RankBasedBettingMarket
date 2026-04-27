@@ -4,17 +4,258 @@ import { useState, useEffect } from "react";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import { useWallet, useAnchorWallet } from "@solana/wallet-adapter-react";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { getProgram } from "@/lib/program";
-import { hackathonPda, escrowPda, whitelistPda } from "@/lib/pda";
+import { hackathonPda, escrowPda, whitelistPda, protocolAdminPda } from "@/lib/pda";
 import { useHackathons } from "@/hooks/useHackathons";
 import { useProjects } from "@/hooks/useProjects";
 import { formatTokens, formatDate } from "@/lib/format";
-import { USDC_MINT, DEPLOYER } from "@/lib/constants";
+import { USDC_MINT, DEPLOYER, PROTOCOL_ADMIN } from "@/lib/constants";
 import { useIsProtocolAdmin } from "@/hooks/useIsProtocolAdmin";
 import { getSupabase, getSupabaseAdmin } from "@/lib/supabase";
+
+// ── Admin Delegation ──────────────────────────────────────────────────────────
+
+function AdminDelegationPanel() {
+  const { publicKey } = useWallet();
+  const anchorWallet = useAnchorWallet();
+  const [newAdminInput, setNewAdminInput] = useState("");
+  const [delegatedAdmins, setDelegatedAdmins] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  const isSuperAdmin = publicKey?.toBase58() === PROTOCOL_ADMIN;
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const { getReadonlyProgram } = await import("@/lib/program");
+        const roProgram = getReadonlyProgram();
+        const entries = await (roProgram.account as any).protocolAdminEntry.all();
+        setDelegatedAdmins(entries.map((e: any) => (e.account.wallet ?? e.account.admin ?? e.publicKey).toBase58()));
+      } catch { setDelegatedAdmins([]); }
+      finally { setLoading(false); }
+    }
+    load();
+  }, [ok]);
+
+  async function addAdmin() {
+    if (!publicKey || !anchorWallet) return;
+    let wallet: PublicKey;
+    try { wallet = new PublicKey(newAdminInput.trim()); } catch { setErr("Invalid public key"); return; }
+    setBusy("add"); setErr(null); setOk(null);
+    try {
+      const program = getProgram(anchorWallet);
+      const adminEntry = protocolAdminPda(wallet);
+      await (program.methods as any).addProtocolAdmin().accounts({
+        authority: publicKey,
+        newAdmin: wallet,
+        adminEntry,
+        systemProgram: SystemProgram.programId,
+      }).rpc();
+      setOk(`Granted admin: ${wallet.toBase58().slice(0, 8)}…`);
+      setNewAdminInput("");
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(null); }
+  }
+
+  async function removeAdmin(adminWallet: string) {
+    if (!publicKey || !anchorWallet) return;
+    const wallet = new PublicKey(adminWallet);
+    setBusy(adminWallet); setErr(null); setOk(null);
+    try {
+      const program = getProgram(anchorWallet);
+      const adminEntry = protocolAdminPda(wallet);
+      await (program.methods as any).removeProtocolAdmin().accounts({
+        authority: publicKey,
+        adminWallet: wallet,
+        adminEntry,
+      }).rpc();
+      setOk(`Revoked admin: ${adminWallet.slice(0, 8)}…`);
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <section className="ui-card" style={{ padding: "24px" }}>
+      <h2 style={{ margin: "0 0 4px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Admin Delegation</h2>
+      <p style={{ margin: "0 0 16px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
+        Grant or revoke protocol admin role. Only the super-admin (<code style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{PROTOCOL_ADMIN.slice(0, 8)}…</code>) can call this on-chain.
+      </p>
+      {!isSuperAdmin && (
+        <div style={{ marginBottom: "16px", borderRadius: "8px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "10px 14px", fontSize: "0.875rem", color: "var(--c-amber-text)" }}>
+          Connect the super-admin wallet to grant or revoke admins.
+        </div>
+      )}
+      <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+        <input
+          value={newAdminInput}
+          onChange={(e) => { setNewAdminInput(e.target.value); setErr(null); }}
+          placeholder="Wallet address to grant admin…"
+          className="ui-input"
+          style={{ flex: 1, fontFamily: "monospace" }}
+          disabled={!isSuperAdmin}
+        />
+        <button onClick={addAdmin} disabled={busy === "add" || !isSuperAdmin || !newAdminInput.trim()} className="ui-btn ui-btn-indigo ui-btn-sm">
+          {busy === "add" ? "…" : "Grant"}
+        </button>
+      </div>
+      {err && <p style={{ marginBottom: "8px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
+      {ok && <p style={{ marginBottom: "8px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
+      <div>
+        <p style={{ margin: "0 0 8px", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>
+          Delegated admins {loading ? "" : `(${delegatedAdmins.length})`}
+        </p>
+        {loading ? (
+          <div className="ui-skeleton" style={{ height: "32px", borderRadius: "8px" }} />
+        ) : delegatedAdmins.length === 0 ? (
+          <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>No delegated admins.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {delegatedAdmins.map((addr) => (
+              <div key={addr} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", borderRadius: "8px", border: "1px solid var(--c-divider)", padding: "8px 12px" }}>
+                <code style={{ fontSize: "0.75rem", color: "var(--c-text-2)" }}>{addr}</code>
+                <button
+                  onClick={() => removeAdmin(addr)}
+                  disabled={busy === addr || !isSuperAdmin}
+                  className="ui-btn ui-btn-outline-red ui-btn-xs"
+                >
+                  {busy === addr ? "…" : "Revoke"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ── Deposit management (per hackathon) ────────────────────────────────────────
+
+function DepositManagementPanel({ hackathon }: { hackathon: ReturnType<typeof useHackathons>["hackathons"][0] }) {
+  const { publicKey } = useWallet();
+  const anchorWallet = useAnchorWallet();
+  const { projects } = useProjects(hackathon.pubkey);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Record<string, { ok?: string; err?: string }>>({});
+
+  if (hackathon.depositAmount === 0n) return null;
+
+  const projectsWithDeposit = projects.filter((p) => p.depositAmountPaid > 0n);
+  const allProjects = projects;
+
+  async function forfeitDeposit(projectPubkey: string) {
+    if (!publicKey || !anchorWallet) return;
+    setBusy(projectPubkey);
+    setMessages((m) => ({ ...m, [projectPubkey]: {} }));
+    try {
+      const program = getProgram(anchorWallet);
+      const feeRecipientAta = getAssociatedTokenAddressSync(hackathon.usdcMint, hackathon.feeRecipient);
+      const escrow = escrowPda(hackathon.pubkey);
+      await (program.methods as any).forfeitDeposit().accounts({
+        admin: publicKey,
+        hackathon: hackathon.pubkey,
+        project: new PublicKey(projectPubkey),
+        feeRecipientTokenAccount: feeRecipientAta,
+        escrow,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      }).rpc();
+      setMessages((m) => ({ ...m, [projectPubkey]: { ok: "Forfeited" } }));
+    } catch (e: any) {
+      setMessages((m) => ({ ...m, [projectPubkey]: { err: e.message ?? "Failed" } }));
+    } finally { setBusy(null); }
+  }
+
+  async function enableRefund(projectPubkey: string) {
+    if (!publicKey || !anchorWallet) return;
+    setBusy("refund_" + projectPubkey);
+    setMessages((m) => ({ ...m, ["refund_" + projectPubkey]: {} }));
+    try {
+      const program = getProgram(anchorWallet);
+      await (program.methods as any).enableRefund().accounts({
+        admin: publicKey,
+        hackathon: hackathon.pubkey,
+        project: new PublicKey(projectPubkey),
+      }).rpc();
+      setMessages((m) => ({ ...m, ["refund_" + projectPubkey]: { ok: "Refund enabled" } }));
+    } catch (e: any) {
+      setMessages((m) => ({ ...m, ["refund_" + projectPubkey]: { err: e.message ?? "Failed" } }));
+    } finally { setBusy(null); }
+  }
+
+  return (
+    <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "16px" }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>
+        Deposit management ({formatTokens(hackathon.depositAmount)} USDC per builder)
+      </h3>
+      <p style={{ margin: "0 0 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+        Forfeit deposits from builders who didn&apos;t submit. Enable stake refunds for disqualified projects.
+      </p>
+      {allProjects.length === 0 ? (
+        <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>No projects registered.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {allProjects.map((p) => {
+            const repoShort = p.githubUrl.replace("https://github.com/", "");
+            const pkStr = p.pubkey.toBase58();
+            const msg = messages[pkStr] ?? {};
+            const refundMsg = messages["refund_" + pkStr] ?? {};
+            return (
+              <div key={pkStr} style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "10px 14px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
+                  <div>
+                    <p style={{ margin: 0, fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "240px" }}>{repoShort}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                      {p.depositAmountPaid > 0n
+                        ? p.depositForfeited ? "Deposit forfeited"
+                        : p.depositRefunded ? "Deposit refunded"
+                        : `Deposit paid: ${formatTokens(p.depositAmountPaid)} USDC`
+                        : "No deposit paid"}
+                      {" · "}{p.submitted ? "Submitted" : "Not submitted"}
+                      {p.isRefundEnabled ? " · Refund ON" : ""}
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                    {p.depositAmountPaid > 0n && !p.depositForfeited && !p.depositRefunded && !p.submitted && (
+                      <button
+                        onClick={() => forfeitDeposit(pkStr)}
+                        disabled={busy === pkStr}
+                        className="ui-btn ui-btn-red ui-btn-xs"
+                      >
+                        {busy === pkStr ? "…" : "Forfeit deposit"}
+                      </button>
+                    )}
+                    {!p.isRefundEnabled && (
+                      <button
+                        onClick={() => enableRefund(pkStr)}
+                        disabled={busy === "refund_" + pkStr}
+                        className="ui-btn ui-btn-amber ui-btn-xs"
+                      >
+                        {busy === "refund_" + pkStr ? "…" : "Enable refund"}
+                      </button>
+                    )}
+                    {p.isRefundEnabled && (
+                      <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--c-amber-text)" }}>Refund active</span>
+                    )}
+                  </div>
+                </div>
+                {msg.err && <p style={{ marginTop: "4px", fontSize: "0.75rem", color: "var(--c-red-text)" }}>{msg.err}</p>}
+                {msg.ok && <p style={{ marginTop: "4px", fontSize: "0.75rem", color: "var(--c-emerald-text)" }}>{msg.ok}</p>}
+                {refundMsg.err && <p style={{ marginTop: "4px", fontSize: "0.75rem", color: "var(--c-red-text)" }}>{refundMsg.err}</p>}
+                {refundMsg.ok && <p style={{ marginTop: "4px", fontSize: "0.75rem", color: "var(--c-emerald-text)" }}>{refundMsg.ok}</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Create Hackathon ──────────────────────────────────────────────────────────
 
@@ -371,6 +612,7 @@ function HackathonAdminCard({ hackathon }: { hackathon: ReturnType<typeof useHac
         <div style={{ borderTop: "1px solid var(--c-divider-2)", padding: "0 24px 24px" }}>
           <MetadataPanel hackathon={hackathon} />
           <WhitelistPanel hackathon={hackathon} />
+          <DepositManagementPanel hackathon={hackathon} />
           {!hackathon.isResolved && <ResolvePanel hackathon={hackathon} />}
           {hackathon.isResolved && <p style={{ marginTop: "16px", fontSize: "0.875rem", color: "var(--c-text-4)" }}>Hackathon resolved. Stakers can now claim.</p>}
         </div>
@@ -510,6 +752,7 @@ export default function AdminPage() {
         {isAdmin && (
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <CreateHackathonPanel onCreated={() => { setVersion((v) => v + 1); reloadHackathons(); }} />
+            <AdminDelegationPanel />
             <SubmissionsSection hackathons={hackathons} />
             <div>
               <h2 style={{ margin: "0 0 12px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Hackathons</h2>

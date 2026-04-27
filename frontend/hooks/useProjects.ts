@@ -11,8 +11,13 @@ export interface ProjectInfo {
   totalStaked: bigint;
   totalShares: bigint;
   rank: number;
-  isRegistered: boolean;
+  builderWallet: PublicKey;
+  depositAmountPaid: bigint;
+  builderStaked: bigint;
+  submitted: boolean;
   isRefundEnabled: boolean;
+  depositForfeited: boolean;
+  depositRefunded: boolean;
 }
 
 export function useProjects(hackathonPubkey: PublicKey | null) {
@@ -49,8 +54,13 @@ export function useProjects(hackathonPubkey: PublicKey | null) {
             totalStaked: BigInt((d.totalStaked ?? 0).toString()),
             totalShares: BigInt((d.totalShares ?? 0).toString()),
             rank: d.rank as number,
-            isRegistered: d.isRegistered as boolean,
+            builderWallet: d.builderWallet as PublicKey,
+            depositAmountPaid: BigInt((d.depositAmountPaid ?? 0).toString()),
+            builderStaked: BigInt((d.builderStaked ?? 0).toString()),
+            submitted: d.submitted as boolean,
             isRefundEnabled: d.isRefundEnabled as boolean,
+            depositForfeited: d.depositForfeited as boolean,
+            depositRefunded: d.depositRefunded as boolean,
           };
         });
 
