@@ -914,10 +914,12 @@ pub mod hackathon_betting {
             ctx.accounts.project.builder_wallet == ctx.accounts.builder.key(),
             BettingError::NotBuilder,
         );
-        if ctx.accounts.hackathon.requires_approval {
-            require!(ctx.accounts.project.submitted, BettingError::NotSubmitted);
-        } else {
-            require!(ctx.accounts.project.builder_declared, BettingError::NotDeclared);
+        if !ctx.accounts.project.is_refund_enabled {
+            if ctx.accounts.hackathon.requires_approval {
+                require!(ctx.accounts.project.submitted, BettingError::NotSubmitted);
+            } else {
+                require!(ctx.accounts.project.builder_declared, BettingError::NotDeclared);
+            }
         }
         require!(
             !ctx.accounts.project.deposit_forfeited,

@@ -548,7 +548,7 @@ function BuilderProjectCard({
               ) : project.depositAmountPaid > 0n ? (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span style={checkStyle}>✓ Paid</span>
-                  {project.submitted && (
+                  {project.isRefundEnabled && (
                     <button onClick={claimDepositRefund} disabled={busy === "refund"} className="ui-btn ui-btn-emerald ui-btn-sm">
                       {busy === "refund" ? "…" : "Claim refund"}
                     </button>
