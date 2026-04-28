@@ -143,11 +143,44 @@ function DepositManagementPanel({ hackathon }: { hackathon: ReturnType<typeof us
   const { projects } = useProjects(hackathon.pubkey);
   const [busy, setBusy] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, { ok?: string; err?: string }>>({});
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number; errors: number } | null>(null);
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
 
   if (hackathon.depositAmount === 0n) return null;
 
-  const projectsWithDeposit = projects.filter((p) => p.depositAmountPaid > 0n);
-  const allProjects = projects;
+  // Projects eligible for bulk deposit release (paid, not yet refunded/forfeited, not already enabled)
+  const releaseEligible = projects.filter(
+    (p) => p.depositAmountPaid > 0n && !p.depositForfeited && !p.depositRefunded && !p.isRefundEnabled,
+  );
+
+  async function releaseAllDeposits() {
+    if (!publicKey || !anchorWallet || releaseEligible.length === 0) return;
+    setBusy("bulk"); setBulkResult(null);
+    setBulkProgress({ done: 0, total: releaseEligible.length, errors: 0 });
+    const program = getProgram(anchorWallet);
+    let errors = 0;
+    for (let i = 0; i < releaseEligible.length; i++) {
+      const p = releaseEligible[i];
+      const pkStr = p.pubkey.toBase58();
+      try {
+        await (program.methods as any).enableRefund().accounts({
+          admin: publicKey,
+          hackathon: hackathon.pubkey,
+          project: p.pubkey,
+        }).rpc();
+        setMessages((m) => ({ ...m, ["refund_" + pkStr]: { ok: "Refund enabled" } }));
+      } catch (e: any) {
+        errors++;
+        setMessages((m) => ({ ...m, ["refund_" + pkStr]: { err: e.message ?? "Failed" } }));
+      }
+      setBulkProgress({ done: i + 1, total: releaseEligible.length, errors });
+    }
+    const released = releaseEligible.length - errors;
+    setBulkResult(errors === 0
+      ? `All ${released} deposit${released !== 1 ? "s" : ""} unlocked.`
+      : `${released} unlocked, ${errors} failed — check individual rows.`);
+    setBusy(null);
+  }
 
   async function forfeitDeposit(projectPubkey: string) {
     if (!publicKey || !anchorWallet) return;
@@ -194,13 +227,49 @@ function DepositManagementPanel({ hackathon }: { hackathon: ReturnType<typeof us
         Deposit management ({formatTokens(hackathon.depositAmount)} USDC per builder)
       </h3>
       <p style={{ margin: "0 0 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-        Forfeit deposits from builders who didn&apos;t submit. Enable stake refunds for disqualified projects.
+        Release all deposits once judging is complete. Forfeit deposits from builders who didn&apos;t submit.
       </p>
-      {allProjects.length === 0 ? (
+
+      {/* Bulk release action */}
+      <div style={{ marginBottom: "16px", borderRadius: "10px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "14px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+          <div>
+            <p style={{ margin: "0 0 2px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>Release all deposits</p>
+            <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-3)" }}>
+              Unlocks deposit refunds for all builders with a paid deposit ({releaseEligible.length} eligible).
+              {" "}Builders can then claim their {formatTokens(hackathon.depositAmount)} USDC back from escrow.
+            </p>
+          </div>
+          <button
+            onClick={releaseAllDeposits}
+            disabled={busy === "bulk" || releaseEligible.length === 0}
+            className="ui-btn ui-btn-emerald ui-btn-sm"
+            style={{ flexShrink: 0 }}
+          >
+            {busy === "bulk"
+              ? bulkProgress ? `Releasing… (${bulkProgress.done}/${bulkProgress.total})` : "Releasing…"
+              : releaseEligible.length === 0 ? "All released" : "Release all deposits"}
+          </button>
+        </div>
+        {bulkResult && (
+          <p style={{ margin: "8px 0 0", fontSize: "0.75rem", fontWeight: 500, color: "var(--c-emerald-text)" }}>{bulkResult}</p>
+        )}
+        {/* Future: Merkle root approach */}
+        <p style={{ margin: "8px 0 0", fontSize: "0.6875rem", color: "var(--c-text-4)", fontStyle: "italic" }}>
+          Roadmap: this will be replaced by a Merkle root commit — admin submits a root of eligible builder wallets; builders prove inclusion and self-serve their claim without admin iterating each project.
+        </p>
+      </div>
+
+      {/* Forfeit note */}
+      <div style={{ marginBottom: "12px", borderRadius: "8px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "10px 14px", fontSize: "0.75rem", color: "var(--c-amber-text)" }}>
+        <strong>Forfeit deposit</strong> should only be called at least 14 days after the hackathon&apos;s results date, once it&apos;s clear a builder did not submit. Calling it early may be unfair to builders still working.
+      </div>
+
+      {projects.length === 0 ? (
         <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>No projects registered.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {allProjects.map((p) => {
+          {projects.map((p) => {
             const repoShort = p.githubUrl.replace("https://github.com/", "");
             const pkStr = p.pubkey.toBase58();
             const msg = messages[pkStr] ?? {};
@@ -226,6 +295,7 @@ function DepositManagementPanel({ hackathon }: { hackathon: ReturnType<typeof us
                         onClick={() => forfeitDeposit(pkStr)}
                         disabled={busy === pkStr}
                         className="ui-btn ui-btn-red ui-btn-xs"
+                        title="Only forfeit 14+ days after hackathon results date"
                       >
                         {busy === pkStr ? "…" : "Forfeit deposit"}
                       </button>

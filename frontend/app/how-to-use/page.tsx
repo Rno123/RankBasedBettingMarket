@@ -184,7 +184,8 @@ function AdminGuide() {
       <Section title="Managing participants">
         <Item><strong>Whitelist stakers</strong> — paste any Solana wallet address into the Whitelist panel and confirm the transaction. Only whitelisted wallets can stake in your hackathon.</Item>
         <Item><strong>Approve project submissions</strong> — builders submit via the Dev Portal and appear in the Submissions queue. Approved projects become visible on the hackathon page; rejected ones stay hidden.</Item>
-        <Item><strong>Forfeit deposits</strong> — in the Deposit Management section, forfeit the deposit of any builder who registered but didn&apos;t submit their project. This sends the deposit to your fee recipient wallet.</Item>
+        <Item><strong>Release all deposits</strong> — once judging is complete, click <strong>Release all deposits</strong> in the Deposit Management section. This unlocks deposit refunds for all builders who paid their commitment. Builders can then claim their USDC back from escrow themselves.</Item>
+        <Item><strong>Forfeit deposits</strong> — for builders who never submitted their project, call <strong>Forfeit deposit</strong> individually. This should only be used at least 14 days after the hackathon&apos;s results date, once non-submission is confirmed. Sends the deposit to your fee recipient wallet.</Item>
       </Section>
 
       <Section title="Resolving a hackathon">
@@ -194,6 +195,9 @@ function AdminGuide() {
           </Step>
           <Step n={2} title="Finalize (irreversible)">
             Click <strong>Finalize resolve</strong> and confirm. This is permanent — it computes effective tier allocations, snapshots sqrt totals, and sets <code style={{ fontFamily: "monospace", fontSize: "0.85em" }}>is_resolved = true</code>. Stakers can now claim.
+          </Step>
+          <Step n={3} title="Release builder deposits">
+            Click <strong>Release all deposits</strong> in the Deposit Management section. This calls <code style={{ fontFamily: "monospace", fontSize: "0.85em" }}>enable_refund</code> for each builder who paid their deposit, allowing them to pull their funds back from escrow. For builders who never submitted, use <strong>Forfeit deposit</strong> individually (recommended: wait 14+ days after results date).
           </Step>
         </div>
       </Section>
