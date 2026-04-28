@@ -93,6 +93,7 @@ export default function Navbar() {
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
             <Link href="/dashboard" style={navLinkStyle("/dashboard")}>Dashboard</Link>
+            <Link href="/how-to-use" style={navLinkStyle("/how-to-use")}>How to Use</Link>
             {showAdmin && (
               <Link href="/admin" style={navLinkStyle("/admin")}>Admin</Link>
             )}
@@ -216,6 +217,7 @@ export default function Navbar() {
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
             <Link href="/dashboard" style={{ ...navLinkStyle("/dashboard"), padding: "8px 12px", borderRadius: "8px" }}>Dashboard</Link>
+            <Link href="/how-to-use" style={{ ...navLinkStyle("/how-to-use"), padding: "8px 12px", borderRadius: "8px" }}>How to Use</Link>
             {showAdmin && (
               <Link href="/admin" style={{ ...navLinkStyle("/admin"), padding: "8px 12px", borderRadius: "8px" }}>Admin</Link>
             )}
