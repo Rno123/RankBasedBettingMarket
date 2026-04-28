@@ -58,12 +58,12 @@ function StakerGuide() {
       <div style={{ marginBottom: "24px", borderRadius: "12px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "16px" }}>
         <p style={{ margin: "0 0 4px", fontWeight: 700, color: "var(--c-indigo-text)" }}>Your role</p>
         <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-text-2)", lineHeight: 1.6 }}>
-          Stakers are the signal engine of HackBet. You put real USDC behind the hackathon projects you believe in. Your conviction — and the crowd&apos;s collective judgment — is recorded permanently on-chain. After results, winners redistribute the pool proportional to their crowd backing.
+          Stakers are the signal engine of HackBet. You put USDC behind the hackathon projects you believe in. Your conviction — and the crowd&apos;s collective judgment — is recorded permanently on-chain. After results, winners redistribute the pool proportional to their crowd backing.
         </p>
       </div>
 
       <Section title="Prerequisites">
-        <Item>A Solana wallet (Phantom, Solflare, or Backpack) with devnet USDC</Item>
+        <Item>A Solana wallet (Phantom, Solflare, or Backpack) with USDC</Item>
         <Item>Whitelist approval from the hackathon organizer — you need a <strong>WhitelistedWallet</strong> PDA for the specific hackathon</Item>
         <Item>Request access directly on the hackathon page if your wallet isn&apos;t whitelisted yet</Item>
       </Section>
@@ -74,13 +74,13 @@ function StakerGuide() {
             Visit the <Link href="/" className="ui-text-link">Hackathons</Link> list. Open ones show a <Pill color="var(--c-emerald-light)" border="var(--c-emerald-border)" text="var(--c-emerald-text)">Open for staking</Pill> badge and a countdown to cutoff.
           </Step>
           <Step n={2} title="Connect your wallet">
-            Click <strong>Connect Wallet</strong> in the navbar. Your wallet must be on devnet and hold some devnet USDC (mint: <code style={{ fontFamily: "monospace", fontSize: "0.8em" }}>Gh9ZwEmd…</code>).
+            Click <strong>Connect Wallet</strong> in the navbar. Your wallet must hold USDC for the hackathon&apos;s network.
           </Step>
           <Step n={3} title="Pick a project and back it">
             On the hackathon detail page, click <strong>Back</strong> next to any project. Enter a USDC amount and confirm the transaction.
           </Step>
           <Step n={4} title="Earn early-backer multiplier">
-            Stakes placed earlier earn a higher share multiplier — from <strong>1.5×</strong> at open down to <strong>1.0×</strong> at cutoff. Earlier conviction = more shares.
+            Stakes placed earlier earn a higher share multiplier — <strong>1.5×</strong> at the time of a project&apos;s registration, decaying to <strong>1.0×</strong> at hackathon cutoff. Earlier conviction = more shares.
           </Step>
           <Step n={5} title="Wait for results">
             Staking locks 24 hours before the results timestamp. After the admin finalizes the judge ranking, the hackathon enters <Pill color="var(--c-indigo-light)" border="var(--c-indigo-border)" text="var(--c-indigo-text)">Resolved</Pill> state.
@@ -94,7 +94,7 @@ function StakerGuide() {
       <Section title="Key rules">
         <Item><strong>3% early exit fee</strong> if you unstake before cutoff — 1.5% goes to the protocol fee recipient, 1.5% stays in the pool.</Item>
         <Item>Unstaking is <strong>locked 24 h before results</strong>. Plan accordingly.</Item>
-        <Item>You can only stake on projects you don&apos;t own — the protocol blocks self-backing via the external stake route.</Item>
+        <Item>Builders may also stake on their own project — this is public, on-chain conviction signal and is visible alongside community stakes.</Item>
         <Item>The payout formula rewards correct conviction, not just the biggest stake.</Item>
       </Section>
 
@@ -135,10 +135,10 @@ function BuilderGuide() {
             Stake USDC on your own project via <strong>Self-stake</strong>. This is public, on-chain proof of your own conviction. There&apos;s a minimum and maximum set by the protocol.
           </Step>
           <Step n={6} title="Mark as submitted">
-            When your project is shipped, click <strong>Mark as submitted</strong>. This unlocks your deposit refund.
+            When your project is shipped, click <strong>Mark as submitted</strong>. This sends a signal that the admin uses to confirm your submission and unlock your deposit refund.
           </Step>
           <Step n={7} title="Claim your deposit refund">
-            After marking submitted, click <strong>Claim refund</strong> to retrieve your deposit from escrow.
+            Once the admin unlocks your deposit, click <strong>Claim refund</strong> to retrieve it from escrow.
           </Step>
         </div>
       </Section>
@@ -150,8 +150,7 @@ function BuilderGuide() {
       </Section>
 
       <Section title="Deposit rules">
-        <Item>Deposit is forfeit if you don&apos;t mark the project as submitted — the organizer calls <strong>Forfeit deposit</strong>.</Item>
-        <Item>Deposit refund is only available after you mark the project submitted.</Item>
+        <Item>Deposit is forfeit if you don&apos;t mark the project as submitted.</Item>
         <Item>A forfeited deposit goes to the protocol fee recipient (the organizer&apos;s designated wallet).</Item>
       </Section>
     </div>
@@ -228,7 +227,7 @@ export default function HowToUsePage() {
             How to use HackBet
           </h1>
           <p style={{ margin: 0, fontSize: "1rem", color: "var(--c-text-3)", lineHeight: 1.7, maxWidth: "600px" }}>
-            HackBet is an on-chain conviction signal market for hackathons. Builders register projects, stakers back who they think will win with real USDC, and after judging, the crowd&apos;s prediction is permanently visible on-chain alongside the official results.
+            HackBet is an on-chain conviction signal market for hackathons. Builders register projects, stakers back who they think will win with USDC, and after judging, the crowd&apos;s prediction is permanently visible on-chain alongside the official results.
           </p>
         </div>
 
@@ -242,7 +241,7 @@ export default function HowToUsePage() {
               {
                 title: "Organizers / Admins",
                 color: "var(--c-amber-light)", border: "var(--c-amber-border)", text: "var(--c-amber-text)",
-                desc: "Create hackathons, curate the whitelist, approve submissions, and publish official judge rankings."
+                desc: "Create hackathons, curate whitelists, approve submissions, and publish official judge rankings."
               },
               {
                 title: "Builders",
@@ -270,16 +269,16 @@ export default function HowToUsePage() {
           </h2>
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             <Step n={1} title="Hackathon created on-chain">
-              An admin initializes a hackathon with a name, results date, prize tiers, and a builder deposit amount. Every parameter is stored on Solana — there&apos;s no backend controlling the money.
+              An admin initializes a hackathon with a name, results date, prize tiers, and a builder deposit amount.
             </Step>
             <Step n={2} title="Builders register, stakers back">
-              Builders submit their GitHub repo URL — this creates an on-chain project PDA. Whitelisted stakers browse projects and lock in USDC. Earlier stakers earn a higher share multiplier (1.5× → 1.0×).
+              Builders submit their GitHub repo URL — this creates an on-chain project PDA. Whitelisted stakers browse projects and lock in USDC. Earlier stakers earn a higher share multiplier (1.5× at project registration → 1.0× at hackathon cutoff).
             </Step>
             <Step n={3} title="Staking locks 24h before results">
               Once the cutoff passes, no new stakes or unstakes are accepted. The pool is frozen.
             </Step>
             <Step n={4} title="Results published → claims open">
-              The admin sets judge rankings on-chain and finalizes. Stakers who backed winners claim payouts. The crowd ranking versus the judge ranking is publicly visible — forever.
+              The admin sets judge rankings on-chain and finalizes. Stakers who backed winners claim payouts. Builders who&apos;ve submitted claim their deposits.
             </Step>
           </div>
         </div>

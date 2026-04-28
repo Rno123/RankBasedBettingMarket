@@ -23,7 +23,7 @@ import {
 } from "@/lib/format";
 import { getSupabase } from "@/lib/supabase";
 import { useWhitelistStatus } from "@/hooks/useWhitelistStatus";
-import WhitelistRequestCard from "@/components/WhitelistRequestCard";
+import WhitelistRequestModal from "@/components/WhitelistRequestModal";
 import type { HackathonInfo } from "@/hooks/useHackathons";
 import type { ProjectInfo } from "@/hooks/useProjects";
 import type { ProjectMetadata, GithubStats } from "@/lib/types";
@@ -391,6 +391,7 @@ export default function HackathonPage({
   const [githubStatsMap, setGithubStatsMap] = useState<Record<string, GithubStats | null>>({});
   const [sortMode, setSortMode] = useState<SortMode>("stake");
   const [blockedPubkeys, setBlockedPubkeys] = useState<Set<string>>(new Set());
+  const [wlModalOpen, setWlModalOpen] = useState(false);
 
   useEffect(() => {
     if (!hackathonPk) return;
@@ -628,13 +629,30 @@ export default function HackathonPage({
           )}
         </div>
 
-        {/* Whitelist request card — shown to connected non-whitelisted users while open */}
+        {/* Whitelist request button — shown to connected non-whitelisted users while open */}
         {status === "open" && publicKey && isWhitelisted === false && (
-          <div style={{ marginBottom: "24px" }}>
-            <WhitelistRequestCard
-              hackathonPubkey={id}
-              walletAddress={publicKey.toBase58()}
-            />
+          <div style={{ marginBottom: "20px" }}>
+            <button
+              onClick={() => setWlModalOpen(true)}
+              className="ui-btn ui-btn-indigo ui-btn-sm"
+            >
+              Request staking access
+            </button>
+            <p style={{ margin: "6px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+              Your wallet isn&apos;t whitelisted yet. Request access and the organizer will review it.
+            </p>
+          </div>
+        )}
+
+        {/* Also show for non-connected users */}
+        {status === "open" && !publicKey && (
+          <div style={{ marginBottom: "20px" }}>
+            <button
+              onClick={() => setWlModalOpen(true)}
+              className="ui-btn ui-btn-outline ui-btn-sm"
+            >
+              Request staking access
+            </button>
           </div>
         )}
 
@@ -714,6 +732,13 @@ export default function HackathonPage({
           <CrowdVsJudges projects={visibleProjects} />
         )}
       </main>
+
+      <WhitelistRequestModal
+        hackathonPubkey={id}
+        hackathonName={hackathon.name}
+        isOpen={wlModalOpen}
+        onClose={() => setWlModalOpen(false)}
+      />
     </div>
   );
 }

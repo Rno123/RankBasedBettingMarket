@@ -417,7 +417,7 @@ function BuilderProjectCard({
   }, [sub.project_pubkey, tick]);
 
   async function payDeposit() {
-    if (!hackathon) return;
+    if (!hackathon) { setErr("Hackathon not found — try refreshing, or re-submit your project to the current hackathon."); return; }
     setBusy("deposit"); setErr(null); setOk(null);
     try {
       const program = getProgram(anchorWallet);
@@ -443,7 +443,7 @@ function BuilderProjectCard({
   async function selfStake() {
     const raw = Math.round(parseFloat(selfStakeAmt) * 1_000_000);
     if (isNaN(raw) || raw <= 0) { setErr("Enter a valid amount"); return; }
-    if (!hackathon) return;
+    if (!hackathon) { setErr("Hackathon not found — try refreshing, or re-submit your project to the current hackathon."); return; }
     setBusy("selfstake"); setErr(null); setOk(null);
     try {
       const program = getProgram(anchorWallet);
@@ -487,7 +487,7 @@ function BuilderProjectCard({
   }
 
   async function claimDepositRefund() {
-    if (!hackathon) return;
+    if (!hackathon) { setErr("Hackathon not found — try refreshing, or re-submit your project to the current hackathon."); return; }
     setBusy("refund"); setErr(null); setOk(null);
     try {
       const program = getProgram(anchorWallet);
@@ -528,6 +528,11 @@ function BuilderProjectCard({
         </p>
       </div>
 
+      {!hackathon && (
+        <div style={{ marginBottom: "8px", borderRadius: "8px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "10px 14px", fontSize: "0.8125rem", color: "var(--c-amber-text)" }}>
+          Hackathon not found in current on-chain state. Re-submit this project to the active hackathon from the Open Hackathons section above.
+        </div>
+      )}
       {loading ? (
         <div className="ui-skeleton" style={{ height: "80px", borderRadius: "8px" }} />
       ) : project ? (

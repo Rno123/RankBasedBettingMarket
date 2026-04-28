@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import WhitelistRequestModal from "@/components/WhitelistRequestModal";
 import { useHackathons } from "@/hooks/useHackathons";
 import { useHackathonMeta } from "@/hooks/useHackathonMeta";
 import { formatTokens, timeUntil, hackathonStatus } from "@/lib/format";
@@ -16,6 +18,7 @@ const STATUS_LABELS = {
 export default function HomePage() {
   const { hackathons, loading, error } = useHackathons();
   const hackathonMeta = useHackathonMeta(hackathons.map((h) => h.pubkey.toBase58()));
+  const [wlModal, setWlModal] = useState<{ pubkey: string; name: string } | null>(null);
 
   return (
     <div style={{ minHeight: "100vh" }}>
@@ -154,20 +157,30 @@ export default function HomePage() {
                   </div>
 
                   {/* Bottom row */}
-                  <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid var(--c-divider-2)", paddingTop: "12px" }}>
-                    <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-                      {status === "open" && <>Closes in <span style={{ fontWeight: 600, color: "var(--c-text-3)" }}>{timeUntil(h.cutoffTimestamp)}</span></>}
-                      {status === "cutoff" && <>Results in <span style={{ fontWeight: 600, color: "var(--c-text-3)" }}>{timeUntil(h.resultsTimestamp)}</span></>}
-                      {status === "pending" && <span>Awaiting resolution</span>}
-                      {status === "resolved" && <span>Resolved</span>}
-                    </span>
-                    <Link
-                      href={`/hackathon/${id}`}
-                      className="ui-btn ui-btn-indigo ui-btn-sm"
-                      style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em" }}
-                    >
-                      View Hackathon
-                    </Link>
+                  <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                        {status === "open" && <>Closes in <span style={{ fontWeight: 600, color: "var(--c-text-3)" }}>{timeUntil(h.cutoffTimestamp)}</span></>}
+                        {status === "cutoff" && <>Results in <span style={{ fontWeight: 600, color: "var(--c-text-3)" }}>{timeUntil(h.resultsTimestamp)}</span></>}
+                        {status === "pending" && <span>Awaiting resolution</span>}
+                        {status === "resolved" && <span>Resolved</span>}
+                      </span>
+                      <Link
+                        href={`/hackathon/${id}`}
+                        className="ui-btn ui-btn-indigo ui-btn-sm"
+                        style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em" }}
+                      >
+                        View Hackathon
+                      </Link>
+                    </div>
+                    {status === "open" && (
+                      <button
+                        onClick={() => setWlModal({ pubkey: id, name: h.name })}
+                        style={{ alignSelf: "flex-start", background: "none", border: "none", cursor: "pointer", fontSize: "0.75rem", fontWeight: 500, color: "var(--c-text-3)", padding: 0, fontFamily: "inherit", textDecoration: "underline", textUnderlineOffset: "2px" }}
+                      >
+                        Request staking access →
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -175,6 +188,15 @@ export default function HomePage() {
           </div>
         )}
       </main>
+
+      {wlModal && (
+        <WhitelistRequestModal
+          hackathonPubkey={wlModal.pubkey}
+          hackathonName={wlModal.name}
+          isOpen={true}
+          onClose={() => setWlModal(null)}
+        />
+      )}
     </div>
   );
 }
