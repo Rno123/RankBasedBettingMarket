@@ -46,14 +46,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  // Prevent duplicate requests from the same wallet in the same hackathon.
-  const { data: existing } = await db
+  // Global staking access is reviewed once per wallet. Reuse that status
+  // instead of collecting duplicate requests across hackathons.
+  const { data: existingRows, error: existingError } = await db
     .from("whitelist_requests")
     .select("id, status")
-    .eq("hackathon_pubkey", hackathon_pubkey)
     .eq("wallet_address", wallet_address)
-    .maybeSingle();
+    .in("status", ["pending", "approved"])
+    .order("created_at", { ascending: false })
+    .limit(1);
 
+  if (existingError) {
+    console.error("whitelist_requests lookup error:", existingError);
+    return NextResponse.json({ error: "Failed to check existing request" }, { status: 500 });
+  }
+
+  const existing = existingRows?.[0];
   if (existing) {
     return NextResponse.json(
       { error: "Request already submitted", status: existing.status },

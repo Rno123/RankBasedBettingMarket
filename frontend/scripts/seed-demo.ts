@@ -7,7 +7,8 @@
  * Requires: ~/.config/solana/id.json (local Solana keypair, funded on devnet)
  *
  * Each sample project is registered with a unique GitHub URL. The wallet
- * running this script becomes the builder_wallet for each project.
+ * running this script must be authorized to manage the hackathon and also
+ * becomes the builder_wallet for each seeded project.
  */
 
 import { Connection, Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
@@ -74,7 +75,8 @@ async function main() {
       await (program.methods as any)
         .registerProject(url, urlHash)
         .accounts({
-          payer: payer.publicKey,
+          admin: payer.publicKey,
+          builder: payer.publicKey,
           hackathon: hackathonPk,
           project: projectPk,
           systemProgram: SystemProgram.programId,

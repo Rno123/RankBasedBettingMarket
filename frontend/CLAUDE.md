@@ -18,15 +18,18 @@ All constants live in `lib/constants.ts`. When switching to mainnet, update `PRO
 |---|---|---|
 | `/` | `app/page.tsx` | Landing — hackathon list, project explorer, stake UI |
 | `/hackathon/[id]` | `app/hackathon/[id]/page.tsx` | Hackathon detail — project cards, leaderboard, claim |
-| `/admin` | `app/admin/page.tsx` | Admin panel (PROTOCOL_ADMIN or DEPLOYER only) |
+| `/admin` | `app/admin/page.tsx` | Organizer panel (protocol admin or assigned hackathon admin) |
 | `/master` | `app/master/page.tsx` | Upgrade authority panel (DEPLOYER only) |
-| `/dev` | `app/dev/page.tsx` | Dev utilities |
+| `/dev` | `app/dev/page.tsx` | Builder portal |
 
 ## API Routes
 | Route | Method | Description |
 |---|---|---|
+| `/api/whitelist-request` | POST | Creates a wallet-signed request for staking access. |
 | `/api/github-stats?url=` | GET | Fetches GitHub repo stats (last commit, 7-day commits). Cached 1 hour in Supabase `github_stats`. Falls back to stale cache on GitHub rate-limit. |
-| `/api/project-metadata` | POST | Upsert project social metadata (Twitter, Telegram, Discord). Requires wallet signature on `hackbet:register:<projectPubkey>`. First-claimer ownership model. |
+| `/api/project-submission` | POST | Creates or refreshes a builder-submitted project review request, including social metadata for later approval sync. |
+| `/api/admin/project-submissions` | GET / POST | Admin review queue for project submissions. |
+| `/api/admin/whitelist-requests` | GET / POST | Admin review queue for staking-access requests. |
 
 ## Hooks
 All hooks are in `hooks/`:
@@ -35,12 +38,13 @@ All hooks are in `hooks/`:
 - `useUserStake(user, project)` — fetches single `UserStake` PDA
 - `useWhitelistStatus(hackathon, wallet)` — checks `WhitelistedWallet` PDA existence
 - `useHackathonMeta(pubkey)` — Supabase off-chain name/icon metadata
-- `useIsProtocolAdmin` — returns whether connected wallet is PROTOCOL_ADMIN or DEPLOYER
+- `useIsProtocolAdmin` — returns whether connected wallet is the super-admin or has a `ProtocolAdminEntry` PDA
 - `useTheme` — dark/light mode toggle (persisted in localStorage)
 
 ## Off-chain (Supabase)
-Three tables: `hackathon_metadata` (name/icon), `project_metadata` (socials), `github_stats` (commit cache).
+Five tables: `hackathon_metadata` (name/icon/link), `project_metadata` (socials), `github_stats` (commit cache), `project_submissions` (builder review queue), and `whitelist_requests` (staking access requests).
 Supabase client lives in `lib/supabase.ts`. Server-side routes use `getSupabaseAdmin()` (requires `SUPABASE_SERVICE_ROLE_KEY`).
+Current client-side writes still hit `hackathon_metadata`, while `project_submissions` now writes through the signed `/api/project-submission` route. Keep anon policies limited to the remaining read paths and the metadata writes that still happen from the client.
 
 ## IDL
 Two copies exist: `lib/hackathon_betting.json` (canonical) and `lib/idl.json` (alias). After any on-chain rebuild, replace both with the new `target/idl/hackathon_betting.json`.

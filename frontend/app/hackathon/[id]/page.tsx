@@ -23,7 +23,6 @@ import {
 } from "@/lib/format";
 import { getSupabase } from "@/lib/supabase";
 import { useWhitelistStatus } from "@/hooks/useWhitelistStatus";
-import WhitelistRequestModal from "@/components/WhitelistRequestModal";
 import type { HackathonInfo } from "@/hooks/useHackathons";
 import type { ProjectInfo } from "@/hooks/useProjects";
 import type { ProjectMetadata, GithubStats } from "@/lib/types";
@@ -52,6 +51,7 @@ function ProjectRow({
   hackathon,
   allProjects,
   status,
+  isWhitelisted,
   onStakeUpdated,
   metadata,
   githubStats,
@@ -61,6 +61,7 @@ function ProjectRow({
   hackathon: HackathonInfo;
   allProjects: ProjectInfo[];
   status: ReturnType<typeof hackathonStatus>;
+  isWhitelisted: boolean | null;
   onStakeUpdated: () => void;
   metadata?: ProjectMetadata;
   githubStats?: GithubStats | null;
@@ -97,6 +98,8 @@ function ProjectRow({
   }
 
   const totalPool = hackathon.totalPool;
+  const stakingEnabled =
+    hackathon.depositAmount === 0n || project.depositAmountPaid > 0n;
   const share =
     totalPool > 0n
       ? Number((project.totalStaked * 10000n) / totalPool) / 100
@@ -159,12 +162,20 @@ function ProjectRow({
               <span style={{ borderRadius: "9999px", background: "var(--c-emerald-light)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>
                 Claimed
               </span>
+            ) : status === "open" && !stakingEnabled ? (
+              <span style={{ borderRadius: "9999px", background: "var(--c-divider-2)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-4)" }}>
+                FYI only
+              </span>
+            ) : status === "open" && (!publicKey || isWhitelisted !== true) ? (
+              <span style={{ borderRadius: "9999px", background: "var(--c-divider-2)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-4)" }}>
+                Whitelist required
+              </span>
             ) : status === "open" ? (
               <button
                 onClick={() => setModalOpen(true)}
                 className="ui-btn ui-btn-indigo ui-btn-sm"
               >
-                Back
+                {stake && stake.amount > 0n ? "Manage stake" : "Stake"}
               </button>
             ) : status === "cutoff" ? (
               <span style={{ borderRadius: "9999px", background: "var(--c-amber-light)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-amber-text)" }}>
@@ -194,7 +205,21 @@ function ProjectRow({
               </p>
             </div>
           )}
+          {project.builderStaked > 0n && (
+            <div>
+              <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Builder self-stake</p>
+              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text-2)" }}>
+                {formatTokens(project.builderStaked)} <span style={{ fontSize: "0.75rem", color: "var(--c-text-3)" }}>USDC</span>
+              </p>
+            </div>
+          )}
         </div>
+
+        {!stakingEnabled && (
+          <div style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "10px 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+            FYI only for now. This builder hasn&apos;t activated staking on the project yet, so crowd staking and self-staking stay disabled.
+          </div>
+        )}
 
         {/* GitHub stats row */}
         {githubStats !== undefined && (
@@ -382,7 +407,7 @@ export default function HackathonPage({
   const { hackathons, loading: hLoading, reload: reloadHackathons } = useHackathons();
   const hackathon = hackathons.find((h) => h.pubkey.toBase58() === id) ?? null;
   const hackathonPk = hackathon?.pubkey ?? null;
-  const { isWhitelisted } = useWhitelistStatus(hackathonPk, publicKey ?? null);
+  const { isWhitelisted } = useWhitelistStatus(hackathonPk, publicKey ?? null, hackathon?.openStaking);
   const { projects, loading: pLoading, error: pError, reload: reloadProjects } = useProjects(hackathonPk);
   const [version, setVersion] = useState(0);
 
@@ -390,9 +415,6 @@ export default function HackathonPage({
   const [metadataMap, setMetadataMap] = useState<Record<string, ProjectMetadata>>({});
   const [githubStatsMap, setGithubStatsMap] = useState<Record<string, GithubStats | null>>({});
   const [sortMode, setSortMode] = useState<SortMode>("stake");
-  const [blockedPubkeys, setBlockedPubkeys] = useState<Set<string>>(new Set());
-  const [wlModalOpen, setWlModalOpen] = useState(false);
-
   useEffect(() => {
     if (!hackathonPk) return;
     const supabase = getSupabase();
@@ -406,27 +428,43 @@ export default function HackathonPage({
   }, [hackathonPk?.toBase58()]);
 
   useEffect(() => {
-    if (!hackathonPk || projects.length === 0) return;
+    if (!hackathonPk || projects.length === 0) {
+      setMetadataMap({});
+      return;
+    }
     const supabase = getSupabase();
     if (!supabase) return;
     const hpk = hackathonPk.toBase58();
     Promise.all([
       supabase.from("project_metadata").select("*").eq("hackathon_pubkey", hpk),
-      supabase.from("project_submissions").select("project_pubkey, status").eq("hackathon_pubkey", hpk),
+      supabase
+        .from("project_submissions")
+        .select("project_pubkey, github_url, twitter_handle, telegram, discord, wallet_address")
+        .eq("hackathon_pubkey", hpk),
     ]).then(([{ data: metaData }, { data: subData }]) => {
+      const map: Record<string, ProjectMetadata> = {};
       if (metaData) {
-        const map: Record<string, ProjectMetadata> = {};
         for (const row of metaData) map[row.project_pubkey] = row as ProjectMetadata;
-        setMetadataMap(map);
       }
       if (subData) {
-        const blocked = new Set(
-          subData
-            .filter((r: any) => r.status !== "approved" && r.project_pubkey)
-            .map((r: any) => r.project_pubkey as string),
-        );
-        setBlockedPubkeys(blocked);
+        for (const row of subData as Array<Record<string, string | null>>) {
+          if (!row.project_pubkey) continue;
+          if (!map[row.project_pubkey]) {
+            map[row.project_pubkey] = {
+              project_pubkey: row.project_pubkey,
+              hackathon_pubkey: hpk,
+              github_url: row.github_url ?? "",
+              twitter_handle: row.twitter_handle ?? null,
+              telegram: row.telegram ?? null,
+              discord: row.discord ?? null,
+              registered_wallet: row.wallet_address ?? "",
+              created_at: "",
+              updated_at: "",
+            };
+          }
+        }
       }
+      setMetadataMap(map);
     });
   }, [hackathonPk?.toBase58(), projects.length]);
 
@@ -480,8 +518,7 @@ export default function HackathonPage({
 
   const status = hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
 
-  const visibleProjects = projects.filter((p) => !blockedPubkeys.has(p.pubkey.toBase58()));
-  const sortedProjects = [...visibleProjects].sort((a, b) => {
+  const sortedProjects = [...projects].sort((a, b) => {
     if (sortMode === "stake") {
       if (a.rank === 0 && b.rank === 0) return Number(b.totalStaked - a.totalStaked);
       if (a.rank === 0) return 1;
@@ -629,33 +666,6 @@ export default function HackathonPage({
           )}
         </div>
 
-        {/* Whitelist request button — shown to connected non-whitelisted users while open */}
-        {status === "open" && publicKey && isWhitelisted === false && (
-          <div style={{ marginBottom: "20px" }}>
-            <button
-              onClick={() => setWlModalOpen(true)}
-              className="ui-btn ui-btn-indigo ui-btn-sm"
-            >
-              Request staking access
-            </button>
-            <p style={{ margin: "6px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-              Your wallet isn&apos;t whitelisted yet. Request access and the organizer will review it.
-            </p>
-          </div>
-        )}
-
-        {/* Also show for non-connected users */}
-        {status === "open" && !publicKey && (
-          <div style={{ marginBottom: "20px" }}>
-            <button
-              onClick={() => setWlModalOpen(true)}
-              className="ui-btn ui-btn-outline ui-btn-sm"
-            >
-              Request staking access
-            </button>
-          </div>
-        )}
-
         {/* Projects header + sort controls */}
         <div className="sm-flex-row" style={{ marginBottom: "12px", gap: "8px", alignItems: "center", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>Projects</h2>
@@ -711,6 +721,7 @@ export default function HackathonPage({
                 hackathon={hackathon}
                 allProjects={projects}
                 status={status}
+                isWhitelisted={isWhitelisted}
                 onStakeUpdated={() => {
                   setVersion((v) => v + 1);
                   reloadProjects();
@@ -728,17 +739,11 @@ export default function HackathonPage({
           </div>
         )}
 
-        {status === "resolved" && visibleProjects.length > 0 && (
-          <CrowdVsJudges projects={visibleProjects} />
+        {status === "resolved" && sortedProjects.length > 0 && (
+          <CrowdVsJudges projects={sortedProjects} />
         )}
       </main>
 
-      <WhitelistRequestModal
-        hackathonPubkey={id}
-        hackathonName={hackathon.name}
-        isOpen={wlModalOpen}
-        onClose={() => setWlModalOpen(false)}
-      />
     </div>
   );
 }

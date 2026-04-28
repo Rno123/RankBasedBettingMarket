@@ -33,6 +33,7 @@ const PROGRAM_ID      = new PublicKey("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUa
 const T0              = 1_000_000_000;          // deterministic base Unix timestamp
 const RESULTS_TS      = T0 + 86_400 * 30;       // 30 days later
 const CUTOFF_TS       = RESULTS_TS - 86_400;    // 29 days after T0
+const FORFEIT_TS      = RESULTS_TS + 14 * 86_400;
 
 // Load the local Solana keypair (matches PROTOCOL_ADMIN in the `testing` feature build).
 // bankrun generates its own ctx.payer, so we must pass this as an extra funded account.
@@ -133,6 +134,10 @@ function whitelistPda(hackathon: PublicKey, wallet: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("whitelist"), hackathon.toBuffer(), wallet.toBuffer()], PROGRAM_ID)[0];
 }
+function protocolAdminPda(wallet: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("protocol_admin"), wallet.toBuffer()], PROGRAM_ID)[0];
+}
 
 // ── Low-level tx helpers ──────────────────────────────────────────────────────
 
@@ -207,7 +212,7 @@ interface User { user: Keypair; ata: PublicKey; }
 let _hackIdx = 0;
 
 async function newHackathon(
-  ctx: ProgramTestContext, program: Program<HackathonBetting>,
+  ctx: ProgramTestContext, program: any,
   resultsTimestamp = RESULTS_TS,
   tierPcts: number[]   = DEFAULT_TIER_PCTS,
   tierCounts: number[] = DEFAULT_TIER_COUNTS,
@@ -251,7 +256,7 @@ async function newUser(ctx: ProgramTestContext, mint: PublicKey, tokens: number)
 
 /** Whitelist a wallet to stake in a hackathon (must be signed by PROTOCOL_ADMIN = adminKp). */
 async function doWhitelist(
-  _ctx: ProgramTestContext, program: Program<HackathonBetting>,
+  _ctx: ProgramTestContext, program: any,
   fix: Fix, wallet: PublicKey,
 ): Promise<void> {
   await program.methods.whitelistWallet()
@@ -265,9 +270,22 @@ async function doWhitelist(
     .signers([adminKp]).rpc();
 }
 
+async function doAddProtocolAdmin(
+  program: any, delegate: PublicKey,
+): Promise<void> {
+  await program.methods.addProtocolAdmin()
+    .accounts({
+      authority: adminKp.publicKey,
+      newAdmin: delegate,
+      adminEntry: protocolAdminPda(delegate),
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([adminKp]).rpc();
+}
+
 /** Create a funded user, mint tokens, and whitelist them for fix's hackathon. */
 async function newWhitelistedUser(
-  ctx: ProgramTestContext, program: Program<HackathonBetting>,
+  ctx: ProgramTestContext, program: any,
   fix: Fix, tokens: number,
 ): Promise<User> {
   const u = await newUser(ctx, fix.mint, tokens);
@@ -276,20 +294,26 @@ async function newWhitelistedUser(
 }
 
 async function addProject(
-  ctx: ProgramTestContext, program: Program<HackathonBetting>,
+  ctx: ProgramTestContext, program: any,
   fix: Fix, url: string,
+  builderWallet: PublicKey = ctx.payer.publicKey,
 ): Promise<PublicKey> {
   const urlHash = createHash("sha256").update(url).digest();
   const project = projectPda(fix.hackathon, url);
-  await program.methods.registerProject(url, Array.from(urlHash))
-    .accounts({ payer: ctx.payer.publicKey, hackathon: fix.hackathon, project,
-                systemProgram: SystemProgram.programId })
-    .signers([ctx.payer]).rpc();
+  await (program.methods as any).registerProject(url, Array.from(urlHash))
+    .accounts({
+      admin: fix.admin.publicKey,
+      builder: builderWallet,
+      hackathon: fix.hackathon,
+      project,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([fix.admin]).rpc();
   return project;
 }
 
 async function doStake(
-  program: Program<HackathonBetting>, fix: Fix, u: User, project: PublicKey, amount: number,
+  program: any, fix: Fix, u: User, project: PublicKey, amount: number,
 ) {
   await program.methods.stake(new BN(amount))
     .accounts({ user: u.user.publicKey, hackathon: fix.hackathon, project,
@@ -301,7 +325,7 @@ async function doStake(
 }
 
 async function doUnstake(
-  program: Program<HackathonBetting>, fix: Fix, u: User, project: PublicKey,
+  program: any, fix: Fix, u: User, project: PublicKey,
 ) {
   await program.methods.unstake()
     .accounts({ user: u.user.publicKey, hackathon: fix.hackathon, project,
@@ -314,7 +338,7 @@ async function doUnstake(
 }
 
 async function doResolve(
-  program: Program<HackathonBetting>, fix: Fix, project: PublicKey, rank: number,
+  program: any, fix: Fix, project: PublicKey, rank: number,
 ) {
   await program.methods.resolve(rank)
     .accounts({ admin: fix.admin.publicKey, hackathon: fix.hackathon, project })
@@ -322,7 +346,7 @@ async function doResolve(
 }
 
 async function doFinalizeResolve(
-  program: Program<HackathonBetting>, fix: Fix, allProjects: PublicKey[],
+  program: any, fix: Fix, allProjects: PublicKey[],
 ) {
   await program.methods.finalizeResolve()
     .accounts({ admin: fix.admin.publicKey, hackathon: fix.hackathon })
@@ -331,7 +355,7 @@ async function doFinalizeResolve(
 }
 
 async function doClaim(
-  program: Program<HackathonBetting>, fix: Fix, u: User,
+  program: any, fix: Fix, u: User,
   project: PublicKey, _allProjects?: PublicKey[],
 ) {
   // remaining_accounts are no longer used for payout math (C-01 fix: tier_c_totals snapshotted
@@ -347,7 +371,7 @@ async function doClaim(
 }
 
 async function doSubmitProject(
-  program: Program<HackathonBetting>, fix: Fix, builder: Keypair, project: PublicKey,
+  program: any, fix: Fix, builder: Keypair, project: PublicKey,
 ) {
   await program.methods.submitProject()
     .accounts({ builder: builder.publicKey, hackathon: fix.hackathon, project })
@@ -355,7 +379,7 @@ async function doSubmitProject(
 }
 
 async function doPayDeposit(
-  program: Program<HackathonBetting>, fix: Fix,
+  program: any, fix: Fix,
   builder: Keypair, builderAta: PublicKey, project: PublicKey,
 ) {
   await program.methods.payDeposit()
@@ -366,7 +390,7 @@ async function doPayDeposit(
 }
 
 async function doApproveSubmissions(
-  program: Program<HackathonBetting>, fix: Fix, projects: PublicKey[],
+  program: any, fix: Fix, projects: PublicKey[],
 ) {
   await program.methods.approveSubmissions()
     .accounts({ admin: fix.admin.publicKey, hackathon: fix.hackathon })
@@ -375,7 +399,7 @@ async function doApproveSubmissions(
 }
 
 async function doClaimDepositRefund(
-  program: Program<HackathonBetting>, fix: Fix,
+  program: any, fix: Fix,
   builder: Keypair, builderAta: PublicKey, project: PublicKey,
 ) {
   await program.methods.claimDepositRefund()
@@ -386,7 +410,7 @@ async function doClaimDepositRefund(
 }
 
 async function doSelfStake(
-  program: Program<HackathonBetting>, fix: Fix,
+  program: any, fix: Fix,
   builder: Keypair, builderAta: PublicKey, project: PublicKey, amount: number,
 ) {
   await program.methods.selfStake(new BN(amount))
@@ -398,7 +422,7 @@ async function doSelfStake(
 }
 
 async function doForfeitDeposit(
-  program: Program<HackathonBetting>, fix: Fix, project: PublicKey,
+  program: any, fix: Fix, project: PublicKey,
 ) {
   await program.methods.forfeitDeposit()
     .accounts({ admin: fix.admin.publicKey, hackathon: fix.hackathon, project,
@@ -408,7 +432,7 @@ async function doForfeitDeposit(
 }
 
 async function doEnableRefund(
-  program: Program<HackathonBetting>, fix: Fix, project: PublicKey,
+  program: any, fix: Fix, project: PublicKey,
 ) {
   await program.methods.enableRefund()
     .accounts({ admin: fix.admin.publicKey, hackathon: fix.hackathon, project })
@@ -416,7 +440,7 @@ async function doEnableRefund(
 }
 
 async function doRefund(
-  program: Program<HackathonBetting>, fix: Fix, u: User, project: PublicKey,
+  program: any, fix: Fix, u: User, project: PublicKey,
 ) {
   await program.methods.refund()
     .accounts({ user: u.user.publicKey, hackathon: fix.hackathon, project,
@@ -432,7 +456,7 @@ async function doRefund(
 
 describe("hackathon-betting — Bankrun suite", () => {
   let ctx: ProgramTestContext;
-  let program: Program<HackathonBetting>;
+  let program: any;
 
   before(async () => {
     // Pre-fund adminKp so it can pay for initializeHackathon / whitelistWallet.
@@ -528,6 +552,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       const p = await program.account.projectAccount.fetch(project);
       assert.ok(p.hackathon.equals(fix.hackathon));
       assert.equal(p.githubUrl, url);
+      assert.ok(p.builderWallet.equals(ctx.payer.publicKey));
       assert.equal(p.totalStaked.toNumber(), 0);
       assert.equal(p.rank, 0);
       assert.equal(p.isRegistered, true);
@@ -547,6 +572,31 @@ describe("hackathon-betting — Bankrun suite", () => {
         assert.fail("should have thrown");
       } catch (e: any) {
         assert.include(e.message, "UrlTooLong");
+      }
+    });
+
+    it("rejects non-admin registration attempts", async () => {
+      const builder = Keypair.generate();
+      await fund(ctx, builder.publicKey);
+      const url = "https://github.com/squatter/proj";
+      const urlHash = createHash("sha256").update(url).digest();
+      const project = projectPda(fix.hackathon, url);
+      try {
+        await (program.methods as any).registerProject(url, Array.from(urlHash))
+          .accounts({
+            admin: builder.publicKey,
+            builder: builder.publicKey,
+            hackathon: fix.hackathon,
+            project,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([builder])
+          .rpc();
+        assert.fail("non-admin registration should be rejected");
+      } catch (e: any) {
+        const txt = [e.message, ...(e.logs ?? [])].join(" ");
+        assert.ok(txt.includes("Unauthorized"),
+          `Expected Unauthorized, got: ${e.message}`);
       }
     });
   });
@@ -710,6 +760,27 @@ describe("hackathon-betting — Bankrun suite", () => {
       assert.equal(h.isResolved, true);
       assert.equal(h.effectiveTierPcts[1], 0, "tier-1 had no projects — cascaded away");
       assert.ok(h.effectiveTierPcts[0] > 5500, "tier-0 received cascade from tier-1");
+    });
+
+    it("rejects duplicate ranked project accounts in finalize_resolve", async () => {
+      setClock(ctx, T0);
+      const fresh = await newHackathon(ctx, program, RESULTS_TS,
+        DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "ResolveDupes");
+      const dupProjects = await Promise.all([
+        addProject(ctx, program, fresh, "https://github.com/resdup/1"),
+        addProject(ctx, program, fresh, "https://github.com/resdup/2"),
+      ]);
+      setClock(ctx, RESULTS_TS);
+      await doResolve(program, fresh, dupProjects[0], 1);
+      await doResolve(program, fresh, dupProjects[1], 2);
+      try {
+        await doFinalizeResolve(program, fresh, [dupProjects[0], dupProjects[0]]);
+        assert.fail("duplicate project accounts should be rejected");
+      } catch (e: any) {
+        const txt = [e.message, ...(e.logs ?? [])].join(" ");
+        assert.ok(txt.includes("DuplicateProjectAccount"),
+          `Expected DuplicateProjectAccount, got: ${e.message}`);
+      }
     });
 
     it("rejects a second finalize_resolve", async () => {
@@ -1292,7 +1363,7 @@ describe("hackathon-betting — Bankrun suite", () => {
 
   describe("Step 6: CU audit — claim instruction (no remaining_accounts needed post C-01 fix)", () => {
     let auditCtx: ProgramTestContext;
-    let auditProg: Program<HackathonBetting>;
+    let auditProg: any;
 
     before(async () => {
       auditCtx = await startAnchor(".", [], [{
@@ -1534,6 +1605,7 @@ describe("hackathon-betting — Bankrun suite", () => {
 
       const poolBefore = (await program.account.hackathonState.fetch(fix.hackathon)).totalPool.toNumber();
       const feeBefore  = Number(await tokenBalance(ctx, fix.feeRecipientAta));
+      setClock(ctx, FORFEIT_TS);
       await doForfeitDeposit(program, fix, project);
       const poolAfter = (await program.account.hackathonState.fetch(fix.hackathon)).totalPool.toNumber();
       const feeAfter  = Number(await tokenBalance(ctx, fix.feeRecipientAta));
@@ -1542,6 +1614,26 @@ describe("hackathon-betting — Bankrun suite", () => {
       assert.equal(poolAfter - poolBefore, DEPOSIT / 2, "half added to total_pool");
       assert.equal(feeAfter - feeBefore,   DEPOSIT / 2, "half sent to fee_recipient");
       assert.ok(p.depositForfeited, "deposit_forfeited flag set");
+    });
+
+    it("rejects forfeit before the post-results grace period", async () => {
+      setClock(ctx, T0);
+      const fix     = await newHackathon(ctx, program, RESULTS_TS,
+        DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "ForfeitTest1b", 0, DEPOSIT);
+      const builder    = ctx.payer;
+      const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
+      await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
+      const project = await addProject(ctx, program, fix, "https://github.com/ghost/proj1b");
+      await doPayDeposit(program, fix, builder, builderAta, project);
+      setClock(ctx, RESULTS_TS);
+      try {
+        await doForfeitDeposit(program, fix, project);
+        assert.fail("forfeit before grace period should be rejected");
+      } catch (e: any) {
+        const txt = [e.message, ...(e.logs ?? [])].join(" ");
+        assert.ok(txt.includes("ForfeitTooEarly"),
+          `Expected ForfeitTooEarly, got: ${e.message}`);
+      }
     });
 
     it("rejects forfeit on an approved (submitted) project", async () => {
@@ -1555,12 +1647,34 @@ describe("hackathon-betting — Bankrun suite", () => {
       await doPayDeposit(program, fix, builder, builderAta, project);
       await doSubmitProject(program, fix, builder, project);
       await doApproveSubmissions(program, fix, [project]);
+      setClock(ctx, FORFEIT_TS);
       try {
         await doForfeitDeposit(program, fix, project);
         assert.fail("should reject forfeit on approved project");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
         assert.ok(txt.includes("AlreadySubmitted") || txt.includes("6021"),
+          `Expected AlreadySubmitted, got: ${e.message}`);
+      }
+    });
+
+    it("rejects forfeit once the builder has declared, even before organizer approval", async () => {
+      setClock(ctx, T0);
+      const fix     = await newHackathon(ctx, program, RESULTS_TS,
+        DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "ForfeitTest2b", 0, DEPOSIT, true);
+      const builder    = ctx.payer;
+      const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
+      await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
+      const project = await addProject(ctx, program, fix, "https://github.com/ghost/proj2b");
+      await doPayDeposit(program, fix, builder, builderAta, project);
+      await doSubmitProject(program, fix, builder, project);
+      setClock(ctx, FORFEIT_TS);
+      try {
+        await doForfeitDeposit(program, fix, project);
+        assert.fail("declared builders should not be forfeitable");
+      } catch (e: any) {
+        const txt = [e.message, ...(e.logs ?? [])].join(" ");
+        assert.ok(txt.includes("AlreadySubmitted"),
           `Expected AlreadySubmitted, got: ${e.message}`);
       }
     });
@@ -1574,6 +1688,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/ghost/proj3");
       await doPayDeposit(program, fix, builder, builderAta, project);
+      setClock(ctx, FORFEIT_TS);
       await doForfeitDeposit(program, fix, project);
       try {
         await doForfeitDeposit(program, fix, project);
@@ -1597,10 +1712,10 @@ describe("hackathon-betting — Bankrun suite", () => {
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT * 2);
       const project = await addProject(ctx, program, fix, "https://github.com/ghost/h01");
       await doPayDeposit(program, fix, builder, builderAta, project);
-      // Forfeit the deposit first
+      await doEnableRefund(program, fix, project);
+      setClock(ctx, FORFEIT_TS);
       await doForfeitDeposit(program, fix, project);
-      // Builder then tries to declare and refund — must be blocked
-      await doSubmitProject(program, fix, builder, project);
+      // Builder then tries to reclaim the forfeited deposit through the exceptional path.
       try {
         await doClaimDepositRefund(program, fix, builder, builderAta, project);
         assert.fail("forfeited deposit must not be refundable (H-01)");
@@ -1626,9 +1741,9 @@ describe("hackathon-betting — Bankrun suite", () => {
       await doPayDeposit(program, fix, builder, builderAta, p2);
       const backer = await newWhitelistedUser(ctx, program, fix, 1_000);
       await doStake(program, fix, backer, p1, 1_000);
+      setClock(ctx, FORFEIT_TS);
       await doForfeitDeposit(program, fix, p2);
 
-      setClock(ctx, RESULTS_TS);
       await doResolve(program, fix, p1, 1);
       await doFinalizeResolve(program, fix, [p1]);
 
@@ -1672,6 +1787,25 @@ describe("hackathon-betting — Bankrun suite", () => {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
         assert.ok(txt.includes("DepositNotPaid") || txt.includes("6018"),
           `Expected DepositNotPaid, got: ${e.message}`);
+      }
+    });
+
+    it("pay_deposit rejected after cutoff (CutoffPassed)", async () => {
+      setClock(ctx, T0);
+      const fix     = await newHackathon(ctx, program, RESULTS_TS,
+        DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "DepositTest2b", 0, DEPOSIT);
+      const builder    = ctx.payer;
+      const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
+      await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
+      const project = await addProject(ctx, program, fix, "https://github.com/builder/proj2b");
+      setClock(ctx, CUTOFF_TS + 1);
+      try {
+        await doPayDeposit(program, fix, builder, builderAta, project);
+        assert.fail("deposit after cutoff should be rejected");
+      } catch (e: any) {
+        const txt = [e.message, ...(e.logs ?? [])].join(" ");
+        assert.ok(txt.includes("CutoffPassed") || txt.includes("6000"),
+          `Expected CutoffPassed, got: ${e.message}`);
       }
     });
 
@@ -1830,6 +1964,22 @@ describe("hackathon-betting — Bankrun suite", () => {
       assert.ok(p.declaredAt.toNumber() > 0, "declared_at should be set");
     });
 
+    it("submit_project rejected until the deposit is paid (DepositNotPaid)", async () => {
+      setClock(ctx, T0);
+      const fix     = await newHackathon(ctx, program, RESULTS_TS,
+        DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest1b", 0, DEPOSIT);
+      const builder = ctx.payer;
+      const project = await addProject(ctx, program, fix, "https://github.com/builder/sub1b");
+      try {
+        await doSubmitProject(program, fix, builder, project);
+        assert.fail("submit_project without deposit should be rejected");
+      } catch (e: any) {
+        const txt = [e.message, ...(e.logs ?? [])].join(" ");
+        assert.ok(txt.includes("DepositNotPaid") || txt.includes("6018"),
+          `Expected DepositNotPaid, got: ${e.message}`);
+      }
+    });
+
     it("non-builder cannot call submit_project (NotBuilder)", async () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
@@ -1943,6 +2093,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       const project = await addProject(ctx, program, fix, "https://github.com/builder/sub7");
       await doPayDeposit(program, fix, builder, builderAta, project);
       await doSubmitProject(program, fix, builder, project);
+      setClock(ctx, FORFEIT_TS);
       try {
         await doForfeitDeposit(program, fix, project);
         assert.fail("forfeit after self-declare should be rejected");
@@ -2034,6 +2185,114 @@ describe("hackathon-betting — Bankrun suite", () => {
           `Expected CutoffPassed or duplicate-tx, got: ${e.message}`,
         );
       }
+    });
+  });
+
+  describe("protocol admin delegation", () => {
+    it("delegated protocol admins can initialize hackathons", async () => {
+      setClock(ctx, T0);
+      const delegate = Keypair.generate();
+      await fund(ctx, delegate.publicKey);
+      await doAddProtocolAdmin(program, delegate.publicKey);
+
+      const mint = await createMint(ctx);
+      const feeRecipient = Keypair.generate();
+      const name = `DelegatedInit${_hackIdx++}`;
+      const hackathon = hackathonPda(delegate.publicKey, name);
+      const escrow = escrowPda(hackathon);
+
+      await program.methods.initializeHackathon(
+        name,
+        new BN(RESULTS_TS),
+        Buffer.from(DEFAULT_TIER_PCTS),
+        Buffer.from(DEFAULT_TIER_COUNTS),
+        feeRecipient.publicKey,
+        0,
+        new BN(0),
+        false,
+      )
+        .accounts({
+          admin: delegate.publicKey,
+          hackathon,
+          escrow,
+          usdcMint: mint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .remainingAccounts([
+          { pubkey: protocolAdminPda(delegate.publicKey), isWritable: false, isSigner: false },
+        ])
+        .signers([delegate]).rpc();
+
+      const stored = await program.account.hackathonState.fetch(hackathon);
+      assert.ok(stored.admin.equals(delegate.publicKey), "delegated admin should own the new hackathon");
+    });
+
+    it("delegated protocol admins can whitelist and approve submissions on existing hackathons", async () => {
+      setClock(ctx, T0);
+      const deposit = 10_000_000;
+      const delegate = Keypair.generate();
+      await fund(ctx, delegate.publicKey);
+      await doAddProtocolAdmin(program, delegate.publicKey);
+
+      const fix = await newHackathon(
+        ctx,
+        program,
+        RESULTS_TS,
+        DEFAULT_TIER_PCTS,
+        DEFAULT_TIER_COUNTS,
+        `DelegatedOps${_hackIdx++}`,
+        0,
+        deposit,
+        true,
+      );
+
+      const walletToWhitelist = Keypair.generate();
+      await program.methods.whitelistWallet()
+        .accounts({
+          admin: delegate.publicKey,
+          hackathon: fix.hackathon,
+          wallet: walletToWhitelist.publicKey,
+          whitelistEntry: whitelistPda(fix.hackathon, walletToWhitelist.publicKey),
+          systemProgram: SystemProgram.programId,
+        })
+        .remainingAccounts([
+          { pubkey: protocolAdminPda(delegate.publicKey), isWritable: false, isSigner: false },
+        ])
+        .signers([delegate]).rpc();
+
+      const whitelistAccount = await program.account.whitelistedWallet.fetch(
+        whitelistPda(fix.hackathon, walletToWhitelist.publicKey),
+      );
+      assert.ok(
+        whitelistAccount.wallet.equals(walletToWhitelist.publicKey),
+        "delegated admin should be able to whitelist on an existing hackathon",
+      );
+
+      const builder = Keypair.generate();
+      await fund(ctx, builder.publicKey);
+      const builderAta = await createAta(ctx, fix.mint, builder.publicKey);
+      await mintTokens(ctx, fix.mint, builderAta, deposit);
+
+      const url = "https://github.com/delegated/admin-ops";
+      const project = await addProject(ctx, program, fix, url, builder.publicKey);
+
+      await doPayDeposit(program, fix, builder, builderAta, project);
+      await doSubmitProject(program, fix, builder, project);
+
+      await program.methods.approveSubmissions()
+        .accounts({ admin: delegate.publicKey, hackathon: fix.hackathon })
+        .remainingAccounts([
+          { pubkey: protocolAdminPda(delegate.publicKey), isWritable: false, isSigner: false },
+          { pubkey: project, isWritable: true, isSigner: false },
+        ])
+        .signers([delegate]).rpc();
+
+      const projectAccount = await program.account.projectAccount.fetch(project);
+      assert.ok(
+        projectAccount.submitted,
+        "delegated admin should be able to approve submissions on an existing hackathon",
+      );
     });
   });
 });

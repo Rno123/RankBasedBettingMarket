@@ -9,6 +9,7 @@ import { PROGRAM_ID } from "@/lib/constants";
 export function useWhitelistStatus(
   hackathonPubkey: PublicKey | null,
   walletPubkey: PublicKey | null,
+  openStaking?: boolean,
   refreshKey?: number,
 ) {
   const { connection } = useConnection();
@@ -16,6 +17,9 @@ export function useWhitelistStatus(
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // When open staking is enabled, every wallet is considered whitelisted.
+    if (openStaking) { setIsWhitelisted(true); return; }
+
     if (!hackathonPubkey || !walletPubkey) { setIsWhitelisted(null); return; }
     let cancelled = false;
 
@@ -25,7 +29,6 @@ export function useWhitelistStatus(
         const pda = whitelistPda(hackathonPubkey!, walletPubkey!);
         const info = await connection.getAccountInfo(pda);
         if (!cancelled) {
-          // Account exists and is owned by the program → whitelisted
           setIsWhitelisted(info !== null && info.owner.equals(PROGRAM_ID));
         }
       } catch {
@@ -37,7 +40,7 @@ export function useWhitelistStatus(
 
     check();
     return () => { cancelled = true; };
-  }, [hackathonPubkey?.toBase58(), walletPubkey?.toBase58(), refreshKey]);
+  }, [hackathonPubkey?.toBase58(), walletPubkey?.toBase58(), openStaking, refreshKey]);
 
   return { isWhitelisted, loading };
 }

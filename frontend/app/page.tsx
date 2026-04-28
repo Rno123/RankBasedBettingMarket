@@ -18,7 +18,15 @@ const STATUS_LABELS = {
 export default function HomePage() {
   const { hackathons, loading, error } = useHackathons();
   const hackathonMeta = useHackathonMeta(hackathons.map((h) => h.pubkey.toBase58()));
-  const [wlModal, setWlModal] = useState<{ pubkey: string; name: string } | null>(null);
+  const [wlModalOpen, setWlModalOpen] = useState(false);
+  const openHackathons = hackathons.filter(
+    (hackathon) =>
+      hackathonStatus(
+        hackathon.resultsTimestamp,
+        hackathon.cutoffTimestamp,
+        hackathon.isResolved,
+      ) === "open",
+  );
 
   return (
     <div style={{ minHeight: "100vh" }}>
@@ -46,6 +54,17 @@ export default function HomePage() {
             Stake on builders with USDC. Signal your conviction with your wallet.
             Put your money where your mouth is and earn when your picks place.
           </p>
+          {openHackathons.length > 0 && (
+            <div style={{ marginTop: "24px", display: "flex", justifyContent: "center" }}>
+              <button
+                onClick={() => setWlModalOpen(true)}
+                className="ui-btn ui-btn-indigo"
+                style={{ minWidth: "220px" }}
+              >
+                Request staking access
+              </button>
+            </div>
+          )}
         </div>
 
         {/* How it works */}
@@ -58,7 +77,7 @@ export default function HomePage() {
               {
                 n: "01",
                 title: "Builders submit projects",
-                body: "Builders register their hackathon project on-chain and are asked to put down an optional 10 USDC deposit. The deposit is fully refunded if they follow through and submit their project.",
+                body: "Builders submit their project for organizer review first. Once approved, the organizer registers it on-chain, after which builders can pay an optional commitment deposit if the hackathon requires one, mark the project submitted, and later reclaim that deposit after the organizer approves the submission.",
               },
               {
                 n: "02",
@@ -81,7 +100,7 @@ export default function HomePage() {
             ))}
           </div>
           <p style={{ marginTop: "24px", textAlign: "center", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
-            Prize tiers split the pool by rank — e.g. 1st place tier gets 50% of the total pool, split amongst all backers, 2nd place tier gets 30%, 3rd gets 10% and so on. Registering and staking closes 24h before the hackathon&apos;s submission deadline.
+            Prize tiers split the pool by rank — e.g. 1st place tier gets 50% of the total pool, split amongst all backers, 2nd place tier gets 30%, 3rd gets 10% and so on. Project onboarding, deposits, and staking close 24h before the hackathon&apos;s results date.
           </p>
         </div>
 
@@ -173,14 +192,6 @@ export default function HomePage() {
                         View Hackathon
                       </Link>
                     </div>
-                    {status === "open" && (
-                      <button
-                        onClick={() => setWlModal({ pubkey: id, name: h.name })}
-                        style={{ alignSelf: "flex-start", background: "none", border: "none", cursor: "pointer", fontSize: "0.75rem", fontWeight: 500, color: "var(--c-text-3)", padding: 0, fontFamily: "inherit", textDecoration: "underline", textUnderlineOffset: "2px" }}
-                      >
-                        Request staking access →
-                      </button>
-                    )}
                   </div>
                 </div>
               );
@@ -189,14 +200,14 @@ export default function HomePage() {
         )}
       </main>
 
-      {wlModal && (
-        <WhitelistRequestModal
-          hackathonPubkey={wlModal.pubkey}
-          hackathonName={wlModal.name}
-          isOpen={true}
-          onClose={() => setWlModal(null)}
-        />
-      )}
+      <WhitelistRequestModal
+        hackathonOptions={openHackathons.map((hackathon) => ({
+          pubkey: hackathon.pubkey.toBase58(),
+          name: hackathon.name || `${hackathon.pubkey.toBase58().slice(0, 8)}…`,
+        }))}
+        isOpen={wlModalOpen}
+        onClose={() => setWlModalOpen(false)}
+      />
     </div>
   );
 }

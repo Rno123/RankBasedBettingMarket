@@ -30,7 +30,7 @@
           "name": "authority",
           "writable": true,
           "signer": true,
-          "address": "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
+          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
         },
         {
           "name": "new_admin"
@@ -95,10 +95,7 @@
       "accounts": [
         {
           "name": "admin",
-          "signer": true,
-          "relations": [
-            "hackathon"
-          ]
+          "signer": true
         },
         {
           "name": "hackathon"
@@ -297,7 +294,8 @@
         "project may call `refund` to recover their original stake amount.",
         "",
         "Intended for exceptional cases: judging errors, hackathon cancellations,",
-        "or explicit admin override for projects that never received a rank.",
+        "or explicit admin override. Must be called before resolution; after",
+        "resolution all stakes are settled (won or forfeited) and cannot be undone.",
         "Once enabled, cannot be revoked."
       ],
       "discriminator": [
@@ -313,10 +311,7 @@
       "accounts": [
         {
           "name": "admin",
-          "signer": true,
-          "relations": [
-            "hackathon"
-          ]
+          "signer": true
         },
         {
           "name": "hackathon",
@@ -358,10 +353,7 @@
       "accounts": [
         {
           "name": "admin",
-          "signer": true,
-          "relations": [
-            "hackathon"
-          ]
+          "signer": true
         },
         {
           "name": "hackathon",
@@ -391,10 +383,7 @@
       "accounts": [
         {
           "name": "admin",
-          "signer": true,
-          "relations": [
-            "hackathon"
-          ]
+          "signer": true
         },
         {
           "name": "hackathon",
@@ -463,8 +452,7 @@
         {
           "name": "admin",
           "writable": true,
-          "signer": true,
-          "address": "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
+          "signer": true
         },
         {
           "name": "hackathon",
@@ -563,6 +551,10 @@
         {
           "name": "requires_approval",
           "type": "bool"
+        },
+        {
+          "name": "open_staking",
+          "type": "bool"
         }
       ]
     },
@@ -622,6 +614,40 @@
           "docs": [
             "Any signer can pay for the rent increase; safe because the instruction",
             "only operates on accounts that are exactly 301 bytes (v1 layout size)",
+            "and owned by this program."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_hackathon_v3",
+      "discriminator": [
+        163,
+        119,
+        49,
+        133,
+        122,
+        55,
+        48,
+        86
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Any signer can pay for the rent increase; safe because the instruction",
+            "only operates on accounts that are exactly 305 bytes (v2 layout size)",
             "and owned by this program."
           ],
           "writable": true,
@@ -885,12 +911,15 @@
       ],
       "accounts": [
         {
-          "name": "payer",
+          "name": "admin",
           "writable": true,
           "signer": true
         },
         {
           "name": "hackathon"
+        },
+        {
+          "name": "builder"
         },
         {
           "name": "project",
@@ -962,7 +991,7 @@
           "name": "authority",
           "writable": true,
           "signer": true,
-          "address": "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
+          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
         },
         {
           "name": "admin_wallet"
@@ -1020,10 +1049,7 @@
       "accounts": [
         {
           "name": "admin",
-          "signer": true,
-          "relations": [
-            "hackathon"
-          ]
+          "signer": true
         },
         {
           "name": "hackathon",
@@ -1241,39 +1267,6 @@
           }
         },
         {
-          "name": "whitelist_entry",
-          "docs": [
-            "Whitelist entry — must exist for this hackathon + user pair.",
-            "Admin creates it via whitelist_wallet before backers can stake."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  119,
-                  104,
-                  105,
-                  116,
-                  101,
-                  108,
-                  105,
-                  115,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "hackathon"
-              },
-              {
-                "kind": "account",
-                "path": "user"
-              }
-            ]
-          }
-        },
-        {
           "name": "user_token_account",
           "writable": true
         },
@@ -1323,9 +1316,9 @@
         "Must be called before cutoff_timestamp (after cutoff, staking is frozen",
         "anyway so a declaration has no effect for backers).",
         "Sets builder_declared = true and records the timestamp.",
-        "When hackathon.requires_approval = false, this is sufficient to unlock",
-        "claim_deposit_refund. When requires_approval = true, the organizer must",
-        "also run approve_submissions."
+        "This records the builder-side declaration. Deposit refunds still require",
+        "organizer approval via approve_submissions unless an explicit refund",
+        "override is enabled."
       ],
       "discriminator": [
         117,
@@ -1527,8 +1520,7 @@
         {
           "name": "admin",
           "writable": true,
-          "signer": true,
-          "address": "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
+          "signer": true
         },
         {
           "name": "hackathon"
@@ -1811,6 +1803,16 @@
       "code": 6033,
       "name": "RefundBlockedAfterResolution",
       "msg": "Refund cannot be enabled for a ranked project after the hackathon is resolved"
+    },
+    {
+      "code": 6034,
+      "name": "DuplicateProjectAccount",
+      "msg": "finalize_resolve received the same project account more than once"
+    },
+    {
+      "code": 6035,
+      "name": "ForfeitTooEarly",
+      "msg": "Builder deposits can only be forfeited after the post-results grace period"
     }
   ],
   "types": [
@@ -1918,6 +1920,10 @@
           {
             "name": "ranked_count",
             "type": "u32"
+          },
+          {
+            "name": "open_staking",
+            "type": "bool"
           }
         ]
       }

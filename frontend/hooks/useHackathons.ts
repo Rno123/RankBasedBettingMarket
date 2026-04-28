@@ -17,6 +17,8 @@ export interface HackathonInfo {
   totalPool: bigint;
   depositAmount: bigint;
   isResolved: boolean;
+  requiresApproval: boolean;
+  openStaking: boolean;
   tierCount: number;
   tierPcts: number[];
   effectiveTierPcts: number[];
@@ -63,6 +65,8 @@ export function useHackathons() {
               totalPool: BigInt((d.totalPool ?? 0).toString()),
               depositAmount: BigInt((d.depositAmount ?? 0).toString()),
               isResolved: d.isResolved as boolean,
+              requiresApproval: (d.requiresApproval as boolean) ?? false,
+              openStaking: (d.openStaking as boolean) ?? true,
               tierCount: d.tierCount as number,
               tierPcts: Array.from(d.tierPcts as number[]).slice(0, d.tierCount),
               effectiveTierPcts: Array.from(

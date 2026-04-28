@@ -14,6 +14,7 @@ export interface ProjectInfo {
   builderWallet: PublicKey;
   depositAmountPaid: bigint;
   builderStaked: bigint;
+  builderDeclared: boolean;
   submitted: boolean;
   isRefundEnabled: boolean;
   depositForfeited: boolean;
@@ -57,6 +58,7 @@ export function useProjects(hackathonPubkey: PublicKey | null) {
             builderWallet: d.builderWallet as PublicKey,
             depositAmountPaid: BigInt((d.depositAmountPaid ?? 0).toString()),
             builderStaked: BigInt((d.builderStaked ?? 0).toString()),
+            builderDeclared: (d.builderDeclared as boolean) ?? false,
             submitted: d.submitted as boolean,
             isRefundEnabled: d.isRefundEnabled as boolean,
             depositForfeited: d.depositForfeited as boolean,

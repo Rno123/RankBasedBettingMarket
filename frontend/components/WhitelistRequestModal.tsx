@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { usePrivy } from "@privy-io/react-auth";
 import dynamic from "next/dynamic";
+import {
+  submitWhitelistRequest,
+  type WhitelistRequestSubmitState,
+} from "@/lib/whitelist-request";
 
 const WalletMultiButton = dynamic(
   () => import("@solana/wallet-adapter-react-ui").then((m) => m.WalletMultiButton),
@@ -11,31 +15,44 @@ const WalletMultiButton = dynamic(
 );
 
 interface Props {
-  hackathonPubkey: string;
+  hackathonPubkey?: string | null;
   hackathonName?: string;
+  hackathonOptions?: Array<{ pubkey: string; name: string }>;
   isOpen: boolean;
   onClose: () => void;
 }
 
-type SubmitState = "idle" | "loading" | "success" | "duplicate" | "error";
-
 export default function WhitelistRequestModal({
   hackathonPubkey,
   hackathonName,
+  hackathonOptions,
   isOpen,
   onClose,
 }: Props) {
   const { publicKey, signMessage } = useWallet();
   const { login, ready, authenticated } = usePrivy();
+  const [selectedHackathon, setSelectedHackathon] = useState(
+    hackathonPubkey ?? hackathonOptions?.[0]?.pubkey ?? "",
+  );
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
-  const [state, setState] = useState<SubmitState>("idle");
+  const [state, setState] = useState<WhitelistRequestSubmitState>("idle");
   const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    setSelectedHackathon(hackathonPubkey ?? hackathonOptions?.[0]?.pubkey ?? "");
+  }, [hackathonPubkey, hackathonOptions, isOpen]);
 
   if (!isOpen) return null;
 
+  const resolvedHackathonPubkey = hackathonPubkey ?? selectedHackathon;
+  const resolvedHackathonName =
+    hackathonName ??
+    hackathonOptions?.find((option) => option.pubkey === resolvedHackathonPubkey)?.name;
+
   function handleClose() {
     setState("idle");
+    setSelectedHackathon(hackathonPubkey ?? hackathonOptions?.[0]?.pubkey ?? "");
     setEmail("");
     setNotes("");
     setErrorMsg("");
@@ -45,40 +62,25 @@ export default function WhitelistRequestModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!publicKey || !signMessage) return;
+    if (!resolvedHackathonPubkey) {
+      setErrorMsg("Choose a hackathon before submitting.");
+      setState("error");
+      return;
+    }
     setState("loading");
     setErrorMsg("");
 
     try {
-      const message = new TextEncoder().encode(
-        `hackbet:whitelist-request:${hackathonPubkey}`,
-      );
-      const signature = await signMessage(message);
-      const signatureBase64 = Buffer.from(signature).toString("base64");
-
-      const res = await fetch("/api/whitelist-request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          hackathon_pubkey: hackathonPubkey,
-          wallet_address: publicKey.toBase58(),
-          email,
-          notes: notes || undefined,
-          signature: signatureBase64,
-        }),
+      const result = await submitWhitelistRequest({
+        hackathonPubkey: resolvedHackathonPubkey,
+        walletAddress: publicKey.toBase58(),
+        email,
+        notes,
+        signMessage,
       });
-
-      const json = await res.json();
-
-      if (res.status === 409) {
-        setState("duplicate");
-      } else if (!res.ok) {
-        setErrorMsg(json.error ?? "Something went wrong.");
-        setState("error");
-      } else {
-        setState("success");
-      }
-    } catch {
-      setErrorMsg("Network error — please try again.");
+      setState(result);
+    } catch (error: any) {
+      setErrorMsg(error.message ?? "Network error — please try again.");
       setState("error");
     }
   }
@@ -124,19 +126,21 @@ export default function WhitelistRequestModal({
           Request whitelist access
         </h2>
         <p style={{ margin: "0 0 24px", fontSize: "0.8125rem", color: "var(--c-text-4)" }}>
-          {hackathonName ? <>for <strong style={{ color: "var(--c-text-3)" }}>{hackathonName}</strong></> : "The organizer will review and whitelist your wallet."}
+          {resolvedHackathonName ? <>using <strong style={{ color: "var(--c-text-3)" }}>{resolvedHackathonName}</strong> as the context for your request</> : "The organizer will review and whitelist your wallet."}
         </p>
 
         {state === "success" ? (
           <div style={{ borderRadius: "12px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "20px", textAlign: "center" }}>
             <p style={{ margin: "0 0 4px", fontWeight: 700, color: "var(--c-emerald-text)" }}>Request submitted!</p>
-            <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--c-text-2)" }}>The organizer will review and whitelist your wallet.</p>
+            <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--c-text-2)" }}>
+              The organizer will review and whitelist your wallet across HackBet{resolvedHackathonName ? `, using ${resolvedHackathonName} as the request context` : ""}.
+            </p>
             <button onClick={handleClose} style={{ marginTop: "12px", background: "none", border: "none", cursor: "pointer", fontSize: "0.8125rem", color: "var(--c-emerald-text)", textDecoration: "underline", fontFamily: "inherit" }}>Close</button>
           </div>
         ) : state === "duplicate" ? (
           <div style={{ borderRadius: "12px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "20px", textAlign: "center" }}>
             <p style={{ margin: "0 0 4px", fontWeight: 700, color: "var(--c-amber-text)" }}>Already submitted</p>
-            <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--c-text-2)" }}>You already have a pending whitelist request for this hackathon.</p>
+            <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--c-text-2)" }}>You already have a pending staking access request.</p>
             <button onClick={handleClose} style={{ marginTop: "12px", background: "none", border: "none", cursor: "pointer", fontSize: "0.8125rem", color: "var(--c-amber-text)", textDecoration: "underline", fontFamily: "inherit" }}>Close</button>
           </div>
         ) : !publicKey ? (
@@ -177,6 +181,27 @@ export default function WhitelistRequestModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            {!hackathonPubkey && !!hackathonOptions?.length && (
+              <div>
+                <label htmlFor="wl-modal-hackathon" style={labelStyle}>
+                  Hackathon <span style={{ color: "var(--c-red-text)" }}>*</span>
+                </label>
+                <select
+                  id="wl-modal-hackathon"
+                  value={selectedHackathon}
+                  onChange={(e) => setSelectedHackathon(e.target.value)}
+                  className="ui-input"
+                  required
+                >
+                  {hackathonOptions.map((option) => (
+                    <option key={option.pubkey} value={option.pubkey}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label style={labelStyle}>Wallet</label>
               <div style={{ borderRadius: "8px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "8px 12px", fontSize: "0.75rem", fontFamily: "monospace", color: "var(--c-text-3)", wordBreak: "break-all" }}>

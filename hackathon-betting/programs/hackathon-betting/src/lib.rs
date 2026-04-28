@@ -7,6 +7,8 @@ declare_id!("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd");
 
 /// Seconds before results_timestamp after which unstaking is forbidden.
 pub const SELL_CUTOFF_SECS: i64 = 86_400;
+/// Grace period after results before an unpaid/non-submitted builder deposit may be forfeited.
+pub const FORFEIT_GRACE_SECS: i64 = 14 * 86_400;
 /// Fixed unstake penalty in basis points (3%).
 pub const UNSTAKE_PENALTY_BPS: u64 = 300;
 /// Portion of the unstake penalty routed to fee_recipient (1.5%).
@@ -112,6 +114,10 @@ pub enum BettingError {
     IncompleteProjectList,
     #[msg("Refund cannot be enabled for a ranked project after the hackathon is resolved")]
     RefundBlockedAfterResolution,
+    #[msg("finalize_resolve received the same project account more than once")]
+    DuplicateProjectAccount,
+    #[msg("Builder deposits can only be forfeited after the post-results grace period")]
+    ForfeitTooEarly,
 }
 
 // ── Pure helpers ───────────────────────────────────────────────────────────
@@ -151,6 +157,48 @@ fn compute_shares(amount: u64, now: i64, start: i64, cutoff: i64) -> Result<u64>
         .ok_or(error!(BettingError::Overflow))
 }
 
+fn protocol_admin_auth_offset(
+    signer: &Pubkey,
+    remaining_accounts: &[AccountInfo],
+) -> Result<usize> {
+    if *signer == PROTOCOL_ADMIN {
+        return Ok(0);
+    }
+
+    let Some(admin_entry_info) = remaining_accounts.first() else {
+        return err!(BettingError::Unauthorized);
+    };
+
+    let (expected_pda, _) =
+        Pubkey::find_program_address(&[b"protocol_admin", signer.as_ref()], &crate::ID);
+    require!(
+        admin_entry_info.key() == expected_pda,
+        BettingError::Unauthorized,
+    );
+    require!(admin_entry_info.owner == &crate::ID, BettingError::Unauthorized);
+
+    let entry = {
+        let data = admin_entry_info.try_borrow_data()?;
+        let mut slice: &[u8] = &data;
+        ProtocolAdminEntry::try_deserialize(&mut slice)?
+    };
+    require!(entry.wallet == *signer, BettingError::Unauthorized);
+
+    Ok(1)
+}
+
+fn hackathon_admin_auth_offset(
+    signer: &Pubkey,
+    hackathon_admin: &Pubkey,
+    remaining_accounts: &[AccountInfo],
+) -> Result<usize> {
+    if *signer == *hackathon_admin {
+        Ok(0)
+    } else {
+        protocol_admin_auth_offset(signer, remaining_accounts)
+    }
+}
+
 // ── Program ────────────────────────────────────────────────────────────────
 
 #[program]
@@ -173,7 +221,9 @@ pub mod hackathon_betting {
         protocol_fee_bps: u16,
         deposit_amount: u64,
         requires_approval: bool,
+        open_staking: bool,
     ) -> Result<()> {
+        protocol_admin_auth_offset(&ctx.accounts.admin.key(), ctx.remaining_accounts)?;
         require!(name.len() <= NAME_MAX_LEN, BettingError::NameTooLong);
 
         let now = Clock::get()?.unix_timestamp;
@@ -224,6 +274,7 @@ pub mod hackathon_betting {
         h.bump = ctx.bumps.hackathon;
         h.escrow_bump = ctx.bumps.escrow;
         h.ranked_count = 0;
+        h.open_staking = open_staking;
         Ok(())
     }
 
@@ -234,6 +285,11 @@ pub mod hackathon_betting {
         github_url: String,
         url_hash: [u8; 32],
     ) -> Result<()> {
+        hackathon_admin_auth_offset(
+            &ctx.accounts.admin.key(),
+            &ctx.accounts.hackathon.admin,
+            ctx.remaining_accounts,
+        )?;
         require!(github_url.len() <= ProjectAccount::MAX_URL, BettingError::UrlTooLong);
         let expected = anchor_lang::solana_program::hash::hash(github_url.as_bytes()).to_bytes();
         require!(url_hash == expected, BettingError::InvalidUrlHash);
@@ -245,7 +301,7 @@ pub mod hackathon_betting {
         p.rank = 0;
         p.is_registered = true;
         p.is_refund_enabled = false;
-        p.builder_wallet = ctx.accounts.payer.key();
+        p.builder_wallet = ctx.accounts.builder.key();
         p.deposit_amount_paid = 0;
         p.submitted = false;
         p.deposit_refunded = false;
@@ -267,6 +323,22 @@ pub mod hackathon_betting {
             now < ctx.accounts.hackathon.cutoff_timestamp,
             BettingError::CutoffPassed,
         );
+
+        // When open_staking is false, caller must pass the whitelist PDA as remaining_accounts[0].
+        if !ctx.accounts.hackathon.open_staking {
+            require!(!ctx.remaining_accounts.is_empty(), BettingError::NotWhitelisted);
+            let entry_info = &ctx.remaining_accounts[0];
+            let (expected_pda, _bump) = Pubkey::find_program_address(
+                &[
+                    b"whitelist",
+                    ctx.accounts.hackathon.to_account_info().key.as_ref(),
+                    ctx.accounts.user.key.as_ref(),
+                ],
+                ctx.program_id,
+            );
+            require!(entry_info.key() == expected_pda, BettingError::NotWhitelisted);
+            require!(entry_info.owner == ctx.program_id, BettingError::NotWhitelisted);
+        }
 
         // If hackathon requires a deposit, builder must have paid before anyone can back their project.
         if ctx.accounts.hackathon.deposit_amount > 0 {
@@ -426,15 +498,21 @@ pub mod hackathon_betting {
     /// Must be called before cutoff_timestamp (after cutoff, staking is frozen
     /// anyway so a declaration has no effect for backers).
     /// Sets builder_declared = true and records the timestamp.
-    /// When hackathon.requires_approval = false, this is sufficient to unlock
-    /// claim_deposit_refund. When requires_approval = true, the organizer must
-    /// also run approve_submissions.
+    /// This records the builder-side declaration. Deposit refunds still require
+    /// organizer approval via approve_submissions unless an explicit refund
+    /// override is enabled.
     pub fn submit_project(ctx: Context<SubmitProject>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         require!(
             now < ctx.accounts.hackathon.cutoff_timestamp,
             BettingError::CutoffPassed,
         );
+        if ctx.accounts.hackathon.deposit_amount > 0 {
+            require!(
+                ctx.accounts.project.deposit_amount_paid > 0,
+                BettingError::DepositNotPaid,
+            );
+        }
         require!(
             !ctx.accounts.project.builder_declared,
             BettingError::AlreadySubmitted,
@@ -530,6 +608,11 @@ pub mod hackathon_betting {
     /// Sets the rank on a single ProjectAccount. Call once per project.
     /// After all ranks are set, call finalize_resolve.
     pub fn resolve(ctx: Context<Resolve>, rank: u8) -> Result<()> {
+        hackathon_admin_auth_offset(
+            &ctx.accounts.admin.key(),
+            &ctx.accounts.hackathon.admin,
+            ctx.remaining_accounts,
+        )?;
         let now = Clock::get()?.unix_timestamp;
         require!(
             now >= ctx.accounts.hackathon.results_timestamp,
@@ -560,6 +643,11 @@ pub mod hackathon_betting {
     ///
     /// remaining_accounts: all registered ProjectAccounts for this hackathon.
     pub fn finalize_resolve(ctx: Context<FinalizeResolve>) -> Result<()> {
+        let auth_offset = hackathon_admin_auth_offset(
+            &ctx.accounts.admin.key(),
+            &ctx.accounts.hackathon.admin,
+            ctx.remaining_accounts,
+        )?;
         let now = Clock::get()?.unix_timestamp;
         require!(
             now >= ctx.accounts.hackathon.results_timestamp,
@@ -577,7 +665,8 @@ pub mod hackathon_betting {
         let mut tier_has_projects = [false; MAX_TIERS];
         let mut tier_c_totals_new = [0u64; MAX_TIERS];
         let mut ranked_found: u32 = 0;
-        for acc in ctx.remaining_accounts.iter() {
+        let mut seen_projects: Vec<Pubkey> = Vec::new();
+        for acc in ctx.remaining_accounts[auth_offset..].iter() {
             if acc.owner != &crate::ID {
                 continue;
             }
@@ -586,7 +675,15 @@ pub mod hackathon_betting {
                 Ok(p) => p,
                 Err(_) => continue,
             };
-            if project.hackathon != hackathon_key || project.rank == 0 {
+            if project.hackathon != hackathon_key {
+                continue;
+            }
+            require!(
+                !seen_projects.iter().any(|key| key == acc.key),
+                BettingError::DuplicateProjectAccount,
+            );
+            seen_projects.push(acc.key());
+            if project.rank == 0 {
                 continue;
             }
             ranked_found = ranked_found.checked_add(1).ok_or(BettingError::Overflow)?;
@@ -763,6 +860,11 @@ pub mod hackathon_betting {
     /// resolution all stakes are settled (won or forfeited) and cannot be undone.
     /// Once enabled, cannot be revoked.
     pub fn enable_refund(ctx: Context<EnableRefund>) -> Result<()> {
+        hackathon_admin_auth_offset(
+            &ctx.accounts.admin.key(),
+            &ctx.accounts.hackathon.admin,
+            ctx.remaining_accounts,
+        )?;
         // Enforced at the account layer too; this require! provides a clear error message.
         require!(
             !ctx.accounts.hackathon.is_resolved,
@@ -831,6 +933,11 @@ pub mod hackathon_betting {
     /// deposits are tracked separately so payout math is unaffected.
     /// Once paid, external backers may stake on this project.
     pub fn pay_deposit(ctx: Context<PayDeposit>) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        require!(
+            now < ctx.accounts.hackathon.cutoff_timestamp,
+            BettingError::CutoffPassed,
+        );
         require!(
             ctx.accounts.project.builder_wallet == ctx.accounts.builder.key(),
             BettingError::NotBuilder,
@@ -867,9 +974,14 @@ pub mod hackathon_betting {
     /// This is a flag-and-claim model: calling this does NOT transfer funds.
     /// Builders call claim_deposit_refund separately to pull their deposit back.
     pub fn approve_submissions(ctx: Context<ApproveSubmissions>) -> Result<()> {
+        let auth_offset = hackathon_admin_auth_offset(
+            &ctx.accounts.admin.key(),
+            &ctx.accounts.hackathon.admin,
+            ctx.remaining_accounts,
+        )?;
         let hackathon_key = ctx.accounts.hackathon.key();
 
-        for acc in ctx.remaining_accounts.iter() {
+        for acc in ctx.remaining_accounts[auth_offset..].iter() {
             if acc.owner != &crate::ID || !acc.is_writable {
                 continue;
             }
@@ -915,11 +1027,7 @@ pub mod hackathon_betting {
             BettingError::NotBuilder,
         );
         if !ctx.accounts.project.is_refund_enabled {
-            if ctx.accounts.hackathon.requires_approval {
-                require!(ctx.accounts.project.submitted, BettingError::NotSubmitted);
-            } else {
-                require!(ctx.accounts.project.builder_declared, BettingError::NotDeclared);
-            }
+            require!(ctx.accounts.project.submitted, BettingError::NotSubmitted);
         }
         require!(
             !ctx.accounts.project.deposit_forfeited,
@@ -1008,16 +1116,28 @@ pub mod hackathon_betting {
     /// (stays in escrow, distributed to backers at claim time).  50% is
     /// transferred to the fee_recipient as protocol revenue.
     pub fn forfeit_deposit(ctx: Context<ForfeitDeposit>) -> Result<()> {
+        hackathon_admin_auth_offset(
+            &ctx.accounts.admin.key(),
+            &ctx.accounts.hackathon.admin,
+            ctx.remaining_accounts,
+        )?;
+        let now = Clock::get()?.unix_timestamp;
+        let forfeitable_at = ctx.accounts.hackathon.results_timestamp
+            .checked_add(FORFEIT_GRACE_SECS)
+            .ok_or(BettingError::Overflow)?;
+        require!(now >= forfeitable_at, BettingError::ForfeitTooEarly);
         require!(
             ctx.accounts.project.deposit_amount_paid > 0,
             BettingError::DepositNotPaid,
         );
-        // Ghost = not approved (requires_approval mode) or not declared (open mode).
-        if ctx.accounts.hackathon.requires_approval {
-            require!(!ctx.accounts.project.submitted, BettingError::AlreadySubmitted);
-        } else {
-            require!(!ctx.accounts.project.builder_declared, BettingError::AlreadySubmitted);
-        }
+        require!(
+            !ctx.accounts.project.deposit_refunded,
+            BettingError::DepositAlreadyRefunded,
+        );
+        require!(
+            !ctx.accounts.project.builder_declared && !ctx.accounts.project.submitted,
+            BettingError::AlreadySubmitted,
+        );
         require!(
             !ctx.accounts.project.deposit_forfeited,
             BettingError::DepositAlreadyForfeited,
@@ -1085,6 +1205,11 @@ pub mod hackathon_betting {
     /// `self_stake` are exempt from this check (they are already gated by
     /// project ownership and the deposit requirement).
     pub fn whitelist_wallet(ctx: Context<WhitelistWallet>) -> Result<()> {
+        hackathon_admin_auth_offset(
+            &ctx.accounts.admin.key(),
+            &ctx.accounts.hackathon.admin,
+            ctx.remaining_accounts,
+        )?;
         let entry = &mut ctx.accounts.whitelist_entry;
         entry.hackathon = ctx.accounts.hackathon.key();
         entry.wallet = ctx.accounts.wallet.key();
@@ -1375,6 +1500,7 @@ pub mod hackathon_betting {
             bump,
             escrow_bump,
             ranked_count:         0,
+            open_staking:         true,
         };
 
         let disc = HackathonState::DISCRIMINATOR;
@@ -1481,6 +1607,112 @@ pub mod hackathon_betting {
             bump,
             escrow_bump,
             ranked_count: 0,
+            open_staking: true,
+        };
+
+        let disc = HackathonState::DISCRIMINATOR;
+        let body = borsh::to_vec(&new_state)?;
+        let mut data = info.data.borrow_mut();
+        data[..8].copy_from_slice(&disc);
+        data[8..8 + body.len()].copy_from_slice(&body);
+
+        Ok(())
+    }
+
+    // ── 4.22  migrate_hackathon_v3 ────────────────────────────────────────
+    //
+    // One-time migration for HackathonState accounts at layout v2 (305 bytes,
+    // lacking open_staking) to the current layout (306 bytes).
+    // Sets open_staking = true so existing hackathons default to open access.
+    pub fn migrate_hackathon_v3(ctx: Context<MigrateHackathonV3>) -> Result<()> {
+        use anchor_lang::solana_program::system_instruction;
+        use anchor_lang::solana_program::program::invoke;
+
+        let info    = ctx.accounts.hackathon.to_account_info();
+        let old_len = info.data_len();
+        require!(old_len == 305, BettingError::AlreadyMigrated);
+
+        let old: Vec<u8> = info.data.borrow().to_vec();
+
+        let admin_pk  = Pubkey::try_from(&old[8..40]).unwrap();
+        let usdc_mint = Pubkey::try_from(&old[40..72]).unwrap();
+
+        let name_len = u32::from_le_bytes(old[72..76].try_into().unwrap()) as usize;
+        require!(name_len <= NAME_MAX_LEN, BettingError::NameTooLong);
+        let name = std::str::from_utf8(&old[76..76 + name_len])
+            .map_err(|_| error!(BettingError::NameTooLong))?
+            .to_string();
+
+        let fo = 76 + name_len;
+
+        let results_ts  = i64::from_le_bytes(old[fo..fo+8].try_into().unwrap());
+        let cutoff_ts   = i64::from_le_bytes(old[fo+8..fo+16].try_into().unwrap());
+        let start_ts    = i64::from_le_bytes(old[fo+16..fo+24].try_into().unwrap());
+        let total_pool  = u64::from_le_bytes(old[fo+24..fo+32].try_into().unwrap());
+        let is_resolved = old[fo+32] != 0;
+        let tier_count  = old[fo+33];
+        let tier_pcts: [u8; MAX_TIERS]  = old[fo+34..fo+42].try_into().unwrap();
+        let tier_exp: [u8; MAX_TIERS]   = old[fo+42..fo+50].try_into().unwrap();
+        let mut eff_pcts = [0u16; MAX_TIERS];
+        for i in 0..MAX_TIERS {
+            eff_pcts[i] = u16::from_le_bytes(old[fo+50+i*2..fo+52+i*2].try_into().unwrap());
+        }
+        let mut c_totals = [0u64; MAX_TIERS];
+        for i in 0..MAX_TIERS {
+            c_totals[i] = u64::from_le_bytes(old[fo+66+i*8..fo+74+i*8].try_into().unwrap());
+        }
+        let fee_recipient = Pubkey::try_from(&old[fo+130..fo+162]).unwrap();
+        let protocol_fee_bps = u16::from_le_bytes(old[fo+162..fo+164].try_into().unwrap());
+        let deposit_amount   = u64::from_le_bytes(old[fo+164..fo+172].try_into().unwrap());
+        let requires_approval = old[fo+172] != 0;
+        let bump        = old[fo+173];
+        let escrow_bump = old[fo+174];
+        let ranked_count = u32::from_le_bytes(old[fo+175..fo+179].try_into().unwrap());
+
+        let rent = Rent::get()?;
+        let new_len = HackathonState::SPACE;
+        let min_lamports = rent.minimum_balance(new_len);
+        let current_lamports = info.lamports();
+        if current_lamports < min_lamports {
+            let shortfall = min_lamports - current_lamports;
+            invoke(
+                &system_instruction::transfer(
+                    ctx.accounts.payer.key,
+                    info.key,
+                    shortfall,
+                ),
+                &[
+                    ctx.accounts.payer.to_account_info(),
+                    info.clone(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+            )?;
+        }
+
+        info.realloc(new_len, true)?;
+
+        let new_state = HackathonState {
+            admin: admin_pk,
+            usdc_mint,
+            name,
+            results_timestamp:    results_ts,
+            cutoff_timestamp:     cutoff_ts,
+            start_timestamp:      start_ts,
+            total_pool,
+            is_resolved,
+            tier_count,
+            tier_pcts,
+            tier_expected_counts: tier_exp,
+            effective_tier_pcts:  eff_pcts,
+            tier_c_totals:        c_totals,
+            fee_recipient,
+            protocol_fee_bps,
+            deposit_amount,
+            requires_approval,
+            bump,
+            escrow_bump,
+            ranked_count,
+            open_staking: true,
         };
 
         let disc = HackathonState::DISCRIMINATOR;
@@ -1513,10 +1745,11 @@ pub struct HackathonState {
     pub fee_recipient: Pubkey,                  // 32 — wallet receiving protocol fees
     pub protocol_fee_bps: u16,                  // 2  — fee on claim payouts (e.g. 150 = 1.5%)
     pub deposit_amount: u64,                    // 8  — required builder deposit (0 = no deposit required)
-    pub requires_approval: bool,                // 1  — if true, admin must run approve_submissions before deposit refund; if false, builder_declared suffices
+    pub requires_approval: bool,                // 1  — retained for backwards compatibility; deposit refunds now require organizer approval unless refund override is enabled
     pub bump: u8,                               // 1
     pub escrow_bump: u8,                        // 1
     pub ranked_count: u32,                      // 4  — number of projects given a rank via resolve(); checked by finalize_resolve for completeness
+    pub open_staking: bool,                     // 1  — when true, whitelist PDA check is skipped; access enforced off-chain
 }
 
 impl HackathonState {
@@ -1540,7 +1773,8 @@ impl HackathonState {
         + 1   // requires_approval
         + 1   // bump
         + 1   // escrow_bump
-        + 4;  // ranked_count
+        + 4   // ranked_count
+        + 1;  // open_staking
 }
 
 #[account]
@@ -1632,10 +1866,7 @@ impl ProtocolAdminEntry {
 #[derive(Accounts)]
 #[instruction(name: String)]
 pub struct InitializeHackathon<'info> {
-    #[account(
-        mut,
-        address = PROTOCOL_ADMIN @ BettingError::Unauthorized,
-    )]
+    #[account(mut)]
     pub admin: Signer<'info>,
     #[account(
         init,
@@ -1663,11 +1894,13 @@ pub struct InitializeHackathon<'info> {
 #[instruction(github_url: String, url_hash: [u8; 32])]
 pub struct RegisterProject<'info> {
     #[account(mut)]
-    pub payer: Signer<'info>,
+    pub admin: Signer<'info>,
     pub hackathon: Account<'info, HackathonState>,
+    /// CHECK: reviewed builder wallet recorded on the project account.
+    pub builder: UncheckedAccount<'info>,
     #[account(
         init,
-        payer = payer,
+        payer = admin,
         space = ProjectAccount::SPACE,
         seeds = [b"project", hackathon.key().as_ref(), url_hash.as_ref()],
         bump,
@@ -1692,13 +1925,6 @@ pub struct Stake<'info> {
         bump,
     )]
     pub user_stake: Account<'info, UserStake>,
-    /// Whitelist entry — must exist for this hackathon + user pair.
-    /// Admin creates it via whitelist_wallet before backers can stake.
-    #[account(
-        seeds = [b"whitelist", hackathon.key().as_ref(), user.key().as_ref()],
-        bump  = whitelist_entry.bump,
-    )]
-    pub whitelist_entry: Account<'info, WhitelistedWallet>,
     #[account(
         mut,
         token::mint      = hackathon.usdc_mint,
@@ -1803,7 +2029,6 @@ pub struct Resolve<'info> {
     pub admin: Signer<'info>,
     #[account(
         mut,
-        has_one = admin,
         constraint = !hackathon.is_resolved @ BettingError::AlreadyResolved,
     )]
     pub hackathon: Account<'info, HackathonState>,
@@ -1816,7 +2041,6 @@ pub struct FinalizeResolve<'info> {
     pub admin: Signer<'info>,
     #[account(
         mut,
-        has_one = admin,
         constraint = !hackathon.is_resolved @ BettingError::AlreadyResolved,
     )]
     pub hackathon: Account<'info, HackathonState>,
@@ -1868,7 +2092,6 @@ pub struct Claim<'info> {
 pub struct EnableRefund<'info> {
     pub admin: Signer<'info>,
     #[account(
-        has_one = admin,
         constraint = !hackathon.is_resolved @ BettingError::RefundBlockedAfterResolution,
     )]
     pub hackathon: Account<'info, HackathonState>,
@@ -1958,7 +2181,6 @@ pub struct SubmitProject<'info> {
 #[derive(Accounts)]
 pub struct ApproveSubmissions<'info> {
     pub admin: Signer<'info>,
-    #[account(has_one = admin)]
     pub hackathon: Account<'info, HackathonState>,
     // Approved ProjectAccount PDAs passed as writable remaining_accounts.
 }
@@ -1998,7 +2220,6 @@ pub struct ForfeitDeposit<'info> {
     pub admin: Signer<'info>,
     #[account(
         mut,
-        has_one = admin,
         constraint = !hackathon.is_resolved @ BettingError::AlreadyResolved,
     )]
     pub hackathon: Account<'info, HackathonState>,
@@ -2055,10 +2276,7 @@ pub struct RevokeUpgradeAuthority<'info> {
 
 #[derive(Accounts)]
 pub struct WhitelistWallet<'info> {
-    #[account(
-        mut,
-        address = PROTOCOL_ADMIN @ BettingError::Unauthorized,
-    )]
+    #[account(mut)]
     pub admin: Signer<'info>,
     pub hackathon: Account<'info, HackathonState>,
     /// CHECK: the wallet to whitelist — we only need its pubkey for the PDA seed.
@@ -2155,6 +2373,19 @@ pub struct MigrateHackathonV2<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     /// CHECK: intentionally unchecked — v1 layout, manually migrated to v2.
+    #[account(mut, owner = crate::ID @ BettingError::Unauthorized)]
+    pub hackathon: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct MigrateHackathonV3<'info> {
+    /// Any signer can pay for the rent increase; safe because the instruction
+    /// only operates on accounts that are exactly 305 bytes (v2 layout size)
+    /// and owned by this program.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: intentionally unchecked — v2 layout, manually migrated to v3.
     #[account(mut, owner = crate::ID @ BettingError::Unauthorized)]
     pub hackathon: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,

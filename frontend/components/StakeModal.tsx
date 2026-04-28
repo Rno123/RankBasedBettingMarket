@@ -41,6 +41,7 @@ export default function StakeModal({
   const { isWhitelisted, loading: checkingWhitelist } = useWhitelistStatus(
     hackathon.pubkey,
     publicKey,
+    hackathon.openStaking,
   );
 
   const nowSecs = Math.floor(Date.now() / 1000);
@@ -68,22 +69,30 @@ export default function StakeModal({
       const userAta = getAssociatedTokenAddressSync(hackathon.usdcMint, publicKey);
       const escrow = escrowPda(hackathon.pubkey);
       const userStake = stakePda(publicKey, project.pubkey);
-      const whitelistEntry = whitelistPda(hackathon.pubkey, publicKey);
 
-      await (program.methods as any)
+      const stakeBuilder = (program.methods as any)
         .stake(new BN(raw.toString()))
         .accounts({
           user: publicKey,
           hackathon: hackathon.pubkey,
           project: project.pubkey,
           userStake,
-          whitelistEntry,
           userTokenAccount: userAta,
           escrow,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+        });
+
+      // When open_staking is false, pass the whitelist PDA as a remaining account
+      // so the program can verify membership.
+      if (!hackathon.openStaking) {
+        const whitelistEntry = whitelistPda(hackathon.pubkey, publicKey);
+        stakeBuilder.remainingAccounts([
+          { pubkey: whitelistEntry, isWritable: false, isSigner: false },
+        ]);
+      }
+
+      await stakeBuilder.rpc();
 
       onSuccess();
       onClose();

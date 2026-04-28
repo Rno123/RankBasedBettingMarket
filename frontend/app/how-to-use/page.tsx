@@ -65,7 +65,7 @@ function StakerGuide() {
       <Section title="Prerequisites">
         <Item>A Solana wallet (Phantom, Solflare, or Backpack) with USDC</Item>
         <Item>Whitelist approval from the hackathon organizer — you need a <strong>WhitelistedWallet</strong> PDA for the specific hackathon</Item>
-        <Item>Request access directly on the hackathon page if your wallet isn&apos;t whitelisted yet</Item>
+        <Item>Request access from the homepage using the <strong>Request staking access</strong> button if your wallet isn&apos;t whitelisted yet</Item>
       </Section>
 
       <Section title="How to stake">
@@ -80,7 +80,7 @@ function StakerGuide() {
             On the hackathon detail page, click <strong>Back</strong> next to any project. Enter a USDC amount and confirm the transaction.
           </Step>
           <Step n={4} title="Earn early-backer multiplier">
-            Stakes placed earlier earn a higher share multiplier — <strong>1.5×</strong> at the time of a project&apos;s registration, decaying to <strong>1.0×</strong> at hackathon cutoff. Earlier conviction = more shares.
+            Stakes placed earlier earn a higher share multiplier — <strong>1.5×</strong> at hackathon open, decaying linearly to <strong>1.0×</strong> at cutoff. Earlier conviction = more shares.
           </Step>
           <Step n={5} title="Wait for results">
             Staking locks 24 hours before the results timestamp. After the admin finalizes the judge ranking, the hackathon enters <Pill color="var(--c-indigo-light)" border="var(--c-indigo-border)" text="var(--c-indigo-text)">Resolved</Pill> state.
@@ -113,7 +113,7 @@ function BuilderGuide() {
       <div style={{ marginBottom: "24px", borderRadius: "12px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "16px" }}>
         <p style={{ margin: "0 0 4px", fontWeight: 700, color: "var(--c-emerald-text)" }}>Your role</p>
         <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-text-2)", lineHeight: 1.6 }}>
-          Builders register their hackathon project on-chain and optionally put skin in the game with a commitment deposit and self-stake. Your project becomes a public signal — the community backs projects they believe will win, creating a crowd-sourced prediction that persists even after the event.
+          Builders submit their repo for organizer review first. Once approved, the project is registered on-chain and becomes a public signal that the community can back before the cutoff.
         </p>
       </div>
 
@@ -126,19 +126,19 @@ function BuilderGuide() {
             Connect the Solana wallet you&apos;ll use as your on-chain builder identity. This address is permanently stored as the <strong>builder_wallet</strong> on your project account.
           </Step>
           <Step n={3} title="Submit your project">
-            Click <strong>Submit project</strong> on an open hackathon. Enter your GitHub repo URL — this calls <code style={{ fontFamily: "monospace", fontSize: "0.85em" }}>register_project</code> on-chain (creates your project PDA) and queues a submission for organizer review.
+            Click <strong>Submit project</strong> on an open hackathon. Enter your GitHub repo URL — this signs a submission request and queues it for organizer review. When approved, the organizer registers the project on-chain for your wallet.
           </Step>
-          <Step n={4} title="Pay the commitment deposit">
-            If the hackathon requires a deposit (e.g. $10 USDC), pay it via the <strong>My Projects</strong> section. The deposit is held in escrow — you get it back when you submit.
+        <Step n={4} title="Pay the commitment deposit">
+          If the hackathon requires a deposit, pay it via the <strong>My Projects</strong> section after the project is live on-chain. The deposit is held in escrow until the organizer approves your submission or explicitly enables the refund override.
           </Step>
           <Step n={5} title="Self-stake (optional but visible)">
             Stake USDC on your own project via <strong>Self-stake</strong>. This is public, on-chain proof of your own conviction. There&apos;s a minimum and maximum set by the protocol.
           </Step>
           <Step n={6} title="Mark as submitted">
-            When your project is shipped, click <strong>Mark as submitted</strong>. This sends a signal that the admin uses to confirm your submission and unlock your deposit refund.
+            When your project is shipped, click <strong>Mark as submitted</strong>. This records your on-chain submission declaration so the organizer can approve the submission for deposit-refund eligibility.
           </Step>
-          <Step n={7} title="Claim your deposit refund">
-            Once the admin unlocks your deposit, click <strong>Claim refund</strong> to retrieve it from escrow.
+        <Step n={7} title="Claim your deposit refund">
+          Once the organizer approves your submission, or explicitly enables a refund override, click <strong>Claim refund</strong> to retrieve the deposit from escrow.
           </Step>
         </div>
       </Section>
@@ -150,8 +150,10 @@ function BuilderGuide() {
       </Section>
 
       <Section title="Deposit rules">
-        <Item>Deposit is forfeit if you don&apos;t mark the project as submitted.</Item>
-        <Item>A forfeited deposit goes to the protocol fee recipient (the organizer&apos;s designated wallet).</Item>
+        <Item>Deposit can only be paid before the staking cutoff.</Item>
+          <Item>Deposit is only refundable after organizer approval of the submission or an explicit refund override.</Item>
+        <Item>Deposit can only be forfeited 14+ days after results, and only if you never marked the project as submitted.</Item>
+        <Item>A forfeited deposit is split: 50% goes to the protocol fee recipient, 50% stays in the staking pool.</Item>
       </Section>
     </div>
   );
@@ -163,18 +165,18 @@ function AdminGuide() {
       <div style={{ marginBottom: "24px", borderRadius: "12px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "16px" }}>
         <p style={{ margin: "0 0 4px", fontWeight: 700, color: "var(--c-amber-text)" }}>Your role</p>
         <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-text-2)", lineHeight: 1.6 }}>
-          Admins are hackathon organizers or delegated operators. They initialize hackathons on-chain, curate participants via the whitelist, approve project submissions, and finalize results after judging. Admin actions are gated by the protocol — only wallets with a <strong>ProtocolAdminEntry</strong> PDA (or the super-admin) can execute them.
+          Protocol admins can create hackathons and manage any event. The wallet stored as <strong>hackathon.admin</strong> can manage that specific hackathon&apos;s whitelist, submissions, deposits, and resolution. The super-admin can delegate protocol admin rights to additional wallets.
         </p>
       </div>
 
       <Section title="Creating a hackathon">
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <Step n={1} title="Open the Admin panel">
-            Navigate to <Link href="/admin" className="ui-text-link">/admin</Link> with a protocol admin or deployer wallet connected.
-          </Step>
-          <Step n={2} title="Configure the hackathon">
-            Set: name, results date, number of tiers (up to 8) with prize percentages summing to 100%, builder deposit amount, protocol fee (bps), fee recipient wallet, and whether submissions require approval.
-          </Step>
+        <Step n={1} title="Open the Admin panel">
+          Navigate to <Link href="/admin" className="ui-text-link">/admin</Link> with a protocol admin wallet to create hackathons, or with the wallet assigned as <strong>hackathon.admin</strong> to manage an existing event.
+        </Step>
+        <Step n={2} title="Configure the hackathon">
+          Set: name, results date, number of tiers (up to 8) with prize percentages summing to 100%, builder deposit amount, protocol fee (bps), and fee recipient wallet. Submission approval is currently always on in the admin flow.
+        </Step>
           <Step n={3} title="Add hackathon metadata">
             After creation, expand the hackathon card and set an official link and icon URL. These appear on the public hackathon detail page.
           </Step>
@@ -182,10 +184,10 @@ function AdminGuide() {
       </Section>
 
       <Section title="Managing participants">
-        <Item><strong>Whitelist stakers</strong> — paste any Solana wallet address into the Whitelist panel and confirm the transaction. Only whitelisted wallets can stake in your hackathon.</Item>
-        <Item><strong>Approve project submissions</strong> — builders submit via the Dev Portal and appear in the Submissions queue. Approved projects become visible on the hackathon page; rejected ones stay hidden.</Item>
-        <Item><strong>Release all deposits</strong> — once judging is complete, click <strong>Release all deposits</strong> in the Deposit Management section. This unlocks deposit refunds for all builders who paid their commitment. Builders can then claim their USDC back from escrow themselves.</Item>
-        <Item><strong>Forfeit deposits</strong> — for builders who never submitted their project, call <strong>Forfeit deposit</strong> individually. This should only be used at least 14 days after the hackathon&apos;s results date, once non-submission is confirmed. Sends the deposit to your fee recipient wallet.</Item>
+        <Item><strong>Whitelist stakers</strong> — use the per-hackathon <strong>Staker access</strong> panel to grant access for one event, or the global access panel as a protocol admin to grant access across every current hackathon and review the request queue.</Item>
+        <Item><strong>Approve project submissions</strong> — builders submit via the Dev Portal and appear in the Submissions queue. Approving a submission registers the project on-chain so it can receive deposits and staking.</Item>
+        <Item><strong>Builder deposit refunds</strong> — builders claim their own deposits. In the normal path, you must approve the builder&apos;s submission on-chain before the refund unlocks. <strong>Enable refund override</strong> is the exceptional bypass path.</Item>
+        <Item><strong>Forfeit deposits</strong> — only call <strong>Forfeit deposit</strong> at least 14 days after results, and only if the builder never declared the project submitted. The deposit is split: 50% to the fee recipient, 50% stays in the staking pool.</Item>
       </Section>
 
       <Section title="Resolving a hackathon">
@@ -196,15 +198,16 @@ function AdminGuide() {
           <Step n={2} title="Finalize (irreversible)">
             Click <strong>Finalize resolve</strong> and confirm. This is permanent — it computes effective tier allocations, snapshots sqrt totals, and sets <code style={{ fontFamily: "monospace", fontSize: "0.85em" }}>is_resolved = true</code>. Stakers can now claim.
           </Step>
-          <Step n={3} title="Release builder deposits">
-            Click <strong>Release all deposits</strong> in the Deposit Management section. This calls <code style={{ fontFamily: "monospace", fontSize: "0.85em" }}>enable_refund</code> for each builder who paid their deposit, allowing them to pull their funds back from escrow. For builders who never submitted, use <strong>Forfeit deposit</strong> individually (recommended: wait 14+ days after results date).
-          </Step>
+        <Step n={3} title="Builder deposit refunds">
+          Builders claim their own deposits after you approve their submission. For exceptional cases (cancellations, judging errors), use <strong>Enable refund override</strong> per project.
+        </Step>
         </div>
       </Section>
 
       <Section title="Admin delegation">
         <Item>The super-admin (<strong>PROTOCOL_ADMIN</strong>) can grant the admin role to additional wallets via the <strong>Admin Delegation</strong> panel.</Item>
-        <Item>Delegated admins can whitelist wallets and resolve hackathons. Only the super-admin can create hackathons.</Item>
+        <Item>Delegated protocol admins can create hackathons, review global staker-access requests, and manage any hackathon in the current UI.</Item>
+        <Item>The wallet stored as <strong>hackathon.admin</strong> can manage that specific hackathon even without protocol-admin rights.</Item>
         <Item>Revoke delegated admins at any time from the same panel.</Item>
       </Section>
 
@@ -231,7 +234,7 @@ export default function HowToUsePage() {
             How to use HackBet
           </h1>
           <p style={{ margin: 0, fontSize: "1rem", color: "var(--c-text-3)", lineHeight: 1.7, maxWidth: "600px" }}>
-            HackBet is an on-chain conviction signal market for hackathons. Builders register projects, stakers back who they think will win with USDC, and after judging, the crowd&apos;s prediction is permanently visible on-chain alongside the official results.
+            HackBet is an on-chain conviction signal market for hackathons. Builders submit projects for organizer approval, stakers back who they think will win with USDC, and after judging, the crowd&apos;s prediction is permanently visible on-chain alongside the official results.
           </p>
         </div>
 
@@ -250,7 +253,7 @@ export default function HowToUsePage() {
               {
                 title: "Builders",
                 color: "var(--c-emerald-light)", border: "var(--c-emerald-border)", text: "var(--c-emerald-text)",
-                desc: "Register projects, pay a commitment deposit, and optionally self-stake to signal conviction in their own work."
+                desc: "Submit projects for review, pay a commitment deposit once approved on-chain, and optionally self-stake to signal conviction in their own work."
               },
               {
                 title: "Stakers",
@@ -276,7 +279,7 @@ export default function HowToUsePage() {
               An admin initializes a hackathon with a name, results date, prize tiers, and a builder deposit amount.
             </Step>
             <Step n={2} title="Builders register, stakers back">
-              Builders submit their GitHub repo URL — this creates an on-chain project PDA. Whitelisted stakers browse projects and lock in USDC. Earlier stakers earn a higher share multiplier (1.5× at project registration → 1.0× at hackathon cutoff).
+              Builders submit their GitHub repo URL — this creates an on-chain project PDA. Whitelisted stakers browse projects and lock in USDC. Earlier stakers earn a higher share multiplier (1.5× at hackathon open → 1.0× at cutoff).
             </Step>
             <Step n={3} title="Staking locks 24h before results">
               Once the cutoff passes, no new stakes or unstakes are accepted. The pool is frozen.
@@ -335,8 +338,7 @@ export default function HowToUsePage() {
             {[
               { href: "/",          label: "Browse hackathons" },
               { href: "/dev",       label: "Submit a project" },
-              { href: "/dashboard", label: "Activity dashboard" },
-              { href: "/admin",     label: "Admin panel" },
+                { href: "/admin",     label: "Admin panel" },
             ].map(({ href, label }) => (
               <Link
                 key={href}

@@ -75,31 +75,36 @@ Unstaking before cutoff incurs a fixed **3% penalty**: 1.5% goes to the fee reci
 
 ### Instructions
 
-#### User-Callable
+#### Builder / Staker Callables
 
 | Instruction | Description |
 |---|---|
-| `register_project(github_url, url_hash)` | Register a project. Anyone can call. Creates `ProjectAccount` PDA (seed: `sha256(github_url)`). |
-| `pay_deposit` | Builder pays the hackathon's commitment deposit into escrow. Required before backers can stake. |
+| `pay_deposit` | Builder pays the hackathon's optional commitment deposit into escrow when that hackathon requires one. Required before backers can stake. |
 | `self_stake(amount)` | Builder stakes their own funds. Min: `deposit_amount`. Max cumulative: $2,000. |
-| `submit_project` | Builder declares on-chain submission (before cutoff). Unlocks deposit refund. |
-| `stake(amount)` | Whitelisted wallet stakes USDC. Cap: $2,000. Requires `WhitelistedWallet` PDA and deposit paid. |
+| `submit_project` | Builder declares on-chain submission before cutoff. Organizer approval of that submission is still required before `claim_deposit_refund` unless refund override is enabled. |
+| `stake(amount)` | Whitelisted wallet stakes USDC. Cap: $2,000. Requires `WhitelistedWallet` PDA, deposit paid, and a project that is already live on-chain. |
 | `unstake` | Withdraw all stake before cutoff. Flat 3% penalty. Shares zeroed. |
 | `claim` | After `finalize_resolve`, claim payout. Marks `is_claimed = true`. Irreversible. |
 | `refund` | Admin-enabled exceptional refund path. Returns original stake, no penalty. |
-| `claim_deposit_refund` | Builder reclaims commitment deposit after submission approved. |
+| `claim_deposit_refund` | Builder reclaims the optional commitment deposit after organizer approval of the submission or refund override. |
 
-#### Admin-Only (PROTOCOL_ADMIN)
+#### Hackathon Admin / Protocol-Admin Callables
 
 | Instruction | Description |
 |---|---|
-| `initialize_hackathon(...)` | Create a hackathon. Sets name, timestamps, tier config, fee recipient, deposit rules. |
+| `register_project(github_url, url_hash)` | Register an approved project on-chain for a builder wallet. Callable by the hackathon admin or a protocol admin. |
 | `whitelist_wallet` | Grant a wallet the ability to stake in a specific hackathon. |
 | `resolve(rank)` | Set the judge rank on one project (after `results_timestamp`). |
 | `finalize_resolve` | Compute effective tier percentages, snapshot `tier_c_totals`, set `is_resolved = true`. Irreversible. |
 | `enable_refund` | Mark a project refund-eligible (exceptional case). |
-| `approve_submissions` | Batch-approve builder submissions when `requires_approval = true`. |
-| `forfeit_deposit` | Confiscate deposit of a ghost builder. 50% to fee recipient, 50% to pool. |
+| `approve_submissions` | Batch-approve builder submissions so optional deposits become claimable. |
+| `forfeit_deposit` | Confiscate deposit of a ghost builder after the post-results grace period. 50% to fee recipient, 50% to pool. |
+
+#### Protocol-Admin Only
+
+| Instruction | Description |
+|---|---|
+| `initialize_hackathon(...)` | Create a hackathon. Sets name, timestamps, tier config, fee recipient, and deposit rules. Callable by the super-admin or a delegated `ProtocolAdminEntry` wallet. |
 | `add_protocol_admin` / `remove_protocol_admin` | Delegate / revoke admin rights to another wallet. |
 
 #### Deployer-Only (BPF Upgrade Authority)
@@ -141,16 +146,19 @@ PDA: `["escrow", hackathon]`
 |---|---|
 | `/` | Landing — hackathon list, project explorer, stake UI |
 | `/hackathon/[id]` | Hackathon detail — project cards, staking, leaderboard, claim |
-| `/admin` | Protocol admin panel — create hackathons, whitelist wallets, approve submissions, set ranks, finalize |
+| `/admin` | Admin panel — protocol admins can create hackathons; protocol admins and assigned hackathon admins can manage submissions, staker access, deposits, and results |
 | `/master` | Deployer panel — view upgrade authority, transfer or permanently revoke |
-| `/dev` | Development utilities |
+| `/dev` | Builder portal — submit projects, manage deposits, self-stake, and claim refunds |
 
 ### API Routes
 
 | Route | Method | Description |
 |---|---|---|
+| `/api/whitelist-request` | POST | Create a wallet-signed request for staking access. Deduplicates pending/approved requests per wallet. |
 | `/api/github-stats?url=` | GET | GitHub repo stats (last commit, 7-day commits). 1-hour Supabase cache. Graceful fallback on GitHub rate-limit. |
-| `/api/project-metadata` | POST | Upsert project social metadata (Twitter, Telegram, Discord). Requires wallet signature on `hackbet:register:<projectPubkey>`. First-claimer ownership. |
+| `/api/project-submission` | POST | Create or refresh a builder-submitted project review request, including the project's social metadata. Requires a wallet signature on `hackbet:register:<projectPubkey>`. |
+| `/api/admin/project-submissions` | GET / POST | Admin review queue for project submissions. Uses per-request signed admin headers. |
+| `/api/admin/whitelist-requests` | GET / POST | Admin review queue for staking-access requests. Uses per-request signed admin headers. |
 
 ### Key Components
 
@@ -169,7 +177,7 @@ PDA: `["escrow", hackathon]`
 | `useUserStake(user, project)` | On-chain | Single `UserStake` PDA |
 | `useWhitelistStatus(hackathon, wallet)` | On-chain | Whether wallet has a `WhitelistedWallet` PDA |
 | `useHackathonMeta(pubkey)` | Supabase | Off-chain name, icon, and link metadata |
-| `useIsProtocolAdmin` | Constants | Whether connected wallet is PROTOCOL_ADMIN or DEPLOYER |
+| `useIsProtocolAdmin` | On-chain / constants | Whether connected wallet is the super-admin or has a `ProtocolAdminEntry` PDA |
 | `useTheme` | localStorage | Dark / light mode |
 
 ### Off-Chain Data (Supabase)
@@ -178,6 +186,8 @@ PDA: `["escrow", hackathon]`
 |---|---|
 | `hackathon_metadata` | `official_link`, `icon_url` per hackathon pubkey |
 | `project_metadata` | `twitter_handle`, `telegram`, `discord`, `github_url` per project pubkey |
+| `project_submissions` | Builder registration / review state, keyed by project and wallet |
+| `whitelist_requests` | Staker access requests per hackathon and wallet |
 | `github_stats` | Cached GitHub commit stats (1-hour TTL) |
 
 ---
@@ -263,16 +273,16 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Admin Panel Walkthrough
 
 ### Creating a Hackathon
-1. Connect the protocol admin wallet (`5mxHcM…`)
+1. Connect a protocol admin wallet (`5mxHcM…`) to create hackathons, or the wallet stored as `hackathon.admin` to manage an existing event
 2. Go to `/admin` → **Create Hackathon**
-3. Fill in: name, results date, tier count, builder deposit, protocol fee bps, fee recipient, requires-approval flag
+3. Fill in: name, results date, tier count, builder deposit, protocol fee bps, and fee recipient
 4. Configure tier percentages (must sum to 100) and expected project counts per tier
-5. Submit — creates `HackathonState` PDA + escrow token account on-chain
+5. Submit — creates `HackathonState` PDA + escrow token account on-chain. Submission approval is currently always on in the admin flow.
 
 ### Whitelisting Stakers
-Inside each hackathon card on `/admin`:
-1. Expand the card → **Whitelist stakers**
-2. Paste a wallet address, click **Whitelist** — creates the `WhitelistedWallet` PDA
+1. Expand a hackathon card → **Staker access**
+2. Paste a wallet address, click **Grant access** — creates the `WhitelistedWallet` PDA for that hackathon
+3. Protocol admins can also use the global staker access panel to grant access across every current hackathon and review pending requests
 
 ### Resolving Results
 After `results_timestamp`:
@@ -285,7 +295,7 @@ After `results_timestamp`:
 
 ## Security Properties
 
-- **Admin gate:** Only `PROTOCOL_ADMIN` can create hackathons or whitelist wallets. Enforced via on-chain `address` constraint.
+- **Admin gate:** Protocol admins can create hackathons and manage any event. The wallet stored as `hackathon.admin` can manage that specific hackathon's whitelist, submissions, deposit controls, and resolution.
 - **Whitelist gate:** Only wallets with a `WhitelistedWallet` PDA for the hackathon can stake.
 - **Payout denominator integrity:** `finalize_resolve` snapshots `tier_c_totals` on-chain. Claim reads stored values — caller cannot inflate payouts by omitting competitor accounts.
 - **Finalization is irreversible:** `finalize_resolve` sets `is_resolved = true`. No further ranking changes or unstakes are possible after this point.

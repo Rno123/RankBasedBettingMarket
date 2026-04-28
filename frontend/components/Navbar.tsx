@@ -30,8 +30,8 @@ export default function Navbar() {
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
 
-  // Privy auth state
-  const { ready, authenticated, user, login, logout } = usePrivy();
+  // Privy auth state — used only for identity display; login/logout go through WalletMultiButton
+  const { authenticated, user } = usePrivy();
   const privyLabel =
     user?.email?.address ??
     user?.google?.email ??
@@ -92,7 +92,6 @@ export default function Navbar() {
             <Link href="/dev" style={navLinkStyle("/dev")}>
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
-            <Link href="/dashboard" style={navLinkStyle("/dashboard")}>Dashboard</Link>
             <Link href="/how-to-use" style={navLinkStyle("/how-to-use")}>How to Use</Link>
             {showAdmin && (
               <Link href="/admin" style={navLinkStyle("/admin")}>Admin</Link>
@@ -116,42 +115,11 @@ export default function Navbar() {
             </span>
           )}
 
-          {/* Privy auth */}
-          {ready && (
-            authenticated ? (
-              <div className="hidden-sm-flex" style={{ alignItems: "center", gap: "6px" }}>
-                {privyLabel && (
-                  <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {privyLabel}
-                  </span>
-                )}
-                <button
-                  onClick={() => logout()}
-                  style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--c-text-3)", background: "none", border: "none", cursor: "pointer", padding: "4px 8px", borderRadius: "6px" }}
-                >
-                  Sign out
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => login()}
-                className="hidden-sm-block"
-                style={{
-                  height: "36px",
-                  padding: "0 12px",
-                  borderRadius: "8px",
-                  border: "1px solid var(--c-indigo-border)",
-                  background: "var(--c-indigo-light)",
-                  color: "var(--c-indigo-text)",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Sign in
-              </button>
-            )
+          {/* Privy identity label — shown after email/social login */}
+          {authenticated && privyLabel && (
+            <span className="hidden-sm-block" style={{ fontSize: "0.75rem", color: "var(--c-text-4)", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {privyLabel}
+            </span>
           )}
 
           {/* Theme toggle */}
@@ -216,7 +184,6 @@ export default function Navbar() {
             <Link href="/dev" style={{ ...navLinkStyle("/dev"), padding: "8px 12px", borderRadius: "8px" }}>
               {devUser ? "Dev Portal" : "Submit Project"}
             </Link>
-            <Link href="/dashboard" style={{ ...navLinkStyle("/dashboard"), padding: "8px 12px", borderRadius: "8px" }}>Dashboard</Link>
             <Link href="/how-to-use" style={{ ...navLinkStyle("/how-to-use"), padding: "8px 12px", borderRadius: "8px" }}>How to Use</Link>
             {showAdmin && (
               <Link href="/admin" style={{ ...navLinkStyle("/admin"), padding: "8px 12px", borderRadius: "8px" }}>Admin</Link>
@@ -226,15 +193,7 @@ export default function Navbar() {
                 Master
               </Link>
             )}
-            {ready && !authenticated && (
-              <button
-                onClick={() => { login(); setMenuOpen(false); }}
-                style={{ textAlign: "left", padding: "8px 12px", borderRadius: "8px", background: "none", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-indigo-text)" }}
-              >
-                Sign in
-              </button>
-            )}
-            {ready && authenticated && privyLabel && (
+            {authenticated && privyLabel && (
               <p style={{ margin: "4px 0 0", padding: "0 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
                 {privyLabel}
               </p>

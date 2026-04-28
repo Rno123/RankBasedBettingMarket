@@ -40,6 +40,10 @@ export default function ClaimButton({
         hackathon.usdcMint,
         publicKey,
       );
+      const feeRecipientAta = getAssociatedTokenAddressSync(
+        hackathon.usdcMint,
+        hackathon.feeRecipient,
+      );
       const escrow = escrowPda(hackathon.pubkey);
       const userStake = stakePda(publicKey, project.pubkey);
 
@@ -51,6 +55,7 @@ export default function ClaimButton({
           project: project.pubkey,
           userStake,
           userTokenAccount: userAta,
+          feeRecipientTokenAccount: feeRecipientAta,
           escrow,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
@@ -80,7 +85,7 @@ export default function ClaimButton({
         className="ui-btn ui-btn-emerald"
         style={{ width: "100%", padding: "10px 16px", fontSize: "0.875rem" }}
       >
-        {busy ? "Claiming…" : "Claim payout"}
+        {busy ? "Claiming…" : "Claim winnings"}
       </button>
       {err && <p style={{ marginTop: "6px", fontSize: "0.75rem", color: "var(--c-red-text)" }}>{err}</p>}
     </div>
