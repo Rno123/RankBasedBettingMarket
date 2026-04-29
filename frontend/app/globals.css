@@ -160,6 +160,30 @@ html.dark ::-webkit-scrollbar-thumb { background: #1e1b4b; }
 }
 .ui-input:disabled { opacity: 0.5; cursor: not-allowed; }
 
+select,
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  color-scheme: light;
+}
+
+html.dark select,
+html.dark input[type="date"],
+html.dark input[type="time"],
+html.dark input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+select option {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+html.dark select option {
+  background: #0f172a;
+  color: #ffffff;
+}
+
 .ui-input-sm {
   border-radius: 8px;
   border: 1px solid var(--c-input-border);

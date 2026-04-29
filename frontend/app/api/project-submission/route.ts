@@ -18,6 +18,20 @@ interface ProjectSubmissionBody {
   walletAddress?: string;
 }
 
+function formatProjectSubmissionDbError(error: {
+  code?: string | null;
+  message?: string | null;
+} | null): string {
+  if (!error) return "Failed to save submission";
+  if (
+    error.code === "PGRST204" &&
+    (error.message ?? "").includes("project_submissions")
+  ) {
+    return `Supabase schema is out of date for project submissions. ${error.message} Run the latest Supabase migration.`;
+  }
+  return error.message ?? "Failed to save submission";
+}
+
 function expectedProjectPubkey(
   hackathonPubkey: string,
   githubUrl: string,
@@ -151,7 +165,10 @@ export async function POST(request: NextRequest) {
 
   if (upsertError) {
     console.error("project_submissions upsert error:", upsertError);
-    return NextResponse.json({ error: "Failed to save submission" }, { status: 500 });
+    return NextResponse.json(
+      { error: formatProjectSubmissionDbError(upsertError) },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ data }, { status: existing ? 200 : 201 });

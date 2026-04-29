@@ -12,6 +12,7 @@ import { SystemProgram } from "@solana/web3.js";
 import { getProgram } from "@/lib/program";
 import { escrowPda, stakePda, whitelistPda } from "@/lib/pda";
 import { parseTokens, formatTokens } from "@/lib/format";
+import { computeShares, estimatePayout, formatRoi } from "@/lib/payout";
 import { useWhitelistStatus } from "@/hooks/useWhitelistStatus";
 import type { HackathonInfo } from "@/hooks/useHackathons";
 import type { ProjectInfo } from "@/hooks/useProjects";
@@ -46,6 +47,25 @@ export default function StakeModal({
 
   const nowSecs = Math.floor(Date.now() / 1000);
   const canUnstake = !!stake && stake.amount > 0n && nowSecs < hackathon.cutoffTimestamp;
+
+  // Live tier-1 payout estimate for the amount being typed
+  const tier1Estimate = useMemo(() => {
+    const parsed = parseTokens(amount);
+    if (parsed <= 0n || hackathon.tierPcts.length === 0) return null;
+    const newShares = computeShares(parsed, nowSecs, hackathon.startTimestamp, hackathon.cutoffTimestamp);
+    const totalUserShares = (stake?.shares ?? 0n) + newShares;
+    const totalProjectShares = project.totalShares + newShares;
+    const totalPool = hackathon.totalPool + parsed;
+    const estimated = estimatePayout(
+      totalUserShares,
+      totalProjectShares,
+      totalPool,
+      hackathon.tierPcts[0],
+      hackathon.protocolFeeBps ?? 150,
+    );
+    const totalStaked = (stake?.amount ?? 0n) + parsed;
+    return { estimated, totalStaked, tierPct: hackathon.tierPcts[0] };
+  }, [amount, stake?.shares, stake?.amount, project.totalShares, hackathon.totalPool, hackathon.tierPcts, hackathon.protocolFeeBps, hackathon.startTimestamp, hackathon.cutoffTimestamp, nowSecs]);
 
   const currentMultiplier = useMemo(() => {
     const start = hackathon.startTimestamp;
@@ -208,6 +228,24 @@ export default function StakeModal({
 
         {(!publicKey || isWhitelisted !== false) && (
           <>
+            {tier1Estimate && (
+              <div style={{ marginBottom: "16px", borderRadius: "12px", border: "1px solid var(--c-emerald-border, var(--c-indigo-border))", background: "var(--c-emerald-light, var(--c-indigo-light))", padding: "12px" }}>
+                <p style={{ margin: "0 0 4px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>
+                  Est. if tier 1 alone ({tier1Estimate.tierPct}% of pool)
+                </p>
+                <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+                  <span style={{ fontSize: "1.25rem", fontWeight: 900, color: "var(--c-text)" }}>
+                    ~{formatTokens(tier1Estimate.estimated)} USDC
+                  </span>
+                  <span style={{ fontSize: "0.875rem", fontWeight: 600, color: tier1Estimate.estimated >= tier1Estimate.totalStaked ? "var(--c-emerald-text, var(--c-indigo-text))" : "var(--c-text-4)" }}>
+                    {formatRoi(tier1Estimate.estimated, tier1Estimate.totalStaked)}
+                  </span>
+                </div>
+                <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "var(--c-text-4)" }}>
+                  Assumes no other projects in tier 1. Actual payout depends on competing winners.
+                </p>
+              </div>
+            )}
             <div style={{ marginBottom: "16px" }}>
               <label style={{ display: "block", marginBottom: "6px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>
                 Add stake (USDC)

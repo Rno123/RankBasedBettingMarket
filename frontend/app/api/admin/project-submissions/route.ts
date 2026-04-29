@@ -3,7 +3,7 @@ import {
   canManageHackathon,
   filterManagedHackathonRows,
   resolveAdminAccess,
-  verifyAdminSessionSignature,
+  verifyAdminRequest,
 } from "@/lib/server-admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
@@ -26,10 +26,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
   }
 
-  let wallet;
+  let identity;
   try {
-    wallet = verifyAdminSessionSignature(
-      request.headers,
+    identity = verifyAdminRequest(
+      request,
       "project_submissions:list",
       "*",
     );
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  const access = await resolveAdminAccess(wallet);
+  const access = await resolveAdminAccess(identity.wallet);
 
   const { data, error } = await db
     .from("project_submissions")
@@ -81,17 +81,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
-  let wallet;
+  let identity;
   try {
-    wallet = verifyAdminSessionSignature(
-      request.headers,
+    identity = verifyAdminRequest(
+      request,
       "project_submissions:review",
       submission_id,
     );
   } catch {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
-  const access = await resolveAdminAccess(wallet);
+  const access = await resolveAdminAccess(identity.wallet);
 
   const { data: submissionData, error: fetchError } = await db
     .from("project_submissions")

@@ -19,8 +19,10 @@ export interface HackathonInfo {
   isResolved: boolean;
   requiresApproval: boolean;
   openStaking: boolean;
+  protocolFeeBps: number;
   tierCount: number;
   tierPcts: number[];
+  tierExpectedCounts: number[];
   effectiveTierPcts: number[];
 }
 
@@ -67,8 +69,10 @@ export function useHackathons() {
               isResolved: d.isResolved as boolean,
               requiresApproval: (d.requiresApproval as boolean) ?? false,
               openStaking: (d.openStaking as boolean) ?? true,
+              protocolFeeBps: (d.protocolFeeBps as number) ?? 150,
               tierCount: d.tierCount as number,
               tierPcts: Array.from(d.tierPcts as number[]).slice(0, d.tierCount),
+              tierExpectedCounts: Array.from(d.tierExpectedCounts as number[]).slice(0, d.tierCount),
               effectiveTierPcts: Array.from(
                 d.effectiveTierPcts as number[],
               ).slice(0, d.tierCount),

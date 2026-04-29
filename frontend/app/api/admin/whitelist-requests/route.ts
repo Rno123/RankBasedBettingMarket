@@ -3,7 +3,7 @@ import {
   canManageHackathon,
   filterManagedHackathonRows,
   resolveAdminAccess,
-  verifyAdminSessionSignature,
+  verifyAdminRequest,
 } from "@/lib/server-admin-auth";
 import { PROTOCOL_ADMIN } from "@/lib/constants";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -25,10 +25,10 @@ export async function GET(request: NextRequest) {
   }
 
   const hackathonPubkey = request.nextUrl.searchParams.get("hackathon_pubkey");
-  let wallet;
+  let identity;
   try {
-    wallet = verifyAdminSessionSignature(
-      request.headers,
+    identity = verifyAdminRequest(
+      request,
       "whitelist_requests:list",
       hackathonPubkey ?? "*",
     );
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  const access = await resolveAdminAccess(wallet);
+  const access = await resolveAdminAccess(identity.wallet);
 
   const query = db
     .from("whitelist_requests")
@@ -83,18 +83,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
-  let wallet;
+  let identity;
   try {
-    wallet = verifyAdminSessionSignature(
-      request.headers,
+    identity = verifyAdminRequest(
+      request,
       "whitelist_requests:review",
       request_id,
     );
   } catch {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
-  const access = await resolveAdminAccess(wallet);
-  if (wallet.toBase58() !== PROTOCOL_ADMIN) {
+  const access = await resolveAdminAccess(identity.wallet);
+  if (identity.wallet.toBase58() !== PROTOCOL_ADMIN) {
     return NextResponse.json({ error: "Only the super-admin can review staker access" }, { status: 403 });
   }
 

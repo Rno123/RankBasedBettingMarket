@@ -11,13 +11,15 @@ import { hackathonPda, escrowPda, hashUrl, whitelistPda, protocolAdminPda } from
 import { useHackathons } from "@/hooks/useHackathons";
 import { useProjects } from "@/hooks/useProjects";
 import { formatTokens, formatDate } from "@/lib/format";
-import { USDC_MINT, PROTOCOL_ADMIN } from "@/lib/constants";
-import { createAdminAuthHeaders } from "@/lib/client-admin-auth";
+import { USDC_MINT, PROTOCOL_ADMIN, DEPLOYER } from "@/lib/constants";
+import { clearAdminSessionCache, ensureAdminSession } from "@/lib/client-admin-auth";
 import { useIsProtocolAdmin } from "@/hooks/useIsProtocolAdmin";
 import { getSupabase } from "@/lib/supabase";
 
 interface AdminApiAuth {
-  createHeaders: ((action: string, resource?: string | null) => Promise<Record<string, string>>) | null;
+  ensureSession: (() => Promise<void>) | null;
+  invalidateSession: (message?: string) => void;
+  ready: boolean;
 }
 
 interface WhitelistRequest {
@@ -32,6 +34,11 @@ interface WhitelistRequest {
 
 type HackathonEntry = ReturnType<typeof useHackathons>["hackathons"][number];
 const RESULTS_DATE_STEP_SECONDS = 30 * 60;
+const TIME_OPTIONS_30MIN = Array.from({ length: 48 }, (_, i) => {
+  const h = String(Math.floor(i / 2)).padStart(2, "0");
+  const m = i % 2 === 0 ? "00" : "30";
+  return `${h}:${m}`;
+});
 type ResultsDateParse =
   | { timestamp: number; error?: never }
   | { timestamp?: never; error: string };
@@ -102,11 +109,11 @@ async function ensureWalletWhitelistedAcrossHackathons(
 }
 
 async function fetchApprovedWhitelistWallets(adminAuth: AdminApiAuth) {
-  if (!adminAuth.createHeaders) return [] as string[];
+  if (!adminAuth.ensureSession || !adminAuth.ready) return [] as string[];
+  await adminAuth.ensureSession();
 
   const response = await fetch("/api/admin/whitelist-requests", {
     cache: "no-store",
-    headers: await adminAuth.createHeaders("whitelist_requests:list", "*"),
   });
   const payload = await response.json();
   if (!response.ok) {
@@ -579,9 +586,9 @@ function CreateHackathonPanel({
   const anchorWallet = useAnchorWallet();
   const [step, setStep] = useState<1 | 2>(1);
   const [hackathonName, setHackathonName] = useState("");
-  const [resultsDate, setResultsDate] = useState("");
+  const [resultsDatePart, setResultsDatePart] = useState("");
+  const [resultsTimePart, setResultsTimePart] = useState("12:00");
   const [numTiers, setNumTiers] = useState<number>(3);
-  const [feeRecipientInput, setFeeRecipientInput] = useState("");
   const [protocolFeeBps, setProtocolFeeBps] = useState("150");
   const [depositAmountUsdc, setDepositAmountUsdc] = useState("10");
   const [tierPcts, setTierPcts] = useState<string[]>(["55", "30", "15"]);
@@ -625,7 +632,8 @@ function CreateHackathonPanel({
     const trimmedName = hackathonName.trim();
     if (!trimmedName) { setErr("Hackathon name is required"); return; }
     if (new TextEncoder().encode(trimmedName).length > 50) { setErr("Name exceeds 50 bytes"); return; }
-    const parsedResults = parseResultsDateInput(resultsDate);
+    if (!resultsDatePart) { setErr("Results date is required"); return; }
+    const parsedResults = parseResultsDateInput(`${resultsDatePart}T${resultsTimePart}`);
     if (parsedResults.error !== undefined) { setErr(parsedResults.error); return; }
     const resultsTs = parsedResults.timestamp;
     if (resultsTs < Math.floor(Date.now() / 1000)) { setErr("Results date must be in the future"); return; }
@@ -634,8 +642,6 @@ function CreateHackathonPanel({
     if (isNaN(feeBps) || feeBps < 0 || feeBps > 10000) { setErr("Protocol fee must be 0–10000 bps"); return; }
     const depositLamports = Math.round(parseFloat(depositAmountUsdc) * 1_000_000);
     if (isNaN(depositLamports) || depositLamports < 0) { setErr("Deposit amount must be ≥ 0"); return; }
-    const feeInput = feeRecipientInput.trim();
-    if (feeInput) { try { new PublicKey(feeInput); } catch { setErr("Invalid fee recipient address"); return; } }
     setStep(2);
   }
 
@@ -652,12 +658,12 @@ function CreateHackathonPanel({
     setBusy(true);
     try {
       const trimmedName = hackathonName.trim();
-      const parsedResults = parseResultsDateInput(resultsDate);
+      const parsedResults = parseResultsDateInput(`${resultsDatePart}T${resultsTimePart}`);
       if (parsedResults.error !== undefined) {
         throw new Error(parsedResults.error);
       }
       const resultsTs = parsedResults.timestamp;
-      const feeRecipient = feeRecipientInput.trim() ? new PublicKey(feeRecipientInput.trim()) : publicKey;
+      const feeRecipient = new PublicKey(DEPLOYER);
       const feeBps = parseInt(protocolFeeBps);
       const depositLamports = new BN(Math.round(parseFloat(depositAmountUsdc) * 1_000_000));
       const program = getProgram(anchorWallet);
@@ -668,6 +674,31 @@ function CreateHackathonPanel({
         .accounts({ admin: publicKey, hackathon, escrow, usdcMint: USDC_MINT, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
         .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey))
         .rpc();
+      try {
+        if (adminAuth.ensureSession) {
+          await adminAuth.ensureSession();
+          await fetch("/api/admin/hackathon-created", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              hackathon_pubkey: hackathon.toBase58(),
+              name: trimmedName,
+              admin_wallet: publicKey.toBase58(),
+              results_timestamp: resultsTs,
+              num_tiers: numTiers,
+              tier_pcts: pcts,
+              tier_counts: counts,
+              fee_recipient: feeRecipient.toBase58(),
+              protocol_fee_bps: feeBps,
+              deposit_amount: Math.round(parseFloat(depositAmountUsdc) * 1_000_000),
+              requires_approval: requiresApproval,
+              open_staking: openStaking,
+            }),
+          });
+        }
+      } catch (logErr) {
+        console.warn("Failed to log hackathon creation to Supabase:", logErr);
+      }
       let inheritedCount = 0;
       try {
         const approvedWallets = await fetchApprovedWhitelistWallets(adminAuth);
@@ -714,14 +745,26 @@ function CreateHackathonPanel({
           </div>
           <div>
             <label style={labelStyle}>Results date &amp; time</label>
-            <input
-              type="datetime-local"
-              step={RESULTS_DATE_STEP_SECONDS}
-              className="ui-input"
-              value={resultsDate}
-              onChange={(e) => setResultsDate(e.target.value)}
-            />
-            <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>Use 30-minute intervals only.</p>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <input
+                type="date"
+                className="ui-input"
+                style={{ flex: 1 }}
+                value={resultsDatePart}
+                onChange={(e) => setResultsDatePart(e.target.value)}
+              />
+              <select
+                className="ui-input"
+                style={{ width: "120px" }}
+                value={resultsTimePart}
+                onChange={(e) => setResultsTimePart(e.target.value)}
+              >
+                {TIME_OPTIONS_30MIN.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>Time is in your local timezone.</p>
           </div>
           <div className="grid-auto-2" style={{ gap: "12px" }}>
             <div>
@@ -733,18 +776,10 @@ function CreateHackathonPanel({
               <input type="number" min={0} step="0.01" className="ui-input" value={depositAmountUsdc} onChange={(e) => setDepositAmountUsdc(e.target.value)} />
             </div>
           </div>
-          <div className="grid-auto-2" style={{ gap: "12px" }}>
-            <div>
-              <label style={labelStyle}>Protocol fee (bps)</label>
-              <input type="number" min={0} max={10000} className="ui-input" value={protocolFeeBps} onChange={(e) => setProtocolFeeBps(e.target.value)} />
-              <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>150 = 1.5%</p>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", borderRadius: "12px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "12px" }}>
-              <label style={{ ...labelStyle, marginBottom: "4px" }}>Submission approval</label>
-              <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-amber-text)" }}>
-                Always on. Builders must mark projects submitted, then an organizer approves before deposit refunds unlock.
-              </p>
-            </div>
+          <div>
+            <label style={labelStyle}>Protocol fee (bps)</label>
+            <input type="number" min={0} max={10000} className="ui-input" value={protocolFeeBps} onChange={(e) => setProtocolFeeBps(e.target.value)} />
+            <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>150 = 1.5%</p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", borderRadius: "12px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px" }}>
             <input
@@ -757,13 +792,9 @@ function CreateHackathonPanel({
             <div>
               <label htmlFor="openStakingToggle" style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--c-text)", cursor: "pointer" }}>Open staking</label>
               <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-                Anyone can stake (no on-chain whitelist check). Uncheck to enforce per-wallet whitelist PDAs.
+                Anyone can stake (no on-chain whitelist check). Uncheck to enforce per-wallet whitelist PDAs. When unchecked, whitelist is enforced on-chain so each new whitelisted wallet requires a separate on-chain transaction. Leave checked if you&apos;re unsure what this means.
               </p>
             </div>
-          </div>
-          <div>
-            <label style={labelStyle}>Fee recipient <span style={{ fontWeight: 400, color: "var(--c-text-4)" }}>(leave blank to use your wallet)</span></label>
-            <input className="ui-input" style={{ fontFamily: "monospace" }} placeholder="Solana wallet address…" value={feeRecipientInput} onChange={(e) => setFeeRecipientInput(e.target.value)} />
           </div>
         </div>
       )}
@@ -891,7 +922,7 @@ function MetadataPanel({ hackathon }: { hackathon: ReturnType<typeof useHackatho
   useEffect(() => {
     const sb = getSupabase();
     if (!sb) return;
-    sb.from("hackathon_metadata").select("official_link, icon_url").eq("hackathon_pubkey", hackathon.pubkey.toBase58()).single().then(({ data }) => {
+    sb.from("hackathon_metadata").select("official_link, icon_url").eq("hackathon_pubkey", hackathon.pubkey.toBase58()).maybeSingle().then(({ data }) => {
       if (data) { setLink(data.official_link ?? ""); setIconUrl(data.icon_url ?? ""); }
     });
   }, [hackathon.pubkey.toBase58()]);
@@ -951,8 +982,9 @@ function GlobalWhitelistPanel({
     let cancelled = false;
 
     async function loadRequests() {
-      if (!adminAuth.createHeaders) {
+      if (!adminAuth.ensureSession || !adminAuth.ready) {
         if (!cancelled) setRequests([]);
+        if (!cancelled) setLoadingRequests(false);
         return;
       }
 
@@ -961,8 +993,11 @@ function GlobalWhitelistPanel({
       try {
         const response = await fetch("/api/admin/whitelist-requests", {
           cache: "no-store",
-          headers: await adminAuth.createHeaders("whitelist_requests:list", "*"),
         });
+        if (response.status === 401) {
+          adminAuth.invalidateSession();
+          throw new Error("Admin session expired. Sign in again.");
+        }
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.error ?? "Failed to load whitelist requests");
@@ -977,7 +1012,7 @@ function GlobalWhitelistPanel({
 
     void loadRequests();
     return () => { cancelled = true; };
-  }, [publicKey?.toBase58(), Boolean(adminAuth.createHeaders), hackathons.length]);
+  }, [publicKey?.toBase58(), adminAuth.ready, hackathons.length]);
 
   async function handleWhitelist() {
     if (!publicKey || !anchorWallet) return;
@@ -1004,7 +1039,7 @@ function GlobalWhitelistPanel({
   }
 
   async function reviewRequest(request: WhitelistRequest, status: "approved" | "rejected") {
-    if (!publicKey || !anchorWallet || !adminAuth.createHeaders) return;
+    if (!publicKey || !anchorWallet || !adminAuth.ensureSession) return;
     setRequestBusy(request.id);
     setRequestErr(null);
     try {
@@ -1014,11 +1049,11 @@ function GlobalWhitelistPanel({
         await ensureWalletWhitelistedAcrossHackathons(program, publicKey, hackathons, wallet);
       }
 
+      await adminAuth.ensureSession();
       const response = await fetch("/api/admin/whitelist-requests", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(await adminAuth.createHeaders("whitelist_requests:review", request.id)),
         },
         body: JSON.stringify({
           request_id: request.id,
@@ -1184,7 +1219,7 @@ function SubmissionsSection({
 
   async function load() {
     setLoading(true);
-    if (!adminAuth.createHeaders) {
+    if (!adminAuth.ensureSession || !adminAuth.ready) {
       setSubmissions([]);
       setLoading(false);
       return;
@@ -1194,8 +1229,11 @@ function SubmissionsSection({
     try {
       const response = await fetch("/api/admin/project-submissions", {
         cache: "no-store",
-        headers: await adminAuth.createHeaders("project_submissions:list", "*"),
       });
+      if (response.status === 401) {
+        adminAuth.invalidateSession();
+        throw new Error("Admin session expired. Sign in again.");
+      }
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to load submissions");
@@ -1210,10 +1248,10 @@ function SubmissionsSection({
     setLoading(false);
   }
 
-  useEffect(() => { void load(); }, [publicKey?.toBase58(), Boolean(adminAuth.createHeaders), hackathons.length]);
+  useEffect(() => { void load(); }, [publicKey?.toBase58(), adminAuth.ready, hackathons.length]);
 
   async function updateStatus(id: string, status: "approved" | "rejected") {
-    if (!adminAuth.createHeaders) return;
+    if (!adminAuth.ensureSession) return;
     setBusy(id);
     setErr(null);
     setOk(null);
@@ -1265,11 +1303,11 @@ function SubmissionsSection({
         }
       }
 
+      await adminAuth.ensureSession();
       const response = await fetch("/api/admin/project-submissions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(await adminAuth.createHeaders("project_submissions:review", id)),
         },
         body: JSON.stringify({
           submission_id: id,
@@ -1361,19 +1399,88 @@ export default function AdminPage() {
   const { publicKey, signMessage } = useWallet();
   const { hackathons, loading, reload: reloadHackathons } = useHackathons();
   const [version, setVersion] = useState(0);
+  const [adminSessionReady, setAdminSessionReady] = useState(false);
+  const [adminSessionBusy, setAdminSessionBusy] = useState(false);
+  const [adminSessionErr, setAdminSessionErr] = useState<string | null>(null);
   const { isProtocolAdmin, isSuperAdmin } = useIsProtocolAdmin(publicKey ?? null);
   const managesHackathons = publicKey ? hackathons.some((hackathon) => hackathon.admin.equals(publicKey)) : false;
   const isAdmin = isProtocolAdmin || managesHackathons;
 
-  async function createHeaders(action: string, resource?: string | null) {
+  useEffect(() => {
+    let cancelled = false;
+    clearAdminSessionCache();
+    setAdminSessionReady(false);
+    setAdminSessionErr(null);
+
+    async function loadExistingSession() {
+      if (!publicKey || !signMessage || !isAdmin) return;
+
+      try {
+        const response = await fetch("/api/admin/session", {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        if (!response.ok) return;
+
+        const payload = await response.json() as { wallet_address?: string };
+        if (payload.wallet_address !== publicKey.toBase58()) {
+          await fetch("/api/admin/session", {
+            method: "DELETE",
+            credentials: "same-origin",
+          }).catch(() => {});
+          return;
+        }
+
+        if (!cancelled) {
+          setAdminSessionReady(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setAdminSessionReady(false);
+        }
+      }
+    }
+
+    void loadExistingSession();
+    return () => { cancelled = true; };
+  }, [publicKey?.toBase58(), Boolean(signMessage), isAdmin]);
+
+  async function startAdminSession() {
     if (!signMessage || !publicKey) {
       throw new Error("Your wallet must support message signing to review requests");
     }
-    return createAdminAuthHeaders(signMessage, publicKey, action, resource);
+    await ensureAdminSession(signMessage, publicKey);
+  }
+
+  function invalidateAdminSession(message = "Admin session expired. Sign in again.") {
+    clearAdminSessionCache();
+    setAdminSessionReady(false);
+    setAdminSessionBusy(false);
+    setAdminSessionErr(message);
+    void fetch("/api/admin/session", {
+      method: "DELETE",
+      credentials: "same-origin",
+    }).catch(() => {});
+  }
+
+  async function handleAdminSignIn() {
+    setAdminSessionBusy(true);
+    setAdminSessionErr(null);
+    try {
+      await startAdminSession();
+      setAdminSessionReady(true);
+    } catch (e: any) {
+      setAdminSessionReady(false);
+      setAdminSessionErr(e?.message ?? "Failed to sign in as admin");
+    } finally {
+      setAdminSessionBusy(false);
+    }
   }
 
   const adminAuth: AdminApiAuth = {
-    createHeaders: publicKey && signMessage ? createHeaders : null,
+    ensureSession: publicKey && signMessage ? startAdminSession : null,
+    invalidateSession: invalidateAdminSession,
+    ready: adminSessionReady,
   };
 
   const visibleHackathons = isProtocolAdmin || !publicKey
@@ -1392,8 +1499,34 @@ export default function AdminPage() {
               Access restricted. Connect a protocol admin or assigned hackathon admin wallet to use this panel.
             </div>
           )}
+          {isAdmin && !adminSessionReady && (
+            <div style={{ marginTop: "16px", borderRadius: "12px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "16px" }}>
+              <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-amber-text)" }}>
+                Admin data now loads only after an explicit sign-in click. This avoids Backpack getting spammed by automatic signature popups while the page is mounting.
+              </p>
+              <div style={{ marginTop: "12px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                <button
+                  onClick={() => void handleAdminSignIn()}
+                  disabled={adminSessionBusy || !signMessage}
+                  className="ui-btn ui-btn-indigo ui-btn-sm"
+                >
+                  {adminSessionBusy ? "Waiting for signature..." : "Sign In As Admin"}
+                </button>
+                {!signMessage && (
+                  <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                    This wallet must support message signing.
+                  </span>
+                )}
+              </div>
+              {adminSessionErr && (
+                <p style={{ margin: "10px 0 0", fontSize: "0.8125rem", color: "var(--c-red-text)" }}>
+                  {adminSessionErr}
+                </p>
+              )}
+            </div>
+          )}
         </div>
-        {isAdmin && (
+        {isAdmin && adminSessionReady && (
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             {isProtocolAdmin && <CreateHackathonPanel adminAuth={adminAuth} onCreated={() => { setVersion((v) => v + 1); reloadHackathons(); }} />}
             {isSuperAdmin && <AdminDelegationPanel />}

@@ -423,7 +423,7 @@ export default function HackathonPage({
       .from("hackathon_metadata")
       .select("official_link, icon_url")
       .eq("hackathon_pubkey", hackathonPk.toBase58())
-      .single()
+      .maybeSingle()
       .then(({ data }) => { if (data) setHackathonMeta(data); });
   }, [hackathonPk?.toBase58()]);
 

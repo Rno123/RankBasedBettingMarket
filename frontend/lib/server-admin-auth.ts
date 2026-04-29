@@ -1,6 +1,10 @@
+import { createHmac, timingSafeEqual } from "crypto";
 import nacl from "tweetnacl";
+import type { NextRequest, NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
 import {
+  ADMIN_SESSION_COOKIE,
+  ADMIN_SESSION_COOKIE_TTL_MS,
   ADMIN_SESSION_CLOCK_SKEW_MS,
   ADMIN_SESSION_TTL_MS,
   buildAdminSessionMessage,
@@ -13,6 +17,50 @@ export interface AdminAccess {
   managedHackathons: Set<string>;
   protocolAdmin: boolean;
   wallet: PublicKey;
+}
+
+export interface AdminRequestIdentity {
+  wallet: PublicKey;
+  via: "cookie" | "signature";
+}
+
+interface AdminCookiePayload {
+  exp: number;
+  wallet: string;
+}
+
+function sessionSecret(): string {
+  const secret = process.env.ADMIN_SESSION_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) {
+    throw new Error("Missing ADMIN_SESSION_SECRET");
+  }
+  return secret;
+}
+
+function signCookiePayload(encodedPayload: string): string {
+  return createHmac("sha256", sessionSecret()).update(encodedPayload).digest("base64url");
+}
+
+function decodeAdminCookie(token: string): AdminCookiePayload | null {
+  const [encodedPayload, signature] = token.split(".");
+  if (!encodedPayload || !signature) return null;
+
+  const expected = Buffer.from(signCookiePayload(encodedPayload), "base64url");
+  const received = Buffer.from(signature, "base64url");
+  if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as AdminCookiePayload;
+  } catch {
+    return null;
+  }
+}
+
+function encodeAdminCookie(payload: AdminCookiePayload): string {
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${encodedPayload}.${signCookiePayload(encodedPayload)}`;
 }
 
 export function verifyAdminSessionSignature(
@@ -55,6 +103,81 @@ export function verifyAdminSessionSignature(
   }
 
   return wallet;
+}
+
+export function verifyAdminSessionCookie(request: NextRequest): {
+  expiresAt: number;
+  wallet: PublicKey;
+} | null {
+  const raw = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
+  if (!raw) return null;
+
+  const payload = decodeAdminCookie(raw);
+  if (!payload) return null;
+  if (Date.now() > payload.exp) return null;
+
+  try {
+    return {
+      wallet: new PublicKey(payload.wallet),
+      expiresAt: payload.exp,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function verifyAdminRequest(
+  request: NextRequest,
+  action: string,
+  resource?: string | null,
+): AdminRequestIdentity {
+  const cookieSession = verifyAdminSessionCookie(request);
+  if (cookieSession) {
+    return {
+      wallet: cookieSession.wallet,
+      via: "cookie",
+    };
+  }
+
+  return {
+    wallet: verifyAdminSessionSignature(request.headers, action, resource),
+    via: "signature",
+  };
+}
+
+export function setAdminSessionCookie(
+  response: NextResponse,
+  wallet: PublicKey,
+  expiresAtMs = Date.now() + ADMIN_SESSION_COOKIE_TTL_MS,
+): string {
+  const token = encodeAdminCookie({
+    exp: expiresAtMs,
+    wallet: wallet.toBase58(),
+  });
+
+  response.cookies.set({
+    name: ADMIN_SESSION_COOKIE,
+    value: token,
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    expires: new Date(expiresAtMs),
+  });
+
+  return new Date(expiresAtMs).toISOString();
+}
+
+export function clearAdminSessionCookie(response: NextResponse) {
+  response.cookies.set({
+    name: ADMIN_SESSION_COOKIE,
+    value: "",
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    expires: new Date(0),
+  });
 }
 
 export async function isProtocolAdminWallet(wallet: PublicKey): Promise<boolean> {

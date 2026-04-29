@@ -122,7 +122,9 @@ function PrivyProviders({ children }: { children: React.ReactNode }) {
 
 function PlainProviders({ children }: { children: React.ReactNode }) {
   return (
-    <WalletProvider wallets={BASE_WALLETS} autoConnect>
+    // Keep injected wallets opt-in so route changes like /admin do not
+    // eagerly trigger Phantom/Solflare popups before the user clicks connect.
+    <WalletProvider wallets={BASE_WALLETS} autoConnect={false}>
       <WalletModalProvider>{children}</WalletModalProvider>
     </WalletProvider>
   );
