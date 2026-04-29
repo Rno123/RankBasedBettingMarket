@@ -437,18 +437,36 @@ function SubmitForm({
       if (!requiresApproval) {
         // Open registration: builder registers on-chain directly, no admin step.
         if (!anchorWallet) throw new Error("Connect your wallet to register");
-        const urlHash = Array.from(await hashUrl(url));
-        const program = getProgram(anchorWallet);
-        await (program.methods as any)
-          .registerProject(url, urlHash)
-          .accounts({
-            caller: publicKey,
-            builder: publicKey,
-            hackathon: hackathonPubkey,
-            project: projectPk,
-            systemProgram: SystemProgram.programId,
-          })
-          .rpc();
+
+        // Check if this project PDA already exists on-chain (e.g. builder
+        // is re-submitting from a different wallet session). If it already
+        // exists and the builder_wallet matches, skip the on-chain call.
+        const existingOnChain = await (getReadonlyProgram().account as any)
+          .projectAccount.fetchNullable(projectPk).catch(() => null);
+
+        if (existingOnChain) {
+          const existingBuilder: string =
+            (existingOnChain.builderWallet as PublicKey).toBase58();
+          if (existingBuilder !== publicKey.toBase58()) {
+            throw new Error(
+              "This GitHub URL is already registered by a different wallet for this hackathon.",
+            );
+          }
+          // Project already on-chain under this wallet — skip .rpc()
+        } else {
+          const urlHash = Array.from(await hashUrl(url));
+          const program = getProgram(anchorWallet);
+          await (program.methods as any)
+            .registerProject(url, urlHash)
+            .accounts({
+              caller: publicKey,
+              builder: publicKey,
+              hackathon: hackathonPubkey,
+              project: projectPk,
+              systemProgram: SystemProgram.programId,
+            })
+            .rpc();
+        }
       }
 
       // Write to Supabase for My Projects tracking regardless of path.
@@ -1002,12 +1020,14 @@ function BuilderProjectsSection({
   hackathons,
   usdcMint,
   externalRefreshKey,
+  authEmail,
 }: {
   publicKey: PublicKey;
   anchorWallet: AnchorWallet;
   hackathons: HackathonInfo[];
   usdcMint: PublicKey;
   externalRefreshKey: number;
+  authEmail: string;
 }) {
   const [submissions, setSubmissions] = useState<BuilderSubmission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1016,16 +1036,24 @@ function BuilderProjectsSection({
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase) { setLoading(false); return; }
+
+    // Query by wallet address OR by auth_email so builders who submitted with
+    // one wallet can still see their projects when connected with another.
+    const walletFilter = `wallet_address.eq.${publicKey.toBase58()}`;
+    const filterExpr = authEmail
+      ? `${walletFilter},auth_email.eq.${authEmail}`
+      : walletFilter;
+
     supabase
       .from("project_submissions")
       .select("project_pubkey, hackathon_pubkey, github_url, project_name, status")
-      .eq("wallet_address", publicKey.toBase58())
+      .or(filterExpr)
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         setSubmissions((data as BuilderSubmission[]) ?? []);
         setLoading(false);
       });
-  }, [publicKey.toBase58(), refreshKey, externalRefreshKey]);
+  }, [publicKey.toBase58(), authEmail, refreshKey, externalRefreshKey]);
 
   if (loading) return <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />;
   if (submissions.length === 0) return null;
@@ -1161,6 +1189,7 @@ export default function DevPortalPage() {
                 hackathons={hackathons}
                 usdcMint={usdcMint}
                 externalRefreshKey={builderRefreshKey}
+                authEmail={authEmail}
               />
             )}
           </div>

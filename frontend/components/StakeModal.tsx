@@ -247,9 +247,17 @@ export default function StakeModal({
               </div>
             )}
             <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", marginBottom: "6px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>
-                Add stake (USDC)
-              </label>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "6px" }}>
+                <label style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>
+                  Add stake (USDC)
+                </label>
+                <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                  max 2,000 USDC per wallet
+                  {stake && stake.amount > 0n && (
+                    <> · {formatTokens(2_000_000_000n - stake.amount)} remaining</>
+                  )}
+                </span>
+              </div>
               <input
                 type="number"
                 inputMode="decimal"
