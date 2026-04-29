@@ -285,11 +285,18 @@ pub mod hackathon_betting {
         github_url: String,
         url_hash: [u8; 32],
     ) -> Result<()> {
-        hackathon_admin_auth_offset(
-            &ctx.accounts.admin.key(),
-            &ctx.accounts.hackathon.admin,
-            ctx.remaining_accounts,
-        )?;
+        if ctx.accounts.hackathon.requires_approval {
+            hackathon_admin_auth_offset(
+                &ctx.accounts.caller.key(),
+                &ctx.accounts.hackathon.admin,
+                ctx.remaining_accounts,
+            )?;
+        } else {
+            require!(
+                ctx.accounts.caller.key() == ctx.accounts.builder.key(),
+                BettingError::Unauthorized,
+            );
+        }
         require!(github_url.len() <= ProjectAccount::MAX_URL, BettingError::UrlTooLong);
         let expected = anchor_lang::solana_program::hash::hash(github_url.as_bytes()).to_bytes();
         require!(url_hash == expected, BettingError::InvalidUrlHash);
@@ -1894,13 +1901,13 @@ pub struct InitializeHackathon<'info> {
 #[instruction(github_url: String, url_hash: [u8; 32])]
 pub struct RegisterProject<'info> {
     #[account(mut)]
-    pub admin: Signer<'info>,
+    pub caller: Signer<'info>,
     pub hackathon: Account<'info, HackathonState>,
-    /// CHECK: reviewed builder wallet recorded on the project account.
+    /// CHECK: builder wallet recorded on project. Must equal caller when requires_approval is false.
     pub builder: UncheckedAccount<'info>,
     #[account(
         init,
-        payer = admin,
+        payer = caller,
         space = ProjectAccount::SPACE,
         seeds = [b"project", hackathon.key().as_ref(), url_hash.as_ref()],
         bump,

@@ -11,6 +11,7 @@ interface ProjectSubmissionBody {
   discord?: string;
   githubUrl?: string;
   hackathonPubkey?: string;
+  projectName?: string;
   projectPubkey?: string;
   signature?: string;
   telegram?: string;
@@ -65,15 +66,20 @@ export async function POST(request: NextRequest) {
     discord,
     githubUrl,
     hackathonPubkey,
+    projectName,
     projectPubkey,
     signature,
     telegram,
     twitterHandle,
     walletAddress,
   } = body;
+  const normalizedProjectName = projectName?.trim() ?? "";
 
-  if (!projectPubkey || !hackathonPubkey || !githubUrl || !walletAddress || !signature) {
+  if (!projectPubkey || !hackathonPubkey || !githubUrl || !walletAddress || !signature || !normalizedProjectName) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+  if (normalizedProjectName.length > 120) {
+    return NextResponse.json({ error: "Project name too long (max 120 chars)" }, { status: 400 });
   }
 
   try {
@@ -148,6 +154,7 @@ export async function POST(request: NextRequest) {
     discord: discord || null,
     github_url: githubUrl,
     hackathon_pubkey: hackathonPubkey,
+    project_name: normalizedProjectName,
     project_pubkey: projectPubkey,
     status,
     telegram: telegram || null,

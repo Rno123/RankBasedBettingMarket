@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
+import { PublicKey } from "@solana/web3.js";
 import {
   canManageHackathon,
   filterManagedHackathonRows,
@@ -6,10 +8,13 @@ import {
   verifyAdminRequest,
 } from "@/lib/server-admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { PROGRAM_ID } from "@/lib/constants";
+import { getReadonlyProgram } from "@/lib/program";
 
 interface SubmissionRecord {
   id: string;
   hackathon_pubkey: string;
+  project_name?: string | null;
   project_pubkey?: string | null;
   github_url: string;
   wallet_address: string;
@@ -121,6 +126,30 @@ export async function POST(request: NextRequest) {
   }
 
   if (status === "approved" && submission.project_pubkey) {
+    // Verify on-chain ownership before blessing project_metadata.
+    try {
+      const urlHash = createHash("sha256").update(submission.github_url).digest();
+      const [expectedPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("project"), new PublicKey(submission.hackathon_pubkey).toBuffer(), urlHash],
+        PROGRAM_ID,
+      );
+      const program = getReadonlyProgram();
+      const onChain = await (program.account as any).projectAccount.fetchNullable(expectedPda);
+      if (onChain) {
+        const onChainBuilder: string = (onChain.builderWallet as PublicKey).toBase58();
+        const onChainUrl: string = onChain.githubUrl as string;
+        if (onChainBuilder !== submission.wallet_address || onChainUrl !== submission.github_url) {
+          return NextResponse.json(
+            { error: "On-chain project ownership does not match this submission — approval blocked" },
+            { status: 409 },
+          );
+        }
+      }
+    } catch (e) {
+      console.error("on-chain ownership check failed:", e);
+      return NextResponse.json({ error: "Could not verify on-chain project ownership" }, { status: 500 });
+    }
+
     const { data: existingMeta } = await db
       .from("project_metadata")
       .select("created_at, registered_wallet")
@@ -132,6 +161,7 @@ export async function POST(request: NextRequest) {
       project_pubkey: submission.project_pubkey,
       hackathon_pubkey: submission.hackathon_pubkey,
       github_url: submission.github_url,
+      project_name: submission.project_name ?? null,
       twitter_handle: submission.twitter_handle ?? null,
       telegram: submission.telegram ?? null,
       discord: submission.discord ?? null,

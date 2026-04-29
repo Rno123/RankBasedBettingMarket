@@ -2,6 +2,7 @@ export interface ProjectMetadata {
   project_pubkey: string;
   hackathon_pubkey: string;
   github_url: string;
+  project_name?: string | null;
   twitter_handle: string | null;
   telegram: string | null;
   discord: string | null;

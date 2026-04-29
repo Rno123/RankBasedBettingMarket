@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import WhitelistRequestModal from "@/components/WhitelistRequestModal";
+
 import { useHackathons } from "@/hooks/useHackathons";
 import { useHackathonMeta } from "@/hooks/useHackathonMeta";
+import { useProjectCounts } from "@/hooks/useProjectCounts";
 import { formatTokens, timeUntil, hackathonStatus } from "@/lib/format";
 
 const STATUS_LABELS = {
@@ -18,7 +19,8 @@ const STATUS_LABELS = {
 export default function HomePage() {
   const { hackathons, loading, error } = useHackathons();
   const hackathonMeta = useHackathonMeta(hackathons.map((h) => h.pubkey.toBase58()));
-  const [wlModalOpen, setWlModalOpen] = useState(false);
+  const projectCounts = useProjectCounts(hackathons.map((h) => h.pubkey.toBase58()));
+
   const openHackathons = hackathons.filter(
     (hackathon) =>
       hackathonStatus(
@@ -54,17 +56,6 @@ export default function HomePage() {
             Stake on builders with USDC. Signal your conviction with your wallet.
             Put your money where your mouth is and earn when your picks place.
           </p>
-          {openHackathons.length > 0 && (
-            <div style={{ marginTop: "24px", display: "flex", justifyContent: "center" }}>
-              <button
-                onClick={() => setWlModalOpen(true)}
-                className="ui-btn ui-btn-indigo"
-                style={{ minWidth: "220px" }}
-              >
-                Request staking access
-              </button>
-            </div>
-          )}
         </div>
 
         {/* How it works */}
@@ -77,7 +68,7 @@ export default function HomePage() {
               {
                 n: "01",
                 title: "Builders submit projects",
-                body: "Builders submit their project for organizer review first. Once approved, the organizer registers it on-chain, after which builders can pay an optional commitment deposit if the hackathon requires one, mark the project submitted, and later reclaim that deposit after the organizer approves the submission.",
+                body: "Builders submit their projects on-chain for a specific hackathon. After which, builders can pay an optional commitment deposit and self-stake. Upon organizer's confirmation of project submission, the deposit becomes refundable.",
               },
               {
                 n: "02",
@@ -166,13 +157,21 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  {/* Pool */}
-                  <div>
-                    <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Total pool</p>
-                    <p style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "var(--c-text)" }}>
-                      {formatTokens(h.totalPool)}{" "}
-                      <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-3)" }}>USDC</span>
-                    </p>
+                  {/* Pool + project count */}
+                  <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "8px" }}>
+                    <div>
+                      <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Total pool</p>
+                      <p style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "var(--c-text)" }}>
+                        {formatTokens(h.totalPool)}{" "}
+                        <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-3)" }}>USDC</span>
+                      </p>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Projects</p>
+                      <p style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "var(--c-text)" }}>
+                        {projectCounts[id] ?? 0}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Bottom row */}
@@ -200,14 +199,6 @@ export default function HomePage() {
         )}
       </main>
 
-      <WhitelistRequestModal
-        hackathonOptions={openHackathons.map((hackathon) => ({
-          pubkey: hackathon.pubkey.toBase58(),
-          name: hackathon.name || `${hackathon.pubkey.toBase58().slice(0, 8)}…`,
-        }))}
-        isOpen={wlModalOpen}
-        onClose={() => setWlModalOpen(false)}
-      />
     </div>
   );
 }

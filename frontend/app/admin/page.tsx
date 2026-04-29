@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
-import { useWallet, useAnchorWallet } from "@solana/wallet-adapter-react";
+import { useWallet, useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import Navbar from "@/components/Navbar";
 import { getProgram } from "@/lib/program";
@@ -42,6 +42,7 @@ const TIME_OPTIONS_30MIN = Array.from({ length: 48 }, (_, i) => {
 type ResultsDateParse =
   | { timestamp: number; error?: never }
   | { timestamp?: never; error: string };
+const TX_CONFIRM_TIMEOUT_MS = 30_000;
 
 function getProtocolAdminRemainingAccounts(
   publicKey: PublicKey | null,
@@ -55,6 +56,75 @@ function getProtocolAdminRemainingAccounts(
     isWritable: false,
     isSigner: false,
   }];
+}
+
+async function sendWalletTransactionWithConfirmation({
+  connection,
+  feePayer,
+  sendTransaction,
+  transaction,
+  verifySuccess,
+}: {
+  connection: Connection;
+  feePayer: PublicKey;
+  sendTransaction: (
+    transaction: any,
+    connection: Connection,
+    options?: { preflightCommitment?: "processed" | "confirmed" | "finalized" },
+  ) => Promise<string>;
+  transaction: any;
+  verifySuccess?: () => Promise<boolean>;
+}) {
+  const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+  if ("feePayer" in transaction && !transaction.feePayer) {
+    transaction.feePayer = feePayer;
+  }
+  if ("recentBlockhash" in transaction) {
+    transaction.recentBlockhash = latestBlockhash.blockhash;
+  }
+
+  const signature = await sendTransaction(transaction, connection, {
+    preflightCommitment: "confirmed",
+  });
+
+  try {
+    const confirmation = await Promise.race([
+      connection.confirmTransaction(
+        {
+          signature,
+          blockhash: latestBlockhash.blockhash,
+          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        },
+        "confirmed",
+      ),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Transaction confirmation timed out")), TX_CONFIRM_TIMEOUT_MS),
+      ),
+    ]);
+    if (confirmation.value.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+    }
+  } catch (error) {
+    if (verifySuccess && await verifySuccess()) {
+      return signature;
+    }
+
+    const status = await connection.getSignatureStatus(signature, {
+      searchTransactionHistory: true,
+    });
+    if (status.value?.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
+    }
+    if (
+      status.value?.confirmationStatus === "confirmed" ||
+      status.value?.confirmationStatus === "finalized"
+    ) {
+      return signature;
+    }
+    throw error;
+  }
+
+  return signature;
 }
 
 async function ensureWalletWhitelistedOnHackathon(
@@ -324,7 +394,8 @@ function HackathonWhitelistPanel({ hackathon }: { hackathon: HackathonEntry }) {
 }
 
 function DepositManagementPanel({ hackathon }: { hackathon: HackathonEntry }) {
-  const { publicKey } = useWallet();
+  const { connection } = useConnection();
+  const { publicKey, sendTransaction } = useWallet();
   const anchorWallet = useAnchorWallet();
   const { projects } = useProjects(hackathon.pubkey);
   const [busy, setBusy] = useState<string | null>(null);
@@ -352,7 +423,7 @@ function DepositManagementPanel({ hackathon }: { hackathon: HackathonEntry }) {
   async function approveProjectPubkeys(projectPubkeys: PublicKey[]) {
     if (!publicKey || !anchorWallet || projectPubkeys.length === 0) return;
     const program = getProgram(anchorWallet);
-    await (program.methods as any)
+    const tx = await (program.methods as any)
       .approveSubmissions()
       .accounts({
         admin: publicKey,
@@ -366,7 +437,14 @@ function DepositManagementPanel({ hackathon }: { hackathon: HackathonEntry }) {
           isSigner: false,
         })),
       ])
-      .rpc();
+      .transaction();
+
+    await sendWalletTransactionWithConfirmation({
+      connection,
+      feePayer: publicKey,
+      sendTransaction,
+      transaction: tx,
+    });
   }
 
   async function approveAllDeclared() {
@@ -596,7 +674,7 @@ function CreateHackathonPanel({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
-  const requiresApproval = true;
+  const [openRegistration, setOpenRegistration] = useState(true);
   const [openStaking, setOpenStaking] = useState(true);
 
   function parseResultsDateInput(value: string): ResultsDateParse {
@@ -670,7 +748,7 @@ function CreateHackathonPanel({
       const hackathon = hackathonPda(publicKey, trimmedName);
       const escrow = escrowPda(hackathon);
       await (program.methods as any)
-        .initializeHackathon(trimmedName, new BN(resultsTs), Buffer.from(pcts), Buffer.from(counts), feeRecipient, feeBps, depositLamports, requiresApproval, openStaking)
+        .initializeHackathon(trimmedName, new BN(resultsTs), Buffer.from(pcts), Buffer.from(counts), feeRecipient, feeBps, depositLamports, !openRegistration, openStaking)
         .accounts({ admin: publicKey, hackathon, escrow, usdcMint: USDC_MINT, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
         .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey))
         .rpc();
@@ -691,7 +769,7 @@ function CreateHackathonPanel({
               fee_recipient: feeRecipient.toBase58(),
               protocol_fee_bps: feeBps,
               deposit_amount: Math.round(parseFloat(depositAmountUsdc) * 1_000_000),
-              requires_approval: requiresApproval,
+              requires_approval: !openRegistration,
               open_staking: openStaking,
             }),
           });
@@ -793,6 +871,21 @@ function CreateHackathonPanel({
               <label htmlFor="openStakingToggle" style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--c-text)", cursor: "pointer" }}>Open staking</label>
               <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
                 Anyone can stake (no on-chain whitelist check). Uncheck to enforce per-wallet whitelist PDAs. When unchecked, whitelist is enforced on-chain so each new whitelisted wallet requires a separate on-chain transaction. Leave checked if you&apos;re unsure what this means.
+              </p>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", borderRadius: "12px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px" }}>
+            <input
+              type="checkbox"
+              id="openRegistrationToggle"
+              checked={openRegistration}
+              onChange={(e) => setOpenRegistration(e.target.checked)}
+              style={{ width: "16px", height: "16px", cursor: "pointer", flexShrink: 0 }}
+            />
+            <div>
+              <label htmlFor="openRegistrationToggle" style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--c-text)", cursor: "pointer" }}>Open registration</label>
+              <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                Builders register their project on-chain directly — no admin review step. When unchecked, builders submit for review and an admin must approve before the project appears on-chain. Leave checked if you&apos;re unsure what this means.
               </p>
             </div>
           </div>
@@ -913,11 +1006,12 @@ function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathon
 
 // ── Hackathon metadata editor ─────────────────────────────────────────────────
 
-function MetadataPanel({ hackathon }: { hackathon: ReturnType<typeof useHackathons>["hackathons"][0] }) {
+function MetadataPanel({ hackathon, adminAuth }: { hackathon: ReturnType<typeof useHackathons>["hackathons"][0]; adminAuth: AdminApiAuth }) {
   const [link, setLink] = useState("");
   const [iconUrl, setIconUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     const sb = getSupabase();
@@ -928,11 +1022,28 @@ function MetadataPanel({ hackathon }: { hackathon: ReturnType<typeof useHackatho
   }, [hackathon.pubkey.toBase58()]);
 
   async function save() {
-    const sb = getSupabase();
-    if (!sb) return;
-    setBusy(true);
-    await sb.from("hackathon_metadata").upsert({ hackathon_pubkey: hackathon.pubkey.toBase58(), official_link: link.trim() || null, icon_url: iconUrl.trim() || null }, { onConflict: "hackathon_pubkey" });
-    setBusy(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
+    setBusy(true); setErr(null);
+    try {
+      await adminAuth.ensureSession?.();
+      const response = await fetch("/api/admin/hackathon-metadata", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hackathon_pubkey: hackathon.pubkey.toBase58(),
+          official_link: link.trim() || null,
+          icon_url: iconUrl.trim() || null,
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(payload.error ?? "Failed to save");
+      }
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      setErr(e.message ?? "Failed to save");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const subLabelStyle: React.CSSProperties = { display: "block", marginBottom: "4px", fontSize: "0.75rem", fontWeight: 500, color: "var(--c-text-3)" };
@@ -954,6 +1065,7 @@ function MetadataPanel({ hackathon }: { hackathon: ReturnType<typeof useHackatho
         </div>
       </div>
       <button onClick={save} disabled={busy} className="ui-btn ui-btn-indigo ui-btn-sm" style={{ marginTop: "12px" }}>{busy ? "Saving…" : saved ? "Saved!" : "Save metadata"}</button>
+      {err && <p style={{ marginTop: "6px", fontSize: "0.75rem", color: "var(--c-red-text)" }}>{err}</p>}
     </div>
   );
 }
@@ -1158,8 +1270,10 @@ function GlobalWhitelistPanel({
 
 function HackathonAdminCard({
   hackathon,
+  adminAuth,
 }: {
   hackathon: HackathonEntry;
+  adminAuth: AdminApiAuth;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -1174,7 +1288,7 @@ function HackathonAdminCard({
       {expanded && (
         <div style={{ borderTop: "1px solid var(--c-divider-2)", padding: "0 24px 24px" }}>
           <HackathonWhitelistPanel hackathon={hackathon} />
-          <MetadataPanel hackathon={hackathon} />
+          <MetadataPanel hackathon={hackathon} adminAuth={adminAuth} />
           <DepositManagementPanel hackathon={hackathon} />
           {!hackathon.isResolved && <ResolvePanel hackathon={hackathon} />}
           {hackathon.isResolved && <p style={{ marginTop: "16px", fontSize: "0.875rem", color: "var(--c-text-4)" }}>Hackathon resolved. Stakers can now claim.</p>}
@@ -1190,6 +1304,7 @@ interface Submission {
   id: string;
   hackathon_pubkey: string;
   hackathon_name?: string;
+  project_name?: string | null;
   project_pubkey?: string | null;
   github_url: string;
   wallet_address: string;
@@ -1208,7 +1323,8 @@ function SubmissionsSection({
   hackathons: ReturnType<typeof useHackathons>["hackathons"];
   adminAuth: AdminApiAuth;
 }) {
-  const { publicKey } = useWallet();
+  const { connection } = useConnection();
+  const { publicKey, sendTransaction } = useWallet();
   const anchorWallet = useAnchorWallet();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1277,28 +1393,39 @@ function SubmissionsSection({
         const project = new PublicKey(sub.project_pubkey);
         const urlHash = Array.from(await hashUrl(sub.github_url));
 
-        try {
-          const program = getProgram(anchorWallet);
-          await (program.methods as any)
-            .registerProject(sub.github_url, urlHash)
-            .accounts({
-              admin: publicKey,
-              builder,
-              hackathon: hackathon.pubkey,
-              project,
-              systemProgram: SystemProgram.programId,
-            })
-            .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey, hackathon.admin))
-            .rpc();
-        } catch (e: any) {
-          const text = e.message ?? "";
-          const logs = (e.logs ?? []) as string[];
-          const alreadyExists =
-            text.includes("already in use") ||
-            text.includes("already been processed") ||
-            logs.some((line) => line.includes("already in use"));
-          if (!alreadyExists) {
-            throw e;
+        const existingProject = await connection.getAccountInfo(project, "confirmed");
+        if (!existingProject) {
+          try {
+            const program = getProgram(anchorWallet);
+            const tx = await (program.methods as any)
+              .registerProject(sub.github_url, urlHash)
+              .accounts({
+                caller: publicKey,
+                builder,
+                hackathon: hackathon.pubkey,
+                project,
+                systemProgram: SystemProgram.programId,
+              })
+              .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey, hackathon.admin))
+              .transaction();
+
+            await sendWalletTransactionWithConfirmation({
+              connection,
+              feePayer: publicKey,
+              sendTransaction,
+              transaction: tx,
+              verifySuccess: async () => Boolean(await connection.getAccountInfo(project, "confirmed")),
+            });
+          } catch (e: any) {
+            const text = e.message ?? "";
+            const logs = (e.logs ?? []) as string[];
+            const alreadyExists =
+              text.includes("already in use") ||
+              text.includes("already been processed") ||
+              logs.some((line) => line.includes("already in use"));
+            if (!alreadyExists) {
+              throw e;
+            }
           }
         }
       }
@@ -1361,7 +1488,8 @@ function SubmissionsSection({
           <div key={s.id} style={{ borderRadius: "12px", padding: "16px", ...subBorderBg(s.status) }}>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: "8px" }}>
               <div>
-                <a href={s.github_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 500, color: "var(--c-indigo-text)", textDecoration: "none" }}>{s.github_url.replace("https://github.com/", "")}</a>
+                <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{s.project_name?.trim() || s.github_url.replace("https://github.com/", "")}</p>
+                <a href={s.github_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem", color: "var(--c-indigo-text)", textDecoration: "none" }}>{s.github_url.replace("https://github.com/", "")}</a>
                 <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-3)" }}>{s.hackathon_name || s.hackathon_pubkey.slice(0, 12) + "…"} · {s.wallet_address.slice(0, 8)}…{s.wallet_address.slice(-4)}{s.auth_email && ` · ${s.auth_email}`}</p>
                 <div style={{ marginTop: "4px", display: "flex", flexWrap: "wrap", gap: "8px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>{s.twitter_handle && <span>𝕏 @{s.twitter_handle}</span>}{s.telegram && <span>✈ {s.telegram}</span>}{s.discord && <span>💬 {s.discord}</span>}</div>
                 {s.status === "pending" && (
@@ -1546,6 +1674,7 @@ export default function AdminPage() {
                     <HackathonAdminCard
                       key={h.pubkey.toBase58()}
                       hackathon={h}
+                      adminAuth={adminAuth}
                     />
                   ))}
                 </div>

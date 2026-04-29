@@ -106,6 +106,9 @@ function ProjectRow({
       : 0;
 
   const rankLabel = project.rank === 0 ? "Unranked" : `#${project.rank}`;
+  const repoLabel = repoName(project.githubUrl);
+  const projectLabel = metadata?.project_name?.trim() || repoLabel;
+  const projectSubLabel = projectLabel === repoLabel ? rankLabel : `${repoLabel} · ${rankLabel}`;
 
   return (
     <>
@@ -136,9 +139,9 @@ function ProjectRow({
                 rel="noopener noreferrer"
                 style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, color: "var(--c-text)", textDecoration: "none", transition: "color 0.15s" }}
               >
-                {repoName(project.githubUrl)}
+                {projectLabel}
               </a>
-              <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>{rankLabel}</p>
+              <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>{projectSubLabel}</p>
             </div>
           </div>
 
@@ -439,7 +442,7 @@ export default function HackathonPage({
       supabase.from("project_metadata").select("*").eq("hackathon_pubkey", hpk),
       supabase
         .from("project_submissions")
-        .select("project_pubkey, github_url, twitter_handle, telegram, discord, wallet_address")
+        .select("project_pubkey, github_url, project_name, twitter_handle, telegram, discord, wallet_address")
         .eq("hackathon_pubkey", hpk),
     ]).then(([{ data: metaData }, { data: subData }]) => {
       const map: Record<string, ProjectMetadata> = {};
@@ -454,6 +457,7 @@ export default function HackathonPage({
               project_pubkey: row.project_pubkey,
               hackathon_pubkey: hpk,
               github_url: row.github_url ?? "",
+              project_name: row.project_name ?? null,
               twitter_handle: row.twitter_handle ?? null,
               telegram: row.telegram ?? null,
               discord: row.discord ?? null,

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
-import { useWallet, useAnchorWallet } from "@solana/wallet-adapter-react";
+import { useWallet, useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import type { Session } from "@supabase/supabase-js";
 import type { AnchorWallet } from "@solana/wallet-adapter-react";
@@ -15,7 +15,7 @@ import type { HackathonInfo } from "@/hooks/useHackathons";
 import { hackathonStatus, formatDate, timeUntil, formatTokens } from "@/lib/format";
 import { getProgram, getReadonlyProgram } from "@/lib/program";
 import { buildProjectRegistrationMessage } from "@/lib/project-signing";
-import { projectPdaFromUrl, escrowPda, stakePda } from "@/lib/pda";
+import { projectPdaFromUrl, escrowPda, stakePda, hashUrl } from "@/lib/pda";
 import { signatureToBase64 } from "@/lib/signature";
 import { USDC_MINT } from "@/lib/constants";
 
@@ -23,6 +23,165 @@ const WalletMultiButton = dynamic(
   () => import("@solana/wallet-adapter-react-ui").then((m) => m.WalletMultiButton),
   { ssr: false },
 );
+const TX_CONFIRM_TIMEOUT_MS = 30_000;
+type SubmissionModalState = "depositPrompt" | "depositUnpaid" | "eligible";
+
+async function sendWalletTransactionWithConfirmation({
+  connection,
+  feePayer,
+  sendTransaction,
+  transaction,
+  verifySuccess,
+}: {
+  connection: Connection;
+  feePayer: PublicKey;
+  sendTransaction: (
+    transaction: any,
+    connection: Connection,
+    options?: { preflightCommitment?: "processed" | "confirmed" | "finalized" },
+  ) => Promise<string>;
+  transaction: any;
+  verifySuccess?: () => Promise<boolean>;
+}) {
+  const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+  if ("feePayer" in transaction && !transaction.feePayer) {
+    transaction.feePayer = feePayer;
+  }
+  if ("recentBlockhash" in transaction) {
+    transaction.recentBlockhash = latestBlockhash.blockhash;
+  }
+
+  const signature = await sendTransaction(transaction, connection, {
+    preflightCommitment: "confirmed",
+  });
+
+  try {
+    const confirmation = await Promise.race([
+      connection.confirmTransaction(
+        {
+          signature,
+          blockhash: latestBlockhash.blockhash,
+          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        },
+        "confirmed",
+      ),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Transaction confirmation timed out")), TX_CONFIRM_TIMEOUT_MS),
+      ),
+    ]);
+    if (confirmation.value.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+    }
+  } catch (error) {
+    if (verifySuccess && await verifySuccess()) {
+      return signature;
+    }
+
+    const status = await connection.getSignatureStatus(signature, {
+      searchTransactionHistory: true,
+    });
+    if (status.value?.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
+    }
+    if (
+      status.value?.confirmationStatus === "confirmed" ||
+      status.value?.confirmationStatus === "finalized"
+    ) {
+      return signature;
+    }
+    throw error;
+  }
+
+  return signature;
+}
+
+function SubmissionNoticeModal({
+  state,
+  depositAmount,
+  busy,
+  error,
+  onPayDeposit,
+  onSkipDeposit,
+  onClose,
+}: {
+  state: SubmissionModalState | null;
+  depositAmount: bigint;
+  busy: boolean;
+  error: string | null;
+  onPayDeposit: () => void;
+  onSkipDeposit: () => void;
+  onClose: () => void;
+}) {
+  if (!state) return null;
+
+  const isPrompt = state === "depositPrompt";
+  const isEligible = state === "eligible";
+  const accentColor = isEligible ? "var(--c-emerald-text)" : isPrompt ? "var(--c-indigo-text)" : "var(--c-amber-text)";
+  const accentBorder = isEligible ? "var(--c-emerald-border)" : isPrompt ? "var(--c-indigo-border)" : "var(--c-amber-border)";
+  const accentBg = isEligible ? "var(--c-emerald-light)" : isPrompt ? "var(--c-indigo-light)" : "var(--c-amber-light)";
+
+  let title = "";
+  let body = "";
+  if (state === "depositPrompt") {
+    title = "Pay deposit now?";
+    body = `This hackathon does not require admin approval, so your project is already registered. Pay the ${formatTokens(depositAmount)} USDC deposit now to make it eligible for staking.`;
+  } else if (state === "depositUnpaid") {
+    title = "Project not eligible for staking yet";
+    body = "Your project is not eligible for staking since the deposit is not paid.";
+  } else {
+    title = "Project eligible for staking";
+    body = "Your project is eligible for staking. If you're looking to self-stake, you can do so from the builder tab.";
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 70,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.55)",
+        padding: "16px",
+        backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "30rem",
+          borderRadius: "16px",
+          border: "1px solid var(--card-border)",
+          background: "var(--modal-bg)",
+          padding: "24px",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+        }}
+      >
+        <div style={{ marginBottom: "16px", borderRadius: "12px", border: `1px solid ${accentBorder}`, background: accentBg, padding: "14px 16px" }}>
+          <p style={{ margin: 0, fontSize: "1rem", fontWeight: 700, color: accentColor }}>{title}</p>
+          <p style={{ margin: "6px 0 0", fontSize: "0.875rem", color: accentColor }}>{body}</p>
+        </div>
+        {error && <p style={{ margin: "0 0 12px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{error}</p>}
+        {isPrompt ? (
+          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <button onClick={onSkipDeposit} disabled={busy} className="ui-btn ui-btn-outline ui-btn-sm">Later</button>
+            <button onClick={onPayDeposit} disabled={busy} className="ui-btn ui-btn-indigo ui-btn-sm">
+              {busy ? `Paying ${formatTokens(depositAmount)} USDC...` : `Pay ${formatTokens(depositAmount)} USDC`}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={onClose} className={`ui-btn ${isEligible ? "ui-btn-emerald" : "ui-btn-amber"} ui-btn-sm`}>
+              Got it
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Step indicator ────────────────────────────────────────────────────────────
 
@@ -184,36 +343,107 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
 // ── Submission form for one hackathon ─────────────────────────────────────────
 
 function SubmitForm({
-  hackathonPubkey,
-  hackathonName,
+  hackathon,
   onDone,
   authEmail,
+  onProjectUpdated,
 }: {
-  hackathonPubkey: PublicKey;
-  hackathonName: string;
+  hackathon: HackathonInfo;
   onDone: () => void;
   authEmail: string;
+  onProjectUpdated: () => void;
 }) {
-  const { publicKey, signMessage } = useWallet();
+  const { publicKey, signMessage, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const anchorWallet = useAnchorWallet();
+  const { pubkey: hackathonPubkey, name: hackathonName, requiresApproval, depositAmount, usdcMint } = hackathon;
+  const [projectName, setProjectName] = useState("");
   const [url, setUrl] = useState("");
   const [twitter, setTwitter] = useState("");
   const [telegram, setTelegram] = useState("");
   const [discord, setDiscord] = useState("");
   const [busy, setBusy] = useState(false);
+  const [depositBusy, setDepositBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [depositErr, setDepositErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [modalState, setModalState] = useState<SubmissionModalState | null>(null);
+  const [registeredProjectPubkey, setRegisteredProjectPubkey] = useState<string | null>(null);
+
+  async function handleDepositPayment() {
+    if (!registeredProjectPubkey || !publicKey || !anchorWallet) {
+      setDepositErr("Connect your wallet to pay the deposit");
+      return;
+    }
+
+    setDepositBusy(true);
+    setDepositErr(null);
+    try {
+      const program = getProgram(anchorWallet);
+      const projectPk = new PublicKey(registeredProjectPubkey);
+      const builderAta = getAssociatedTokenAddressSync(usdcMint, publicKey);
+      const escrow = escrowPda(hackathonPubkey);
+      const tx = await (program.methods as any).payDeposit().accounts({
+        builder: publicKey,
+        hackathon: hackathonPubkey,
+        project: projectPk,
+        builderTokenAccount: builderAta,
+        escrow,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      }).transaction();
+      await sendWalletTransactionWithConfirmation({
+        connection,
+        feePayer: publicKey,
+        sendTransaction,
+        transaction: tx,
+        verifySuccess: async () => {
+          const refreshed = await (getReadonlyProgram().account as any).projectAccount
+            .fetchNullable(projectPk)
+            .catch(() => null);
+          return BigInt((refreshed?.depositAmountPaid ?? 0).toString()) > 0n;
+        },
+      });
+      onProjectUpdated();
+      setModalState("eligible");
+    } catch (e: any) {
+      setDepositErr(e.message ?? "Failed to pay deposit");
+    } finally {
+      setDepositBusy(false);
+    }
+  }
 
   async function handleSubmit() {
     if (!publicKey || !signMessage) {
       setErr("Your wallet must support message signing to submit a project");
       return;
     }
+    if (!projectName.trim()) { setErr("Project name is required"); return; }
+    if (projectName.trim().length > 120) { setErr("Project name too long (max 120 chars)"); return; }
     if (!url.startsWith("https://github.com/")) { setErr("URL must start with https://github.com/"); return; }
     if (url.length > 200) { setErr("URL too long (max 200 chars)"); return; }
 
     setErr(null); setBusy(true);
     const projectPk: PublicKey = await projectPdaFromUrl(hackathonPubkey, url);
     try {
+      if (!requiresApproval) {
+        // Open registration: builder registers on-chain directly, no admin step.
+        if (!anchorWallet) throw new Error("Connect your wallet to register");
+        const urlHash = Array.from(await hashUrl(url));
+        const program = getProgram(anchorWallet);
+        await (program.methods as any)
+          .registerProject(url, urlHash)
+          .accounts({
+            caller: publicKey,
+            builder: publicKey,
+            hackathon: hackathonPubkey,
+            project: projectPk,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+      }
+
+      // Write to Supabase for My Projects tracking regardless of path.
       const signature = signatureToBase64(
         await signMessage(
           new TextEncoder().encode(
@@ -229,6 +459,7 @@ function SubmitForm({
           discord: discord || undefined,
           githubUrl: url,
           hackathonPubkey: hackathonPubkey.toBase58(),
+          projectName: projectName.trim(),
           projectPubkey: projectPk.toBase58(),
           signature,
           telegram: telegram || undefined,
@@ -240,13 +471,21 @@ function SubmitForm({
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to submit project");
       }
+      onProjectUpdated();
     } catch (e: any) {
       setErr(e.message ?? "Failed to submit project");
       setBusy(false);
       return;
     }
 
-    setOk("Project submitted! The organizer will review your submission.");
+    if (requiresApproval) {
+      setOk("Project submitted! The organizer will review your submission.");
+    } else if (depositAmount > 0n) {
+      setRegisteredProjectPubkey(projectPk.toBase58());
+      setModalState("depositPrompt");
+    } else {
+      setModalState("eligible");
+    }
     setBusy(false);
   }
 
@@ -265,8 +504,13 @@ function SubmitForm({
   const subLabelStyle: React.CSSProperties = { display: "block", marginBottom: "4px", fontSize: "0.75rem", fontWeight: 500, color: "var(--c-text-3)" };
 
   return (
-    <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px", borderRadius: "12px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "16px" }}>
+    <>
+      <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px", borderRadius: "12px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "16px" }}>
       <p style={{ margin: 0, fontSize: "0.875rem", fontWeight: 500, color: "var(--c-indigo-text)" }}>Submit to: {hackathonName}</p>
+      <div>
+        <label style={subLabelStyle}>Project name <span style={{ color: "var(--c-red-text)" }}>*</span></label>
+        <input className="ui-input" placeholder="My awesome project" value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+      </div>
       <div>
         <label style={subLabelStyle}>GitHub URL <span style={{ color: "var(--c-red-text)" }}>*</span></label>
         <input className="ui-input" placeholder="https://github.com/org/repo" value={url} onChange={(e) => setUrl(e.target.value)} />
@@ -292,13 +536,38 @@ function SubmitForm({
         </button>
         <button onClick={onDone} className="ui-btn ui-btn-outline ui-btn-sm">Cancel</button>
       </div>
-    </div>
+      </div>
+      <SubmissionNoticeModal
+        state={modalState}
+        depositAmount={depositAmount}
+        busy={depositBusy}
+        error={depositErr}
+        onPayDeposit={handleDepositPayment}
+        onSkipDeposit={() => {
+          setDepositErr(null);
+          setModalState("depositUnpaid");
+        }}
+        onClose={() => {
+          setDepositErr(null);
+          setModalState(null);
+          onDone();
+        }}
+      />
+    </>
   );
 }
 
 // ── Hackathon card for devs ────────────────────────────────────────────────────
 
-function DevHackathonCard({ hackathon, authEmail }: { hackathon: HackathonInfo; authEmail: string }) {
+function DevHackathonCard({
+  hackathon,
+  authEmail,
+  onProjectUpdated,
+}: {
+  hackathon: HackathonInfo;
+  authEmail: string;
+  onProjectUpdated: () => void;
+}) {
   const { publicKey } = useWallet();
   const [submitting, setSubmitting] = useState(false);
   const status = hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
@@ -328,10 +597,10 @@ function DevHackathonCard({ hackathon, authEmail }: { hackathon: HackathonInfo; 
       </div>
       {submitting && (
         <SubmitForm
-          hackathonPubkey={hackathon.pubkey}
-          hackathonName={hackathon.name}
+          hackathon={hackathon}
           onDone={() => setSubmitting(false)}
           authEmail={authEmail}
+          onProjectUpdated={onProjectUpdated}
         />
       )}
     </div>
@@ -354,6 +623,7 @@ interface BuilderSubmission {
   project_pubkey: string;
   hackathon_pubkey: string;
   github_url: string;
+  project_name?: string | null;
   status: string;
 }
 
@@ -372,6 +642,8 @@ function BuilderProjectCard({
   usdcMint: PublicKey;
   onUpdated: () => void;
 }) {
+  const { connection } = useConnection();
+  const { sendTransaction } = useWallet();
   const [project, setProject] = useState<OnChainProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -417,7 +689,7 @@ function BuilderProjectCard({
       const hackathonPk = new PublicKey(sub.hackathon_pubkey);
       const builderAta = getAssociatedTokenAddressSync(usdcMint, publicKey);
       const escrow = escrowPda(hackathonPk);
-      await (program.methods as any).payDeposit().accounts({
+      const tx = await (program.methods as any).payDeposit().accounts({
         builder: publicKey,
         hackathon: hackathonPk,
         project: projectPk,
@@ -425,7 +697,19 @@ function BuilderProjectCard({
         escrow,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
-      }).rpc();
+      }).transaction();
+      await sendWalletTransactionWithConfirmation({
+        connection,
+        feePayer: publicKey,
+        sendTransaction,
+        transaction: tx,
+        verifySuccess: async () => {
+          const refreshed = await (getReadonlyProgram().account as any).projectAccount
+            .fetchNullable(projectPk)
+            .catch(() => null);
+          return BigInt((refreshed?.depositAmountPaid ?? 0).toString()) > 0n;
+        },
+      });
       setOk("Deposit paid!");
       setTick((t) => t + 1);
       onUpdated();
@@ -445,7 +729,8 @@ function BuilderProjectCard({
       const builderAta = getAssociatedTokenAddressSync(usdcMint, publicKey);
       const escrow = escrowPda(hackathonPk);
       const userStake = stakePda(publicKey, projectPk);
-      await (program.methods as any).selfStake(new BN(raw)).accounts({
+      const prevBuilderStaked = project?.builderStaked ?? 0n;
+      const tx = await (program.methods as any).selfStake(new BN(raw)).accounts({
         builder: publicKey,
         hackathon: hackathonPk,
         project: projectPk,
@@ -454,7 +739,19 @@ function BuilderProjectCard({
         escrow,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
-      }).rpc();
+      }).transaction();
+      await sendWalletTransactionWithConfirmation({
+        connection,
+        feePayer: publicKey,
+        sendTransaction,
+        transaction: tx,
+        verifySuccess: async () => {
+          const refreshed = await (getReadonlyProgram().account as any).projectAccount
+            .fetchNullable(projectPk)
+            .catch(() => null);
+          return BigInt((refreshed?.builderStaked ?? 0).toString()) > prevBuilderStaked;
+        },
+      });
       setOk(`Self-staked ${selfStakeAmt} USDC!`);
       setSelfStakeAmt("");
       setTick((t) => t + 1);
@@ -469,15 +766,29 @@ function BuilderProjectCard({
       const program = getProgram(anchorWallet);
       const projectPk = new PublicKey(sub.project_pubkey);
       const hackathonPk = new PublicKey(sub.hackathon_pubkey);
-      await (program.methods as any).submitProject().accounts({
+      const tx = await (program.methods as any).submitProject().accounts({
         builder: publicKey,
         hackathon: hackathonPk,
         project: projectPk,
-      }).rpc();
+      }).transaction();
+      await sendWalletTransactionWithConfirmation({
+        connection,
+        feePayer: publicKey,
+        sendTransaction,
+        transaction: tx,
+        verifySuccess: async () => {
+          const refreshed = await (getReadonlyProgram().account as any).projectAccount
+            .fetchNullable(projectPk)
+            .catch(() => null);
+          return Boolean(refreshed?.builderDeclared);
+        },
+      });
       setOk(
-        hasDeposit
-          ? "Builder declaration saved. The organizer still needs to approve the submission before your deposit refund unlocks."
-          : "Builder declaration saved. The organizer still needs to approve the submission before the project is marked verified.",
+        hackathon?.requiresApproval
+          ? hasDeposit
+            ? "Builder declaration saved. The organizer still needs to approve the submission before your deposit refund unlocks."
+            : "Builder declaration saved. The organizer still needs to approve the submission before the project is marked verified."
+          : "Builder declaration saved. No organizer approval is required for this hackathon.",
       );
       setTick((t) => t + 1);
       onUpdated();
@@ -494,7 +805,7 @@ function BuilderProjectCard({
       const hackathonPk = new PublicKey(sub.hackathon_pubkey);
       const builderAta = getAssociatedTokenAddressSync(usdcMint, publicKey);
       const escrow = escrowPda(hackathonPk);
-      await (program.methods as any).claimDepositRefund().accounts({
+      const tx = await (program.methods as any).claimDepositRefund().accounts({
         builder: publicKey,
         hackathon: hackathonPk,
         project: projectPk,
@@ -502,7 +813,19 @@ function BuilderProjectCard({
         escrow,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
-      }).rpc();
+      }).transaction();
+      await sendWalletTransactionWithConfirmation({
+        connection,
+        feePayer: publicKey,
+        sendTransaction,
+        transaction: tx,
+        verifySuccess: async () => {
+          const refreshed = await (getReadonlyProgram().account as any).projectAccount
+            .fetchNullable(projectPk)
+            .catch(() => null);
+          return Boolean(refreshed?.depositRefunded);
+        },
+      });
       setOk("Deposit refunded!");
       setTick((t) => t + 1);
       onUpdated();
@@ -511,6 +834,7 @@ function BuilderProjectCard({
   }
 
   const repoShort = sub.github_url.replace("https://github.com/", "");
+  const projectLabel = sub.project_name?.trim() || repoShort;
   const depositAmt = hackathon?.depositAmount ?? 0n;
   const hasDeposit = depositAmt > 0n;
   const stakingActivated = !hasDeposit || project?.depositAmountPaid ? true : false;
@@ -532,7 +856,8 @@ function BuilderProjectCard({
   return (
     <div className="ui-card" style={{ padding: "20px" }}>
       <div style={{ marginBottom: "12px" }}>
-        <a href={sub.github_url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700, color: "var(--c-text)", textDecoration: "none" }}>{repoShort}</a>
+        <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{projectLabel}</p>
+        <a href={sub.github_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem", color: "var(--c-indigo-text)", textDecoration: "none" }}>{repoShort}</a>
         <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
           {hackathon?.name || sub.hackathon_pubkey.slice(0, 12) + "…"}
           {" · "}<span style={{ textTransform: "capitalize" }}>{sub.status}</span>
@@ -628,7 +953,7 @@ function BuilderProjectCard({
               )}
           </div>
           <div style={{ ...rowStyle, borderBottom: "none" }}>
-            <span style={labelStyle}>Organizer approval</span>
+            <span style={labelStyle}>{hackathon?.requiresApproval ? "Organizer approval" : "Approval flow"}</span>
             {project.submitted ? (
               <span style={checkStyle}>✓ Approved</span>
             ) : (
@@ -663,11 +988,13 @@ function BuilderProjectsSection({
   anchorWallet,
   hackathons,
   usdcMint,
+  externalRefreshKey,
 }: {
   publicKey: PublicKey;
   anchorWallet: AnchorWallet;
   hackathons: HackathonInfo[];
   usdcMint: PublicKey;
+  externalRefreshKey: number;
 }) {
   const [submissions, setSubmissions] = useState<BuilderSubmission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -678,14 +1005,14 @@ function BuilderProjectsSection({
     if (!supabase) { setLoading(false); return; }
     supabase
       .from("project_submissions")
-      .select("project_pubkey, hackathon_pubkey, github_url, status")
+      .select("project_pubkey, hackathon_pubkey, github_url, project_name, status")
       .eq("wallet_address", publicKey.toBase58())
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         setSubmissions((data as BuilderSubmission[]) ?? []);
         setLoading(false);
       });
-  }, [publicKey.toBase58(), refreshKey]);
+  }, [publicKey.toBase58(), refreshKey, externalRefreshKey]);
 
   if (loading) return <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />;
   if (submissions.length === 0) return null;
@@ -699,7 +1026,7 @@ function BuilderProjectsSection({
           const mint = hackathon?.usdcMint ?? usdcMint;
           return (
             <BuilderProjectCard
-              key={sub.project_pubkey}
+              key={`${sub.project_pubkey}:${refreshKey}:${externalRefreshKey}`}
               sub={sub}
               hackathon={hackathon}
               publicKey={publicKey}
@@ -721,6 +1048,7 @@ export default function DevPortalPage() {
   const anchorWallet = useAnchorWallet();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
+  const [builderRefreshKey, setBuilderRefreshKey] = useState(0);
   const { hackathons, loading: hLoading } = useHackathons();
 
   useEffect(() => {
@@ -800,7 +1128,12 @@ export default function DevPortalPage() {
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                     {openHackathons.map((h) => (
-                      <DevHackathonCard key={h.pubkey.toBase58()} hackathon={h} authEmail={authEmail} />
+                      <DevHackathonCard
+                        key={h.pubkey.toBase58()}
+                        hackathon={h}
+                        authEmail={authEmail}
+                        onProjectUpdated={() => setBuilderRefreshKey((value) => value + 1)}
+                      />
                     ))}
                   </div>
                 )}
@@ -814,6 +1147,7 @@ export default function DevPortalPage() {
                 anchorWallet={anchorWallet}
                 hackathons={hackathons}
                 usdcMint={usdcMint}
+                externalRefreshKey={builderRefreshKey}
               />
             )}
           </div>

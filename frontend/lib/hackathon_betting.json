@@ -911,7 +911,7 @@
       ],
       "accounts": [
         {
-          "name": "admin",
+          "name": "caller",
           "writable": true,
           "signer": true
         },
