@@ -246,17 +246,33 @@ export default function StakeModal({
                 </p>
               </div>
             )}
+            {/* Wallet cap progress bar */}
+            {stake && stake.amount > 0n && (() => {
+              const pct = Math.min(100, Number(stake.amount) / 2_000_000_000 * 100);
+              const remaining = 2_000_000_000n - stake.amount;
+              return (
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
+                    <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>Wallet limit</span>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-3)" }}>
+                      {formatTokens(stake.amount)} / 2,000 USDC · <span style={{ color: "var(--c-indigo-text)" }}>{formatTokens(remaining)} left</span>
+                    </span>
+                  </div>
+                  <div className="ui-stake-bar-track">
+                    <div className="ui-stake-bar-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })()}
+
             <div style={{ marginBottom: "16px" }}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "6px" }}>
                 <label style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>
                   Add stake (USDC)
                 </label>
-                <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-                  max 2,000 USDC per wallet
-                  {stake && stake.amount > 0n && (
-                    <> · {formatTokens(2_000_000_000n - stake.amount)} remaining</>
-                  )}
-                </span>
+                {(!stake || stake.amount === 0n) && (
+                  <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>max 2,000 USDC</span>
+                )}
               </div>
               <input
                 type="number"

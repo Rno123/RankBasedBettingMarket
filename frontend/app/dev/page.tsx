@@ -881,36 +881,60 @@ function BuilderProjectCard({
   const labelStyle: React.CSSProperties = { fontSize: "0.875rem", color: "var(--c-text-3)" };
   const checkStyle: React.CSSProperties = { fontSize: "0.875rem", fontWeight: 600, color: "var(--c-emerald-text)" };
 
+  // Step states for the progress indicator
+  const step2State = sub.status === "rejected" ? "error" : sub.status === "approved" ? "done" : "active";
+  const step3State = project ? "done" : sub.status === "rejected" ? "idle" : "idle";
+  type StepState = "done" | "active" | "error" | "idle";
+  const stepDot = (state: StepState, label: string, icon: string) => (
+    <div className="ui-step-node">
+      <div className={`ui-step-dot ui-step-dot-${state}`}>{icon}</div>
+      <span className={`ui-step-label ui-step-label-${state}`}>{label}</span>
+    </div>
+  );
+  const connector = (done: boolean) => (
+    <div className={`ui-step-connector ${done ? "ui-step-connector-done" : "ui-step-connector-idle"}`} />
+  );
+
+  const selfStakeBarPct = Math.min(100, Number(project?.builderStaked ?? 0n) / 2_000_000_000 * 100);
+
   return (
     <div className="ui-card" style={{ padding: "20px" }}>
-      <div style={{ marginBottom: "12px" }}>
+      <div style={{ marginBottom: "4px" }}>
         <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{projectLabel}</p>
         <a href={sub.github_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem", color: "var(--c-indigo-text)", textDecoration: "none" }}>{repoShort}</a>
         <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
           {hackathon?.name || sub.hackathon_pubkey.slice(0, 12) + "…"}
-          {" · "}<span style={{ textTransform: "capitalize" }}>{sub.status}</span>
         </p>
+      </div>
+
+      {/* Step progress */}
+      <div className="ui-steps">
+        {stepDot("done", "Submitted", "✓")}
+        {connector(step2State === "done")}
+        {stepDot(step2State, step2State === "error" ? "Rejected" : step2State === "done" ? "Approved" : "In review", step2State === "error" ? "✕" : step2State === "done" ? "✓" : "…")}
+        {connector(step3State === "done")}
+        {stepDot(step3State, step3State === "done" ? "Live" : "Live", step3State === "done" ? "✓" : "—")}
       </div>
 
       {!hackathon && (
         <div style={{ marginBottom: "8px", borderRadius: "8px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "10px 14px", fontSize: "0.8125rem", color: "var(--c-amber-text)" }}>
-          Hackathon not found in current on-chain state. Re-submit this project to the active hackathon from the Open Hackathons section above.
+          Hackathon not found. Re-submit from Open Hackathons above.
         </div>
       )}
+      {sub.status === "rejected" && !project && (
+        <div style={{ marginBottom: "8px", borderRadius: "8px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "10px 14px", fontSize: "0.8125rem", color: "var(--c-red-text)" }}>
+          Submission rejected. You can re-submit if you want another review.
+        </div>
+      )}
+
       {loading ? (
         <div className="ui-skeleton" style={{ height: "80px", borderRadius: "8px" }} />
       ) : project ? (
         <div>
-          {!stakingActivated && (
-            <div style={{ marginBottom: "12px", borderRadius: "8px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "10px 14px", fontSize: "0.8125rem", color: "var(--c-text-4)" }}>
-              FYI only for now. This project stays visible on HackBet, but staking stays disabled until you pay the builder activation deposit.
-            </div>
-          )}
-
           {/* Deposit row */}
           {hasDeposit && (
             <div style={rowStyle}>
-              <span style={labelStyle}>Commitment deposit ({formatTokens(depositAmt)} USDC)</span>
+              <span style={labelStyle}>Deposit ({formatTokens(depositAmt)} USDC)</span>
               {project.depositForfeited ? (
                 <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-red-text)" }}>Forfeited</span>
               ) : project.depositRefunded ? (
@@ -918,18 +942,26 @@ function BuilderProjectCard({
               ) : project.depositAmountPaid > 0n ? (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span style={checkStyle}>✓ Paid</span>
-                  {canClaimDepositRefund && (
+                  {canClaimDepositRefund ? (
                     <button onClick={claimDepositRefund} disabled={busy === "refund"} className="ui-btn ui-btn-emerald ui-btn-sm">
                       {busy === "refund" ? "…" : "Claim refund"}
                     </button>
-                  )}
-                  {!canClaimDepositRefund && (
-                    <span style={{ fontSize: "0.8125rem", color: "var(--c-text-4)" }}>
-                      {project.isRefundEnabled
-                        ? "Refund override active"
-                        : project.builderDeclared
-                          ? "Waiting on organizer approval"
-                          : "Refund unlocks after you mark the project submitted"}
+                  ) : (
+                    <span className="ui-tooltip-wrap">
+                      <button
+                        disabled
+                        className="ui-btn ui-btn-outline ui-btn-sm"
+                        style={{ cursor: "help" }}
+                      >
+                        Claim refund
+                      </button>
+                      <span className="ui-tooltip">
+                        {project.isRefundEnabled
+                          ? "Refund override active"
+                          : project.builderDeclared
+                            ? "Waiting on organizer approval"
+                            : "Mark project submitted first"}
+                      </span>
                     </span>
                   )}
                 </div>
@@ -942,69 +974,91 @@ function BuilderProjectCard({
           )}
 
           {/* Self-stake row */}
-          <div style={rowStyle}>
-            <span style={labelStyle}>Self-stake</span>
+          <div style={{ ...rowStyle, alignItems: "flex-start", paddingTop: "12px" }}>
+            <span style={{ ...labelStyle, paddingTop: "2px" }}>Self-stake</span>
             {!canSelfStake ? (
-              <span style={{ fontSize: "0.8125rem", color: "var(--c-text-4)" }}>
-                {selfStakeDisabledLabel}
+              <span className="ui-tooltip-wrap">
+                <button disabled className="ui-btn ui-btn-indigo ui-btn-sm" style={{ cursor: "help" }}>
+                  Stake
+                </button>
+                <span className="ui-tooltip">{selfStakeDisabledLabel}</span>
               </span>
             ) : selfStakeCapReached ? (
-              <span style={checkStyle}>✓ {formatTokens(project.builderStaked)} USDC (cap reached)</span>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
+                <span style={checkStyle}>✓ {formatTokens(project.builderStaked)} USDC</span>
+                <div style={{ width: "120px" }}>
+                  <div className="ui-stake-bar-track">
+                    <div className="ui-stake-bar-fill" style={{ width: "100%", background: "var(--c-emerald)" }} />
+                  </div>
+                  <span style={{ fontSize: "0.625rem", color: "var(--c-text-4)" }}>Cap reached</span>
+                </div>
+              </div>
             ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
                 {project.builderStaked > 0n && (
-                  <span style={{ ...checkStyle, whiteSpace: "nowrap" }}>✓ {formatTokens(project.builderStaked)}</span>
+                  <div style={{ width: "100%", minWidth: "160px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+                      <span style={{ fontSize: "0.625rem", color: "var(--c-text-4)" }}>Self-staked</span>
+                      <span style={{ fontSize: "0.625rem", color: "var(--c-text-3)", fontWeight: 600 }}>
+                        {formatTokens(project.builderStaked)} / 2,000 USDC
+                      </span>
+                    </div>
+                    <div className="ui-stake-bar-track">
+                      <div className="ui-stake-bar-fill" style={{ width: `${selfStakeBarPct}%`, background: "var(--c-emerald)" }} />
+                    </div>
+                  </div>
                 )}
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Add USDC"
-                  value={selfStakeAmt}
-                  onChange={(e) => setSelfStakeAmt(e.target.value)}
-                  className="ui-input-sm"
-                  style={{ width: "100px" }}
-                />
-                <button onClick={selfStake} disabled={busy === "selfstake" || !selfStakeAmt} className="ui-btn ui-btn-indigo ui-btn-sm">
-                  {busy === "selfstake" ? "…" : "Stake"}
-                </button>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Add USDC"
+                    value={selfStakeAmt}
+                    onChange={(e) => setSelfStakeAmt(e.target.value)}
+                    className="ui-input-sm"
+                    style={{ width: "90px" }}
+                  />
+                  <button onClick={selfStake} disabled={busy === "selfstake" || !selfStakeAmt} className="ui-btn ui-btn-indigo ui-btn-sm">
+                    {busy === "selfstake" ? "…" : "Stake"}
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Submit row */}
+          {/* Builder declaration row */}
           <div style={rowStyle}>
             <span style={labelStyle}>Builder declaration</span>
             {project.builderDeclared ? (
-              <span style={checkStyle}>✓ Submitted by builder</span>
-              ) : (
-                <button onClick={submitProject} disabled={busy === "submit"} className="ui-btn ui-btn-amber ui-btn-sm">
-                  {busy === "submit" ? "…" : "Mark as submitted"}
-                </button>
-              )}
+              <span style={checkStyle}>✓ Declared</span>
+            ) : (
+              <button onClick={submitProject} disabled={busy === "submit"} className="ui-btn ui-btn-amber ui-btn-sm">
+                {busy === "submit" ? "…" : "Mark submitted"}
+              </button>
+            )}
           </div>
+
+          {/* Organizer approval row */}
           <div style={{ ...rowStyle, borderBottom: "none" }}>
-            <span style={labelStyle}>{hackathon?.requiresApproval ? "Organizer approval" : "Approval flow"}</span>
+            <span style={labelStyle}>Organizer approval</span>
             {project.submitted ? (
               <span style={checkStyle}>✓ Approved</span>
             ) : (
-              <span style={{ fontSize: "0.8125rem", color: "var(--c-text-4)" }}>
-                {project.builderDeclared
-                  ? "Pending organizer approval"
-                  : "Waiting on your builder declaration"}
+              <span className="ui-tooltip-wrap">
+                <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)", fontWeight: 600 }}>
+                  {project.builderDeclared ? "Pending" : "Awaiting declaration"}
+                </span>
+                <span className="ui-tooltip">
+                  {project.builderDeclared
+                    ? "Organizer will review and approve your submission"
+                    : "Mark your project as submitted first"}
+                </span>
               </span>
             )}
           </div>
         </div>
-      ) : (
-        <div style={{ borderRadius: "8px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px 14px", fontSize: "0.8125rem", color: "var(--c-text-4)" }}>
-          {sub.status === "pending"
-            ? "Pending organizer review. Your on-chain project isn't confirmed yet — deposit, self-stake, and builder declaration will unlock once it appears on-chain."
-            : sub.status === "rejected"
-              ? "This submission was rejected. You can submit the repo again if you want the organizer to take another look."
-              : "The organizer approved this submission, but the on-chain project is not visible yet. Refresh in a moment and try again."}
-        </div>
-      )}
+      ) : null}
 
       {err && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
       {ok && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}

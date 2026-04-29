@@ -408,3 +408,87 @@ html.dark .ambient-glow { display: block; }
   grid-template-columns: 1fr;
 }
 @media (min-width: 640px) { .grid-auto-2 { grid-template-columns: repeat(2, 1fr); } }
+
+/* ── Tooltip ─────────────────────────────────────────────────────────────── */
+.ui-tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.ui-tooltip-wrap .ui-tooltip {
+  pointer-events: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: var(--c-text);
+  color: var(--card-bg);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 100;
+}
+.ui-tooltip-wrap:hover .ui-tooltip { opacity: 1; }
+
+/* ── Stake progress bar ──────────────────────────────────────────────────── */
+.ui-stake-bar-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--c-divider);
+  overflow: hidden;
+}
+.ui-stake-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--c-indigo);
+  transition: width 0.4s ease;
+}
+
+/* ── Step progress ───────────────────────────────────────────────────────── */
+.ui-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 12px 0 8px;
+}
+.ui-step-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.ui-step-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  font-weight: 800;
+}
+.ui-step-dot-done   { background: var(--c-emerald); color: #fff; }
+.ui-step-dot-active { background: var(--c-indigo);  color: #fff; }
+.ui-step-dot-error  { background: var(--c-red);     color: #fff; }
+.ui-step-dot-idle   { background: var(--c-divider); color: var(--c-text-4); }
+.ui-step-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ui-step-label-done   { color: var(--c-emerald-text); }
+.ui-step-label-active { color: var(--c-indigo-text); }
+.ui-step-label-error  { color: var(--c-red-text); }
+.ui-step-label-idle   { color: var(--c-text-4); }
+.ui-step-connector {
+  flex: 1;
+  height: 2px;
+  margin-bottom: 16px;
+}
+.ui-step-connector-done { background: var(--c-emerald); }
+.ui-step-connector-idle { background: var(--c-divider); }
