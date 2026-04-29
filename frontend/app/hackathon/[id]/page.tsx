@@ -169,7 +169,11 @@ function ProjectRow({
               <span style={{ borderRadius: "9999px", background: "var(--c-divider-2)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-4)" }}>
                 FYI only
               </span>
-            ) : status === "open" && (!publicKey || isWhitelisted !== true) ? (
+            ) : status === "open" && !publicKey ? (
+              <span style={{ borderRadius: "9999px", background: "var(--c-divider-2)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-4)" }}>
+                Connect wallet
+              </span>
+            ) : status === "open" && isWhitelisted !== true ? (
               <span style={{ borderRadius: "9999px", background: "var(--c-divider-2)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-4)" }}>
                 Whitelist required
               </span>

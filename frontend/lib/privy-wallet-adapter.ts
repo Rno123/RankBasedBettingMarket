@@ -83,11 +83,11 @@ export class PrivyWalletAdapter extends BaseSignerWalletAdapter {
 
       this.onLoginRequest!()
         .then(() => {
-          // Give React ~3 s to propagate Privy state and call setWallet().
-          // If the user closed the modal without completing login, reject.
+          // Give the user up to 5 min to complete email/OTP/OAuth and for
+          // React to propagate Privy state and call setWallet().
           setTimeout(() => {
-            if (!settled) settle(() => reject(new Error("Login cancelled")));
-          }, 3000);
+            if (!settled) settle(() => reject(new Error("Login timed out")));
+          }, 300_000);
         })
         .catch((e: unknown) =>
           settle(() => reject(e instanceof Error ? e : new Error(String(e))))

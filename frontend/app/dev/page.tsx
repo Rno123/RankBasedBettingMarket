@@ -340,6 +340,14 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
   );
 }
 
+function normalizeTelegram(v: string): string | undefined {
+  const t = v.trim();
+  if (!t) return undefined;
+  if (t.startsWith("https://t.me/") || t.startsWith("t.me/")) return t;
+  const handle = t.startsWith("@") ? t.slice(1) : t;
+  return `t.me/${handle}`;
+}
+
 // ── Submission form for one hackathon ─────────────────────────────────────────
 
 function SubmitForm({
@@ -456,14 +464,14 @@ function SubmitForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           authEmail: authEmail || null,
-          discord: discord || undefined,
+          discord: discord.trim() || undefined,
           githubUrl: url,
           hackathonPubkey: hackathonPubkey.toBase58(),
           projectName: projectName.trim(),
           projectPubkey: projectPk.toBase58(),
           signature,
-          telegram: telegram || undefined,
-          twitterHandle: twitter.replace(/^@/, "") || undefined,
+          telegram: normalizeTelegram(telegram),
+          twitterHandle: twitter.replace(/^@/, "").trim() || undefined,
           walletAddress: publicKey.toBase58(),
         }),
       });
@@ -522,11 +530,11 @@ function SubmitForm({
         </div>
         <div>
           <label style={subLabelStyle}>Telegram</label>
-          <input className="ui-input" placeholder="t.me/…" value={telegram} onChange={(e) => setTelegram(e.target.value)} />
+          <input className="ui-input" placeholder="@username or t.me/…" value={telegram} onChange={(e) => setTelegram(e.target.value)} />
         </div>
         <div>
           <label style={subLabelStyle}>Discord</label>
-          <input className="ui-input" placeholder="discord.gg/…" value={discord} onChange={(e) => setDiscord(e.target.value)} />
+          <input className="ui-input" placeholder="username or discord.gg/…" value={discord} onChange={(e) => setDiscord(e.target.value)} />
         </div>
       </div>
       {err && <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
@@ -839,9 +847,11 @@ function BuilderProjectCard({
   const hasDeposit = depositAmt > 0n;
   const stakingActivated = !hasDeposit || project?.depositAmountPaid ? true : false;
   const canSelfStake = hasDeposit && !!project?.depositAmountPaid;
+  const MAX_SELF_STAKE = 2_000_000_000n;
   const selfStakeDisabledLabel = hasDeposit
     ? "Disabled until deposit is paid"
     : "Disabled for no-deposit FYI entries";
+  const selfStakeCapReached = (project?.builderStaked ?? 0n) >= MAX_SELF_STAKE;
   const canClaimDepositRefund =
     !!project &&
     project.depositAmountPaid > 0n &&
@@ -916,26 +926,29 @@ function BuilderProjectCard({
           {/* Self-stake row */}
           <div style={rowStyle}>
             <span style={labelStyle}>Self-stake</span>
-            {project.builderStaked > 0n ? (
-              <span style={checkStyle}>✓ {formatTokens(project.builderStaked)} USDC staked</span>
-            ) : !canSelfStake ? (
+            {!canSelfStake ? (
               <span style={{ fontSize: "0.8125rem", color: "var(--c-text-4)" }}>
                 {selfStakeDisabledLabel}
               </span>
+            ) : selfStakeCapReached ? (
+              <span style={checkStyle}>✓ {formatTokens(project.builderStaked)} USDC (cap reached)</span>
             ) : (
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {project.builderStaked > 0n && (
+                  <span style={{ ...checkStyle, whiteSpace: "nowrap" }}>✓ {formatTokens(project.builderStaked)}</span>
+                )}
                 <input
                   type="number"
                   min="0"
                   step="0.01"
-                  placeholder="Amount USDC"
+                  placeholder="Add USDC"
                   value={selfStakeAmt}
                   onChange={(e) => setSelfStakeAmt(e.target.value)}
                   className="ui-input-sm"
-                  style={{ width: "120px" }}
+                  style={{ width: "100px" }}
                 />
                 <button onClick={selfStake} disabled={busy === "selfstake" || !selfStakeAmt} className="ui-btn ui-btn-indigo ui-btn-sm">
-                  {busy === "selfstake" ? "…" : "Self-stake"}
+                  {busy === "selfstake" ? "…" : "Stake"}
                 </button>
               </div>
             )}
