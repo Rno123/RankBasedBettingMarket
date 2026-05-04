@@ -800,7 +800,7 @@ function CreateHackathonPanel({
     if (!publicKey || !anchorWallet) return;
     setErr(null);
     const pcts = tierPcts.map((v) => parseInt(v));
-    const counts = tierCounts.map((v, i) => i === numTiers - 1 ? 0 : parseInt(v));
+    const counts = tierCounts.map((v) => parseInt(v));
     if (pcts.some(isNaN) || pcts.some((v) => v < 0)) { setErr("All tier % must be ≥ 0"); return; }
     if (pcts.reduce((a, b) => a + b, 0) !== 100) { setErr("Tier % must sum to 100"); return; }
     for (let i = 0; i < numTiers - 1; i++) {
@@ -979,7 +979,7 @@ function CreateHackathonPanel({
                   <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>%</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  <input type="number" min={0} className="ui-input-sm" style={{ width: "80px" }} placeholder={isLast ? "0 = rest" : "# projects"} value={tierCounts[i] ?? ""} onChange={(e) => { const n = [...tierCounts]; n[i] = e.target.value; setTierCounts(n); }} />
+                  <input type="number" min={0} className="ui-input-sm" style={{ width: "80px" }} placeholder="# projects" value={tierCounts[i] ?? ""} onChange={(e) => { const n = [...tierCounts]; n[i] = e.target.value; setTierCounts(n); }} />
                   <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>projects</span>
                 </div>
               </div>
