@@ -183,7 +183,7 @@ function SectionOverview() {
       />
       <h3 style={h3Style}>Where the protocol lives</h3>
       <p style={pStyle}>
-        The program is deployed on Solana devnet at:
+        The program is deployed on Solana mainnet at:
       </p>
       <code style={codeStyle}>5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd</code>
       <p style={{ ...pStyle, marginTop: "0.25rem" }}>
@@ -747,8 +747,7 @@ export default function DocsPage() {
             {/* Header */}
             <div style={{ marginBottom: "2.5rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
-                <span style={tagStyle("orange")}>Admin only</span>
-                <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>Protocol v1 — devnet</span>
+                <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>Protocol v1</span>
               </div>
               <h1 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(1.75rem, 4vw, 2.5rem)", fontWeight: 900, letterSpacing: "-0.03em", color: "var(--c-text)", margin: "0 0 0.75rem" }}>
                 HACK<span style={{ color: "var(--c-indigo-text)" }}>BET</span> Protocol Reference
