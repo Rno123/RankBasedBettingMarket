@@ -1491,7 +1491,7 @@ function HackathonAdminCard({
       <button onClick={() => setExpanded((v) => !v)} style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
         <div>
           <p style={{ margin: 0, fontWeight: 600, color: "var(--c-text)" }}>{hackathon.name || hackathon.pubkey.toBase58().slice(0, 16) + "…"}</p>
-          <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Deadline: {formatDate(hackathon.irlHackathonDeadlineTimestamp)} (SGT, UTC+8) · {formatTokens(hackathon.totalPool)} USDC · <span style={{ color: PHASE_COLOR[hackathonPhase(hackathon)], fontWeight: 600 }}>{PHASE_LABEL[hackathonPhase(hackathon)]}</span></p>
+          <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Deadline: {formatDate(hackathon.irlHackathonDeadlineTimestamp, "Asia/Singapore")} · {formatTokens(hackathon.totalPool)} USDC · <span style={{ color: PHASE_COLOR[hackathonPhase(hackathon)], fontWeight: 600 }}>{PHASE_LABEL[hackathonPhase(hackathon)]}</span></p>
         </div>
         <span style={{ color: "var(--c-text-4)" }}>{expanded ? "▲" : "▼"}</span>
       </button>
