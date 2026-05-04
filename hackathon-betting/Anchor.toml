@@ -11,11 +11,14 @@ hackathon_betting = "5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd"
 [programs.devnet]
 hackathon_betting = "5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd"
 
+[programs.mainnet]
+hackathon_betting = "5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd"
+
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "mainnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
