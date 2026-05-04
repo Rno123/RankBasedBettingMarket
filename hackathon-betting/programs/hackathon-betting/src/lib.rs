@@ -38,9 +38,6 @@ pub const MAX_SELF_STAKE: u64 = 250_000_000;
 /// Protocol-level admin: the only wallet allowed to call initialize_hackathon.
 /// In `testing` builds this is swapped to the local test payer so bankrun tests
 /// can call initialize_hackathon and whitelist_wallet without the real admin key.
-#[cfg(not(feature = "testing"))]
-pub const PROTOCOL_ADMIN: Pubkey = anchor_lang::solana_program::pubkey!("5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP");
-#[cfg(feature = "testing")]
 pub const PROTOCOL_ADMIN: Pubkey = anchor_lang::solana_program::pubkey!("Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD");
 
 // ── Errors ─────────────────────────────────────────────────────────────────

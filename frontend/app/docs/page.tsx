@@ -397,7 +397,7 @@ function SectionConstants() {
           [<IC>DEFAULT_PROTOCOL_FEE_BPS</IC>, "150 (1.5%)", "Protocol fee deducted at claim"],
           [<IC>DEFAULT_DEPOSIT_AMOUNT</IC>, "10,000,000", "$10 USDC builder commitment deposit"],
           [<IC>MAX_TIERS</IC>, "8", "Maximum number of rank tiers per hackathon"],
-          [<IC>PROTOCOL_ADMIN</IC>, "5mxH…cMfP", "Only wallet that can initialize hackathons"],
+          [<IC>PROTOCOL_ADMIN</IC>, "Cqrz…BXjkD", "Only wallet that can initialize hackathons"],
         ]}
       />
       <p style={pStyle}>
