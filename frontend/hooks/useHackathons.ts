@@ -40,14 +40,20 @@ export function useHackathons() {
         const program = getReadonlyProgram();
         const connection = (program.provider as any).connection;
 
-        // Fetch raw accounts and decode individually so stale pre-upgrade
-        // accounts (wrong struct layout) are silently skipped instead of
-        // crashing the whole request.
         // Filter to HackathonState accounts only (discriminator = sha256("account:HackathonState")[:8]).
-        // Without this, getProgramAccounts returns every account type, which is slow on mobile.
-        const rawAccounts = await connection.getProgramAccounts(PROGRAM_ID, {
-          filters: [{ memcmp: { offset: 0, bytes: "68mXvqEofeP" } }],
-        });
+        // Falls back to unfiltered if the RPC rejects memcmp filters (e.g. some Chainstack plans).
+        let rawAccounts: any[];
+        try {
+          rawAccounts = await connection.getProgramAccounts(PROGRAM_ID, {
+            filters: [{ memcmp: { offset: 0, bytes: "68mXvqEofeP" } }],
+          });
+          // If the filter silently returns nothing on an RPC that blocks it, retry unfiltered.
+          if (rawAccounts.length === 0) {
+            rawAccounts = await connection.getProgramAccounts(PROGRAM_ID);
+          }
+        } catch {
+          rawAccounts = await connection.getProgramAccounts(PROGRAM_ID);
+        }
 
         if (cancelled) return;
 

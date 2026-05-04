@@ -513,7 +513,7 @@ export default function HackathonPage({
   const { id } = use(params);
 
   const { publicKey } = useWallet();
-  const { hackathons, loading: hLoading, reload: reloadHackathons } = useHackathons();
+  const { hackathons, loading: hLoading, error: hError, reload: reloadHackathons } = useHackathons();
   const hackathon = hackathons.find((h) => h.pubkey.toBase58() === id) ?? null;
   const hackathonPk = hackathon?.pubkey ?? null;
   const { isWhitelisted } = useWhitelistStatus(hackathonPk, publicKey ?? null, hackathon?.openStaking);
@@ -643,13 +643,22 @@ export default function HackathonPage({
     );
   }
 
-  if (!hackathon) {
+  if (hError || !hackathon) {
     return (
       <div style={{ minHeight: "100vh" }}>
         <Navbar />
-        <main style={{ margin: "0 auto", maxWidth: "896px", padding: "48px 16px", textAlign: "center", color: "var(--c-text-3)" }}>
-          Hackathon not found.{" "}
-          <Link href="/hackathons" className="ui-text-link">Go back</Link>
+        <main style={{ margin: "0 auto", maxWidth: "896px", padding: "48px 16px", textAlign: "center" }}>
+          {hError ? (
+            <>
+              <p style={{ color: "var(--c-red-text)", marginBottom: "12px" }}>Failed to load: {hError}</p>
+              <button onClick={reloadHackathons} className="ui-btn ui-btn-outline" style={{ fontSize: "0.875rem" }}>Retry</button>
+            </>
+          ) : (
+            <p style={{ color: "var(--c-text-3)" }}>
+              Hackathon not found.{" "}
+              <Link href="/hackathons" className="ui-text-link">Go back</Link>
+            </p>
+          )}
         </main>
       </div>
     );
