@@ -302,6 +302,7 @@ html.dark select option {
   white-space: nowrap;
   text-align: center;
   text-decoration: none;
+  touch-action: manipulation;
 }
 .ui-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .ui-btn-sm { padding: 6px 12px; font-size: 0.75rem; border-radius: 8px; }
@@ -413,12 +414,14 @@ html.dark .ambient-glow { display: block; }
 .ui-sort-tab {
   border-radius: 8px;
   padding: 8px 16px;
+  min-height: 44px;
   font-size: 0.75rem;
   font-weight: 600;
   border: none;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
   font-family: inherit;
+  touch-action: manipulation;
 }
 .ui-sort-tab-active { background: var(--c-indigo); color: #fff; }
 .ui-sort-tab-inactive { background: transparent; color: var(--c-text-3); }
@@ -454,6 +457,7 @@ html.dark .ambient-glow { display: block; }
   cursor: pointer;
   border: none;
   transition: background 0.2s;
+  touch-action: manipulation;
 }
 .ui-toggle-on { background: var(--c-indigo); }
 .ui-toggle-off { background: var(--c-divider); }
@@ -679,7 +683,7 @@ html.dark .ambient-glow { display: block; }
   }
 
   .ui-sort-tab {
-    min-height: 38px;
+    padding: 8px 12px;
   }
 
   .ui-steps {

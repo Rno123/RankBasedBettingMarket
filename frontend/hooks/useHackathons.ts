@@ -43,7 +43,11 @@ export function useHackathons() {
         // Fetch raw accounts and decode individually so stale pre-upgrade
         // accounts (wrong struct layout) are silently skipped instead of
         // crashing the whole request.
-        const rawAccounts = await connection.getProgramAccounts(PROGRAM_ID);
+        // Filter to HackathonState accounts only (discriminator = sha256("account:HackathonState")[:8]).
+        // Without this, getProgramAccounts returns every account type, which is slow on mobile.
+        const rawAccounts = await connection.getProgramAccounts(PROGRAM_ID, {
+          filters: [{ memcmp: { offset: 0, bytes: "68mXvqEofeP" } }],
+        });
 
         if (cancelled) return;
 

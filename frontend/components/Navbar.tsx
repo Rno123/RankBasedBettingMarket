@@ -55,8 +55,8 @@ export default function Navbar() {
 
   const iconBtnStyle: React.CSSProperties = {
     display: "flex",
-    height: "36px",
-    width: "36px",
+    height: "44px",
+    width: "44px",
     alignItems: "center",
     justifyContent: "center",
     borderRadius: "8px",
@@ -65,6 +65,7 @@ export default function Navbar() {
     border: "none",
     cursor: "pointer",
     transition: "background 0.15s, color 0.15s",
+    touchAction: "manipulation",
   };
 
   return (
@@ -155,17 +156,17 @@ export default function Navbar() {
       {/* Mobile dropdown */}
       {menuOpen && (
         <div style={{ borderTop: "1px solid var(--c-divider)", background: "var(--nav-bg)", padding: "12px 16px" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <Link href="/hackathons" style={{ ...navLinkStyle("/hackathons"), padding: "8px 12px", borderRadius: "8px" }}>Hackathons</Link>
-            <Link href="/devs" style={{ ...navLinkStyle("/devs"), padding: "8px 12px", borderRadius: "8px" }}>Builders</Link>
-            <Link href="/how-to-use" style={{ ...navLinkStyle("/how-to-use"), padding: "8px 12px", borderRadius: "8px" }}>How it works</Link>
-            <Link href="/profile" style={{ ...navLinkStyle("/profile"), padding: "8px 12px", borderRadius: "8px" }}>Portfolio</Link>
-            <Link href="/docs" style={{ ...navLinkStyle("/docs"), padding: "8px 12px", borderRadius: "8px" }}>Docs</Link>
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+            <Link href="/hackathons" style={{ ...navLinkStyle("/hackathons"), padding: "12px 12px", borderRadius: "8px", display: "block" }}>Hackathons</Link>
+            <Link href="/devs" style={{ ...navLinkStyle("/devs"), padding: "12px 12px", borderRadius: "8px", display: "block" }}>Builders</Link>
+            <Link href="/how-to-use" style={{ ...navLinkStyle("/how-to-use"), padding: "12px 12px", borderRadius: "8px", display: "block" }}>How it works</Link>
+            <Link href="/profile" style={{ ...navLinkStyle("/profile"), padding: "12px 12px", borderRadius: "8px", display: "block" }}>Portfolio</Link>
+            <Link href="/docs" style={{ ...navLinkStyle("/docs"), padding: "12px 12px", borderRadius: "8px", display: "block" }}>Docs</Link>
             {showAdmin && (
-              <Link href="/admin" style={{ ...navLinkStyle("/admin"), padding: "8px 12px", borderRadius: "8px" }}>Admin</Link>
+              <Link href="/admin" style={{ ...navLinkStyle("/admin"), padding: "12px 12px", borderRadius: "8px", display: "block" }}>Admin</Link>
             )}
             {showMaster && (
-              <Link href="/master" style={{ fontSize: "0.875rem", fontWeight: 500, textDecoration: "none", color: "var(--c-amber-text)", padding: "8px 12px", borderRadius: "8px" }}>
+              <Link href="/master" style={{ fontSize: "0.875rem", fontWeight: 500, textDecoration: "none", color: "var(--c-amber-text)", padding: "12px 12px", borderRadius: "8px", display: "block" }}>
                 Master
               </Link>
             )}

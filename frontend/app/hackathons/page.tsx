@@ -94,21 +94,21 @@ function HackathonRow({
           </div>
         </div>
 
-        <div style={{ display: "flex", flexShrink: 0, alignItems: "center", gap: "0" }}>
-          <div style={{ width: "150px", textAlign: "right", paddingRight: "20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0", minWidth: 0 }}>
+          <div style={{ width: "120px", textAlign: "right", paddingRight: "14px", flexShrink: 0 }}>
             <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Total pool</p>
             <p style={{ margin: "3px 0 0", fontSize: "1.125rem", fontWeight: 800, color: "var(--c-text)", lineHeight: 1 }}>
               {formatTokens(hackathon.totalPool)} <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--c-text-3)" }}>USDC</span>
             </p>
           </div>
           <div style={{ width: "1px", height: "32px", background: "var(--c-divider)", flexShrink: 0 }} />
-          <div style={{ width: "90px", textAlign: "right", paddingRight: "20px", paddingLeft: "20px" }}>
+          <div style={{ width: "72px", textAlign: "right", paddingRight: "14px", paddingLeft: "14px", flexShrink: 0 }}>
             <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Projects</p>
             <p style={{ margin: "3px 0 0", fontSize: "1.125rem", fontWeight: 800, color: "var(--c-text)", lineHeight: 1 }}>{projectCount}</p>
           </div>
           <div style={{ width: "1px", height: "32px", background: "var(--c-divider)", flexShrink: 0 }} />
-          <div style={{ paddingLeft: "20px" }}>
-            <Link href={`/hackathon/${id}`} className="ui-btn ui-btn-indigo ui-btn-sm" style={{ fontWeight: 800, width: "72px" }}>
+          <div style={{ paddingLeft: "14px", flexShrink: 0 }}>
+            <Link href={`/hackathon/${id}`} className="ui-btn ui-btn-indigo ui-btn-sm" style={{ fontWeight: 800, width: "64px" }}>
               View
             </Link>
           </div>
