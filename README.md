@@ -58,9 +58,9 @@ If you change your mind before the cutoff, you can unstake with a flat **3% pena
 
 ## The math (in plain English)
 
-**Tiers matter.** The organizer sets prize splits (e.g. 55% to 1st place, 30% to 2nd, 15% to 3rd). If a tier has no winner, its share gets redistributed to tiers that do.
+**Tiers matter.** The organizer sets prize splits (e.g. 12% to 1st place, 88% split among 22 remaining winners). If a tier has no ranked project, its share gets redistributed to tiers that do.
 
-**Crowd size is compressed.** A project with $10,000 staked doesn't earn 10× more than one with $1,000. The formula uses square roots — $10,000 → weight of 100, $1,000 → weight of ~32. That's about 3×, not 10×. Early backers of underrated projects are protected from being drowned out by whale money.
+**Equal split within each tier.** Every ranked project in a tier gets an equal share of that tier's pool — 22 projects sharing 88% means each gets 4%. No project can dominate a tier just because it attracted more stake. Conviction still matters via time-weighted shares (early backers earn more), but within a tier, all winners are treated equally.
 
 **You earn proportional to your conviction.** Within a project, your payout is your share of the total shares on that project. Stake more, stake earlier → more shares → larger slice.
 

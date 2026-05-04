@@ -1,13 +1,13 @@
 # RankBasedBettingMarket — Claude Code Context
 
 ## What This Is
-A Solana-native hackathon betting protocol (HackBet). Users back hackathon projects with capped stakes. At resolution, the total prize pool is redistributed based on official judge ranking, time-weighted shares, and a sqrt crowding adjustment.
+A Solana-native hackathon conviction protocol (HackBet). Users back hackathon projects with capped stakes. At resolution, the total prize pool is redistributed based on official judge ranking and time-weighted shares, with equal split among projects within each tier.
 
-**This is NOT a prediction market. It is a rank-weighted, crowd-adjusted conviction pool.**
+**This is NOT a prediction market. It is a rank-weighted conviction pool.**
 
 ## Tech Stack
 - Rust + Cargo (stable) · Anchor 0.31.x
-- Solana CLI (devnet) — program deployed at `5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd`
+- Solana CLI (mainnet) — program deployed at `5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd`
 - Node.js 18+ · Yarn · TypeScript
 - Bankrun (for tests — preferred over solana-test-validator)
 - Next.js 16 (App Router) + Tailwind CSS v4 frontend
@@ -19,12 +19,12 @@ UNSTAKE_PENALTY_BPS     = 300             // flat 3% penalty on early exit (alwa
 UNSTAKE_PROTOCOL_BPS    = 150             // 1.5% to fee recipient; 1.5% stays in pool
 EARLY_MULTIPLIER_BPS    = 15_000          // share multiplier at stake open (1.5×)
 BASE_MULTIPLIER_BPS     = 10_000          // share multiplier at cutoff (1.0×)
-MAX_STAKE_PER_WALLET    = 2_000_000_000   // $2,000 USDC per wallet per project
-MAX_SELF_STAKE          = 2_000_000_000   // $2,000 USDC builder self-stake cap
+MAX_STAKE_PER_WALLET    = 250_000_000     // $250 USDC per wallet per project
+MAX_SELF_STAKE          = 250_000_000     // $250 USDC builder self-stake cap
 DEFAULT_PROTOCOL_FEE_BPS = 150            // 1.5% deducted at claim
 DEFAULT_DEPOSIT_AMOUNT  = 10_000_000      // $10 USDC builder commitment deposit
 MAX_TIERS               = 8
-PROTOCOL_ADMIN          = "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+PROTOCOL_ADMIN          = "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
 ```
 
 ## Key Formulas
@@ -50,13 +50,13 @@ shares   = floor(amount × mult_bps / 10_000)
 // Stage 1: tier allocation (set at finalize_resolve)
 effective_tier_pcts[t]  // proportional cascade — empty tiers redistribute to occupied ones
 
-// Stage 2: within-tier sqrt crowding
-C_i       = isqrt(project.total_staked)
-C_total_t = hackathon.tier_c_totals[tier]   // snapshotted at finalize_resolve (C-01 fix)
+// Stage 2: within-tier equal split
+// Every ranked project gets 1/N of the tier pool
+// N = tier_c_totals[tier] (project count, snapshotted at finalize_resolve)
 
-payout = user_shares × C_i × effective_tier_pcts[tier] × total_pool
-         ──────────────────────────────────────────────────────────
-         project.total_shares × C_total_t × 10_000
+payout = user_shares × effective_tier_pcts[tier] × total_pool
+         ──────────────────────────────────────────────────
+         project.total_shares × N × 10_000
 ```
 Protocol fee is deducted from payout at claim time.
 
@@ -122,19 +122,11 @@ Escrow         : ["escrow", hackathon]
 WhitelistedWallet : ["whitelist", hackathon, wallet]
 ```
 
-## Claim Architecture (C-01 fix — important)
-`claim` does NOT iterate `remaining_accounts` to compute `C_total_t`.
-`finalize_resolve` snapshots `tier_c_totals[t]` for each tier and stores it on `HackathonState`.
-`claim` reads `hackathon.tier_c_totals[tier]` — caller-manipulation-proof.
-
-CU results (Bankrun, post-C-01-fix, 2026-04-25):
-| N projects | Claim CU |
-|---|---|
-| 5 | 18,111 |
-| 10 | 18,111 |
-| 20 | 18,111 |
-
-Flat CU (no longer N-dependent) because `claim` no longer iterates projects.
+## Claim Architecture
+`claim` does NOT iterate projects to compute denominators.
+`finalize_resolve` snapshots the count of ranked projects per tier (`tier_c_totals[t] = N`)
+and stores it on `HackathonState`. `claim` reads `hackathon.tier_c_totals[tier]` — flat CU,
+caller-manipulation-proof. No sqrt weighting.
 
 ## Audit Fixes Applied (2026-04-25)
 All findings from the Codex audit have been fixed:
