@@ -753,14 +753,17 @@ export default function HackathonPage({
           <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "12px" }}>
             <p style={{ margin: "0 0 6px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Prize tiers</p>
             <div className="mobile-chip-wrap">
-              {hackathon.tierPcts.map((pct, i) => (
-                <span
-                  key={i}
-                  style={{ borderRadius: "6px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "4px 10px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-indigo-text)" }}
-                >
-                  #{i + 1}: {pct}%
-                </span>
-              ))}
+              {hackathon.tierPcts.map((pct, i) => {
+                const count = hackathon.tierExpectedCounts[i];
+                return (
+                  <span
+                    key={i}
+                    style={{ borderRadius: "6px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "4px 10px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-indigo-text)" }}
+                  >
+                    {count > 1 ? `${count} × ` : ""}{pct}%
+                  </span>
+                );
+              })}
             </div>
           </div>
 
