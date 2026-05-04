@@ -24,18 +24,13 @@ export function parseTokens(amount: string, decimals = TOKEN_DECIMALS): bigint {
   return BigInt(whole) * BigInt(10 ** decimals) + BigInt(fracPadded);
 }
 
-export function formatDate(ts: number, tz?: string): string {
-  const options: Intl.DateTimeFormatOptions = {
+export function formatDate(ts: number): string {
+  return new Date(ts * 1000).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    timeZoneName: tz ? "short" : undefined,
-  };
-  return new Date(ts * 1000).toLocaleString(tz ? "en-SG" : undefined, {
-    ...options,
-    timeZone: tz ?? undefined,
   });
 }
 
