@@ -1258,23 +1258,16 @@ function BuilderProjectsSection({
     const supabase = getSupabase();
     if (!supabase) { setLoading(false); return; }
 
-    // Query by wallet address OR by auth_email so builders who submitted with
-    // one wallet can still see their projects when connected with another.
-    const walletFilter = `wallet_address.eq.${publicKey.toBase58()}`;
-    const filterExpr = authEmail
-      ? `${walletFilter},auth_email.eq.${authEmail}`
-      : walletFilter;
-
     supabase
       .from("project_submissions_public")
       .select("project_pubkey, hackathon_pubkey, github_url, icon_url, project_name, status")
-      .or(filterExpr)
+      .eq("wallet_address", publicKey.toBase58())
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         setSubmissions((data as BuilderSubmission[]) ?? []);
         setLoading(false);
       });
-  }, [publicKey.toBase58(), authEmail, refreshKey, externalRefreshKey]);
+  }, [publicKey.toBase58(), refreshKey, externalRefreshKey]);
 
   if (loading) return <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />;
   if (submissions.length === 0) return null;
