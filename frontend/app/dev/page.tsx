@@ -49,9 +49,32 @@ async function sendWalletTransactionWithConfirmation({
     transaction.recentBlockhash = latestBlockhash.blockhash;
   }
 
-  const signature = await sendTransaction(transaction, connection, {
-    preflightCommitment: "confirmed",
-  });
+  let signature: string;
+  try {
+    const sig = await sendTransaction(transaction, connection, {
+      preflightCommitment: "confirmed",
+    });
+    if (!sig || typeof sig !== "string") {
+      throw new Error(
+        "Wallet returned an invalid transaction signature. The wallet may have rejected the transaction or encountered a simulation error."
+      );
+    }
+    signature = sig;
+  } catch (sendErr: any) {
+    // Surface wallet-level errors (simulation failures, user rejection) before
+    // they get swallowed by confirmTransaction's opaque RPC error handling.
+    const msg = sendErr?.message ?? String(sendErr);
+    if (
+      msg.includes("simulation") ||
+      msg.includes("Simulation") ||
+      msg.includes("rejected") ||
+      msg.includes("Rejected") ||
+      msg.includes("User rejected")
+    ) {
+      throw sendErr;
+    }
+    throw new Error(`Failed to send transaction: ${msg}`);
+  }
 
   try {
     const confirmation = await Promise.race([
@@ -67,25 +90,31 @@ async function sendWalletTransactionWithConfirmation({
         setTimeout(() => reject(new Error("Transaction confirmation timed out")), TX_CONFIRM_TIMEOUT_MS),
       ),
     ]);
-    if (confirmation.value.err) {
+    if (confirmation?.value?.err) {
       throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }
-  } catch (error) {
+  } catch (error: any) {
     if (verifySuccess && await verifySuccess()) {
       return signature;
     }
 
-    const status = await connection.getSignatureStatus(signature, {
-      searchTransactionHistory: true,
-    });
-    if (status.value?.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
-    }
-    if (
-      status.value?.confirmationStatus === "confirmed" ||
-      status.value?.confirmationStatus === "finalized"
-    ) {
-      return signature;
+    // Guard against malformed RPC responses — getSignatureStatus may also return
+    // a result whose value is undefined when the RPC is undergoing maintenance.
+    try {
+      const status = await connection.getSignatureStatus(signature, {
+        searchTransactionHistory: true,
+      });
+      if (status?.value?.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
+      }
+      if (
+        status?.value?.confirmationStatus === "confirmed" ||
+        status?.value?.confirmationStatus === "finalized"
+      ) {
+        return signature;
+      }
+    } catch {
+      // Fall through to the original error if getSignatureStatus also fails.
     }
     throw error;
   }
@@ -394,6 +423,7 @@ function SubmitForm({
   const { pubkey: hackathonPubkey, name: hackathonName, requiresApproval, depositAmount, usdcMint } = hackathon;
   const [projectName, setProjectName] = useState("");
   const [url, setUrl] = useState("");
+  const [iconFile, setIconFile] = useState<File | null>(null);
   const [twitter, setTwitter] = useState("");
   const [telegram, setTelegram] = useState("");
   const [discord, setDiscord] = useState("");
@@ -408,6 +438,10 @@ function SubmitForm({
   async function handleDepositPayment() {
     if (!registeredProjectPubkey || !publicKey || !anchorWallet) {
       setDepositErr("Connect your wallet to pay the deposit");
+      return;
+    }
+    if (hackathon && Math.floor(Date.now() / 1000) >= hackathon.cutoffTimestamp) {
+      setDepositErr("Cutoff has passed — deposit payment is no longer allowed");
       return;
     }
 
@@ -445,6 +479,22 @@ function SubmitForm({
       setDepositErr(e.message ?? "Failed to pay deposit");
     } finally {
       setDepositBusy(false);
+    }
+  }
+
+  async function resizeIcon(file: File): Promise<string | null> {
+    try {
+      const bmp = await createImageBitmap(file, { resizeWidth: 256, resizeHeight: 256 });
+      const canvas = document.createElement("canvas");
+      canvas.width = bmp.width;
+      canvas.height = bmp.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(bmp, 0, 0);
+      bmp.close();
+      return canvas.toDataURL("image/png", 0.7);
+    } catch {
+      return null;
     }
   }
 
@@ -504,6 +554,8 @@ function SubmitForm({
           ),
         ),
       );
+      const iconBase64 = iconFile ? await resizeIcon(iconFile) : null;
+
       const response = await fetch("/api/project-submission", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -512,6 +564,7 @@ function SubmitForm({
           discord: discord.trim() || undefined,
           githubUrl: url,
           hackathonPubkey: hackathonPubkey.toBase58(),
+          iconBase64,
           projectName: projectName.trim(),
           projectPubkey: projectPk.toBase58(),
           requiresApproval,
@@ -561,6 +614,49 @@ function SubmitForm({
     <>
       <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px", borderRadius: "12px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "16px" }}>
       <p style={{ margin: 0, fontSize: "0.875rem", fontWeight: 500, color: "var(--c-indigo-text)" }}>Submit to: {hackathonName}</p>
+      <div>
+        <label style={subLabelStyle}>Project icon</label>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {iconFile ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ height: "40px", width: "40px", borderRadius: "10px", overflow: "hidden", border: "1px solid var(--c-divider)", flexShrink: 0 }}>
+                <img src={URL.createObjectURL(iconFile)} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
+              </div>
+              <button
+                onClick={() => setIconFile(null)}
+                className="ui-btn ui-btn-outline-red ui-btn-xs"
+                style={{ fontSize: "0.75rem" }}
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <label
+              style={{
+                display: "flex",
+                height: "40px",
+                width: "40px",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "10px",
+                border: "1px dashed var(--c-divider)",
+                cursor: "pointer",
+                color: "var(--c-text-4)",
+                fontSize: "1.25rem",
+                flexShrink: 0,
+              }}
+            >
+              +
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                onChange={(e) => setIconFile(e.target.files?.[0] ?? null)}
+                style={{ display: "none" }}
+              />
+            </label>
+          )}
+        </div>
+      </div>
       <div>
         <label style={subLabelStyle}>Project name <span style={{ color: "var(--c-red-text)" }}>*</span></label>
         <input className="ui-input" placeholder="My awesome project" value={projectName} onChange={(e) => setProjectName(e.target.value)} />
@@ -677,6 +773,7 @@ interface BuilderSubmission {
   project_pubkey: string;
   hackathon_pubkey: string;
   github_url: string;
+  icon_url?: string | null;
   project_name?: string | null;
   status: string;
 }
@@ -737,6 +834,10 @@ function BuilderProjectCard({
 
   async function payDeposit() {
     if (!hackathon) { setErr("Hackathon not found — try refreshing, or re-submit your project to the current hackathon."); return; }
+    if (Math.floor(Date.now() / 1000) >= hackathon.cutoffTimestamp) {
+      setErr("Cutoff has passed — deposit payment is no longer allowed");
+      return;
+    }
     setBusy("deposit"); setErr(null); setOk(null);
     try {
       const program = getProgram(anchorWallet);
@@ -776,6 +877,10 @@ function BuilderProjectCard({
     const raw = parseTokens(selfStakeAmt);
     if (raw <= 0n) { setErr("Enter a valid amount"); return; }
     if (!hackathon) { setErr("Hackathon not found — try refreshing, or re-submit your project to the current hackathon."); return; }
+    if (Math.floor(Date.now() / 1000) >= hackathon.cutoffTimestamp) {
+      setErr("Cutoff has passed — self-staking is no longer allowed");
+      return;
+    }
     setBusy("selfstake"); setErr(null); setOk(null);
     try {
       const program = getProgram(anchorWallet);
@@ -899,9 +1004,14 @@ function BuilderProjectCard({
   const stakingActivated = !hasDeposit || project?.depositAmountPaid ? true : false;
   const canSelfStake = hasDeposit && !!project?.depositAmountPaid;
   const MAX_SELF_STAKE = 250_000_000n;
-  const selfStakeDisabledLabel = hasDeposit
-    ? "Disabled until deposit is paid"
-    : "Disabled for no-deposit FYI entries";
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const cutoffPassed = hackathon ? nowSecs >= hackathon.cutoffTimestamp : true;
+  const resultsPassed = hackathon ? nowSecs >= hackathon.resultsTimestamp : true;
+  const selfStakeDisabledLabel = cutoffPassed
+    ? "Staking closed — cutoff has passed"
+    : hasDeposit
+      ? "Disabled until deposit is paid"
+      : "Disabled for no-deposit FYI entries";
   const selfStakeCapReached = (project?.builderStaked ?? 0n) >= MAX_SELF_STAKE;
   const canClaimDepositRefund =
     !!project &&
@@ -999,9 +1109,18 @@ function BuilderProjectCard({
                   )}
                 </div>
               ) : (
-                <button onClick={payDeposit} disabled={busy === "deposit"} className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill">
-                  {busy === "deposit" ? "Paying…" : `Pay ${formatTokens(depositAmt)} USDC`}
-                </button>
+                <span className="ui-tooltip-wrap mobile-fill">
+                  <button
+                    onClick={payDeposit}
+                    disabled={busy === "deposit" || cutoffPassed}
+                    className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill"
+                  >
+                    {busy === "deposit" ? "Paying…" : `Pay ${formatTokens(depositAmt)} USDC`}
+                  </button>
+                  {cutoffPassed && (
+                    <span className="ui-tooltip">Cutoff has passed — deposit window is closed</span>
+                  )}
+                </span>
               )}
             </div>
           )}
@@ -1051,13 +1170,14 @@ function BuilderProjectCard({
                     type="number"
                     min="0"
                     step="0.01"
-                    placeholder="Add USDC"
+                    placeholder={cutoffPassed ? "Cutoff passed" : "Add USDC"}
                     value={selfStakeAmt}
                     onChange={(e) => setSelfStakeAmt(e.target.value)}
                     className="ui-input-sm"
                     style={{ width: "100%" }}
+                    disabled={cutoffPassed}
                   />
-                  <button onClick={selfStake} disabled={busy === "selfstake" || !selfStakeAmt} className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill">
+                  <button onClick={selfStake} disabled={busy === "selfstake" || !selfStakeAmt || cutoffPassed} className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill">
                     {busy === "selfstake" ? "…" : "Stake"}
                   </button>
                 </div>
@@ -1071,9 +1191,18 @@ function BuilderProjectCard({
             {project.builderDeclared ? (
               <span style={checkStyle}>✓ Declared</span>
             ) : (
-              <button onClick={submitProject} disabled={busy === "submit"} className="ui-btn ui-btn-amber ui-btn-sm mobile-fill">
-                {busy === "submit" ? "…" : "Mark submitted"}
-              </button>
+              <span className="ui-tooltip-wrap mobile-fill">
+                <button
+                  onClick={submitProject}
+                  disabled={busy === "submit" || resultsPassed}
+                  className="ui-btn ui-btn-amber ui-btn-sm mobile-fill"
+                >
+                  {busy === "submit" ? "…" : "Mark submitted"}
+                </button>
+                {resultsPassed && (
+                  <span className="ui-tooltip">Results timestamp has passed — submission window is closed</span>
+                )}
+              </span>
             )}
           </div>
 
@@ -1137,8 +1266,8 @@ function BuilderProjectsSection({
       : walletFilter;
 
     supabase
-      .from("project_submissions")
-      .select("project_pubkey, hackathon_pubkey, github_url, project_name, status")
+      .from("project_submissions_public")
+      .select("project_pubkey, hackathon_pubkey, github_url, icon_url, project_name, status")
       .or(filterExpr)
       .order("created_at", { ascending: false })
       .then(({ data }) => {

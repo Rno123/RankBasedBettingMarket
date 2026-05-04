@@ -18,6 +18,7 @@ interface SubmissionRecord {
   project_pubkey?: string | null;
   github_url: string;
   wallet_address: string;
+  icon_url?: string | null;
   twitter_handle?: string | null;
   telegram?: string | null;
   discord?: string | null;
@@ -162,6 +163,7 @@ export async function POST(request: NextRequest) {
       hackathon_pubkey: submission.hackathon_pubkey,
       github_url: submission.github_url,
       project_name: submission.project_name ?? null,
+      icon_url: submission.icon_url ?? existingMeta?.icon_url ?? null,
       twitter_handle: submission.twitter_handle ?? null,
       telegram: submission.telegram ?? null,
       discord: submission.discord ?? null,

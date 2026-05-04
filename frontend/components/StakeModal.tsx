@@ -190,7 +190,7 @@ export default function StakeModal({
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(0,0,0,0.5)", padding: "16px", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
+      style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", padding: "16px", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div style={{ width: "100%", maxWidth: "28rem", borderRadius: "16px", border: "1px solid var(--card-border)", background: "var(--modal-bg)", padding: "24px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>

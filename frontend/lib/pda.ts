@@ -59,9 +59,27 @@ export function protocolAdminPda(wallet: PublicKey): PublicKey {
   )[0];
 }
 
-/** SHA-256 of a UTF-8 string, using the browser's Web Crypto API. */
+/**
+ * Normalize a GitHub URL for canonical PDA derivation.
+ * Lowercases, strips .git suffix, trailing slash, query, and fragment.
+ * "https://github.com/ORG/Repo.git/" → "https://github.com/org/repo"
+ */
+export function normalizeGitHubUrl(raw: string): string {
+  try {
+    const u = new URL(raw.toLowerCase());
+    u.pathname = u.pathname.replace(/\.git$/, "").replace(/\/$/, "");
+    u.search = "";
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return raw; // fallback: pass through if URL parsing fails
+  }
+}
+
+/** SHA-256 of a normalized GitHub URL, using the browser's Web Crypto API. */
 export async function hashUrl(url: string): Promise<Uint8Array> {
-  const data = new TextEncoder().encode(url);
+  const normalized = normalizeGitHubUrl(url);
+  const data = new TextEncoder().encode(normalized);
   // ArrayBuffer cast satisfies the strict BufferSource type in newer TS lib
   const digest = await crypto.subtle.digest("SHA-256", data.buffer as ArrayBuffer);
   return new Uint8Array(digest);

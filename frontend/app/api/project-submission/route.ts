@@ -12,6 +12,7 @@ interface ProjectSubmissionBody {
   discord?: string;
   githubUrl?: string;
   hackathonPubkey?: string;
+  iconBase64?: string | null;  // data:image/...;base64,... — client-resized to ≤256px
   projectName?: string;
   projectPubkey?: string;
   signature?: string;
@@ -34,11 +35,24 @@ function formatProjectSubmissionDbError(error: {
   return error.message ?? "Failed to save submission";
 }
 
+function normalizeGithubUrl(raw: string): string {
+  try {
+    const u = new URL(raw.toLowerCase());
+    u.pathname = u.pathname.replace(/\.git$/, "").replace(/\/$/, "");
+    u.search = "";
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
 function expectedProjectPubkey(
   hackathonPubkey: string,
   githubUrl: string,
 ): string {
-  const urlHash = createHash("sha256").update(githubUrl).digest();
+  const normalized = normalizeGithubUrl(githubUrl);
+  const urlHash = createHash("sha256").update(normalized).digest();
   const [projectPda] = PublicKey.findProgramAddressSync(
     [Buffer.from("project"), new PublicKey(hackathonPubkey).toBuffer(), urlHash],
     PROGRAM_ID,
@@ -67,6 +81,7 @@ export async function POST(request: NextRequest) {
     discord,
     githubUrl,
     hackathonPubkey,
+    iconBase64,
     projectName,
     projectPubkey,
     signature,
@@ -168,11 +183,43 @@ export async function POST(request: NextRequest) {
     : !onChainRequiresApproval
       ? "approved"
       : "pending";
+
+  // ── Icon upload ──────────────────────────────────────────────────────────
+  let iconUrl: string | null = existing?.icon_url ?? null;
+  if (iconBase64 && iconBase64.startsWith("data:image/")) {
+    try {
+      const [header, data] = iconBase64.split(",");
+      const mime = header.match(/data:(image\/\w+);base64/)?.[1] ?? "image/png";
+      const ext = mime.split("/")[1] === "jpeg" ? "jpg" : mime.split("/")[1];
+      const buf = Buffer.from(data, "base64");
+
+      // Reject anything over 100 KB.
+      if (buf.length > 102_400) {
+        return NextResponse.json({ error: "Icon too large — max 100 KB" }, { status: 400 });
+      }
+
+      const filename = `${projectPubkey}.${ext}`;
+      const { error: uploadErr } = await db.storage
+        .from("project_icons")
+        .upload(filename, buf, { contentType: mime, upsert: true });
+
+      if (uploadErr) {
+        console.error("icon upload error:", uploadErr);
+      } else {
+        const { data: publicUrl } = db.storage.from("project_icons").getPublicUrl(filename);
+        iconUrl = publicUrl.publicUrl;
+      }
+    } catch {
+      // Icon upload is best-effort; proceed without it.
+    }
+  }
+
   const record = {
     auth_email: authEmail?.trim() || null,
     discord: discord || null,
     github_url: githubUrl,
     hackathon_pubkey: hackathonPubkey,
+    icon_url: iconUrl,
     project_name: normalizedProjectName,
     project_pubkey: projectPubkey,
     status,

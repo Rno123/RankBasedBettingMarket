@@ -633,6 +633,10 @@ pub mod hackathon_betting {
             BettingError::ResultsNotYet,
         );
         require!(rank >= 1, BettingError::InvalidRank);
+        require!(
+            rank <= ctx.accounts.hackathon.tier_count,
+            BettingError::InvalidRank,
+        );
         // Track the count of ranked projects so finalize_resolve can verify
         // all ranked projects are supplied (completeness check).
         if ctx.accounts.project.rank == 0 {
@@ -702,7 +706,6 @@ pub mod hackathon_betting {
             }
             ranked_found = ranked_found.checked_add(1).ok_or(BettingError::Overflow)?;
             let tier = rank_to_tier_idx(project.rank, tier_count as u8);
-            tier_has_projects[tier] = true;
             // Accumulate sqrt-crowding denominator per tier (snapshotted here to prevent
             // caller manipulation in claim — C-01 fix).
             tier_c_totals_new[tier] = tier_c_totals_new[tier]
@@ -713,6 +716,14 @@ pub mod hackathon_betting {
             ranked_found == ctx.accounts.hackathon.ranked_count,
             BettingError::IncompleteProjectList,
         );
+
+        // A tier is only "occupied" if it has ranked projects with non-zero stake.
+        // Tiers where all ranked projects have total_staked = 0 produce a zero
+        // denominator in claim, which would permanently lock funds. Treat those
+        // tiers as empty so their pool percentage cascades to tiers with stake.
+        for i in 0..tier_count {
+            tier_has_projects[i] = tier_c_totals_new[i] > 0;
+        }
 
         // Sum basis points in occupied tiers (each tier_pct × 100 gives bps).
         let mut total_non_empty_bps: u32 = 0;
@@ -873,13 +884,17 @@ pub mod hackathon_betting {
     /// or explicit admin override. Must be called before resolution; after
     /// resolution all stakes are settled (won or forfeited) and cannot be undone.
     /// Once enabled, cannot be revoked.
+    ///
+    /// No time-based gate beyond !is_resolved. The admin already controls rankings
+    /// and could manipulate those directly — adding a time window on refunds would
+    /// block legitimate recourse (wrong results, no-project-placed scenarios) without
+    /// meaningfully changing the trust model.
     pub fn enable_refund(ctx: Context<EnableRefund>) -> Result<()> {
         hackathon_admin_auth_offset(
             &ctx.accounts.admin.key(),
             &ctx.accounts.hackathon.admin,
             ctx.remaining_accounts,
         )?;
-        // Enforced at the account layer too; this require! provides a clear error message.
         require!(
             !ctx.accounts.hackathon.is_resolved,
             BettingError::RefundBlockedAfterResolution,

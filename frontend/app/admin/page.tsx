@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import { useWallet, useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
@@ -33,6 +33,35 @@ interface WhitelistRequest {
 }
 
 type HackathonEntry = ReturnType<typeof useHackathons>["hackathons"][number];
+type HackathonPhase = "active" | "resolving" | "resolved";
+
+function hackathonPhase(h: HackathonEntry): HackathonPhase {
+  if (h.isResolved) return "resolved";
+  const now = Math.floor(Date.now() / 1000);
+  if (now >= h.cutoffTimestamp) return "resolving";
+  return "active";
+}
+
+const PHASE_LABEL: Record<HackathonPhase, string> = {
+  active: "Active",
+  resolving: "Resolving",
+  resolved: "Resolved",
+};
+
+const PHASE_COLOR: Record<HackathonPhase, string> = {
+  active: "var(--c-indigo-text)",
+  resolving: "var(--c-amber-text)",
+  resolved: "var(--c-emerald-text)",
+};
+
+function groupByPhase(hackathons: HackathonEntry[]): Record<HackathonPhase, HackathonEntry[]> {
+  return {
+    active: hackathons.filter((h) => hackathonPhase(h) === "active"),
+    resolving: hackathons.filter((h) => hackathonPhase(h) === "resolving"),
+    resolved: hackathons.filter((h) => hackathonPhase(h) === "resolved"),
+  };
+}
+
 const RESULTS_DATE_STEP_SECONDS = 30 * 60;
 const TIME_OPTIONS_30MIN = Array.from({ length: 48 }, (_, i) => {
   const h = String(Math.floor(i / 2)).padStart(2, "0");
@@ -1319,6 +1348,110 @@ function GlobalWhitelistPanel({
 
 // ── Hackathon card ─────────────────────────────────────────────────────────────
 
+const PHASE_ORDER: HackathonPhase[] = ["active", "resolving", "resolved"];
+
+function PhaseGroupedHackathons({
+  hackathons,
+  loading,
+  version,
+  emptyLabel,
+  renderCard,
+}: {
+  hackathons: HackathonEntry[];
+  loading: boolean;
+  version: number;
+  emptyLabel: string;
+  renderCard: (h: HackathonEntry) => React.ReactNode;
+}) {
+  const [phaseTab, setPhaseTab] = useState<HackathonPhase>("active");
+
+  const grouped = useMemo(() => groupByPhase(hackathons), [hackathons]);
+
+  // Auto-switch away from an empty tab.
+  useEffect(() => {
+    if (grouped[phaseTab].length === 0) {
+      const firstNonEmpty = PHASE_ORDER.find((p) => grouped[p].length > 0) ?? "active";
+      if (phaseTab !== firstNonEmpty) setPhaseTab(firstNonEmpty);
+    }
+  }, [grouped, phaseTab]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        {[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "64px" }} />)}
+      </div>
+    );
+  }
+
+  if (hackathons.length === 0) {
+    return (
+      <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>
+        {emptyLabel}
+      </div>
+    );
+  }
+
+  const list = grouped[phaseTab];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Phase tab strip — select style */}
+      <div style={{ display: "flex", borderRadius: "10px", border: "1px solid var(--card-border)", background: "var(--card-bg-alt)", overflow: "hidden" }}>
+        {PHASE_ORDER.map((phase, i, arr) => {
+          const count = grouped[phase].length;
+          const active = phaseTab === phase;
+          return (
+            <button
+              key={phase}
+              onClick={() => count > 0 && setPhaseTab(phase)}
+              disabled={count === 0}
+              style={{
+                flex: 1,
+                padding: "10px 8px",
+                border: "none",
+                background: active ? "var(--card-bg)" : "transparent",
+                color: active ? PHASE_COLOR[phase] : count === 0 ? "var(--c-text-4)" : PHASE_COLOR[phase],
+                fontSize: "0.8125rem",
+                fontWeight: active ? 700 : 500,
+                cursor: count > 0 ? "pointer" : "default",
+                borderRight: i < arr.length - 1 ? "1px solid var(--card-border)" : "none",
+                transition: "background 0.15s, color 0.15s",
+                position: "relative",
+                opacity: count === 0 ? 0.4 : 1,
+              }}
+            >
+              {active && (
+                <span style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: "20%",
+                  right: "20%",
+                  height: "2px",
+                  borderRadius: "1px",
+                  background: PHASE_COLOR[phase],
+                }} />
+              )}
+              {PHASE_LABEL[phase]}
+              <span style={{ marginLeft: "4px", fontSize: "0.6875rem", opacity: 0.7 }}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Card list for selected phase */}
+      <div key={version} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        {list.length === 0 ? (
+          <div style={{ borderRadius: "12px", border: "1px dashed var(--c-divider)", padding: "24px", textAlign: "center", fontSize: "0.875rem", color: "var(--c-text-4)" }}>
+            No hackathons in this phase.
+          </div>
+        ) : (
+          list.map(renderCard)
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HackathonAdminCard({
   hackathon,
   adminAuth,
@@ -1334,7 +1467,7 @@ function HackathonAdminCard({
       <button onClick={() => setExpanded((v) => !v)} style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
         <div>
           <p style={{ margin: 0, fontWeight: 600, color: "var(--c-text)" }}>{hackathon.name || hackathon.pubkey.toBase58().slice(0, 16) + "…"}</p>
-          <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Results: {formatDate(hackathon.resultsTimestamp)} · {formatTokens(hackathon.totalPool)} USDC · {hackathon.isResolved ? <span style={{ color: "var(--c-emerald-text)" }}>Resolved</span> : <span style={{ color: "var(--c-indigo-text)" }}>Active</span>}</p>
+          <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Results: {formatDate(hackathon.resultsTimestamp)} · {formatTokens(hackathon.totalPool)} USDC · <span style={{ color: PHASE_COLOR[hackathonPhase(hackathon)], fontWeight: 600 }}>{PHASE_LABEL[hackathonPhase(hackathon)]}</span></p>
         </div>
         <span style={{ color: "var(--c-text-4)" }}>{expanded ? "▲" : "▼"}</span>
       </button>
@@ -1877,21 +2010,43 @@ export default function AdminPage() {
         </div>
         {isAdmin && adminSessionReady && (
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {/* Tab strip */}
-            <div style={{ display: "flex", gap: "4px", borderRadius: "12px", border: "1px solid var(--c-divider)", padding: "4px" }}>
+            {/* Tab strip — select style */}
+            <div style={{ display: "flex", borderRadius: "10px", border: "1px solid var(--card-border)", background: "var(--card-bg-alt)", overflow: "hidden" }}>
               {([
                 ...(isProtocolAdmin ? [{ id: "create" as const, label: "Create" }] : []),
                 { id: "manage" as const, label: "Manage" },
                 { id: "resolutions" as const, label: "Resolutions" },
                 { id: "advanced" as const, label: "Advanced" },
                 { id: "how-to" as const, label: "How to" },
-              ] as Array<{ id: AdminPanelTab; label: string }>).map((tab) => (
+              ] as Array<{ id: AdminPanelTab; label: string }>).map((tab, i, arr) => (
                 <button
                   key={tab.id}
                   onClick={() => setAdminPanelTab(tab.id)}
-                  className={`ui-sort-tab ${adminPanelTab === tab.id ? "ui-sort-tab-active" : "ui-sort-tab-inactive"}`}
-                  style={{ flex: 1 }}
+                  style={{
+                    flex: 1,
+                    padding: "10px 8px",
+                    border: "none",
+                    background: adminPanelTab === tab.id ? "var(--card-bg)" : "transparent",
+                    color: adminPanelTab === tab.id ? "var(--c-text)" : "var(--c-text-3)",
+                    fontSize: "0.8125rem",
+                    fontWeight: adminPanelTab === tab.id ? 700 : 500,
+                    cursor: "pointer",
+                    borderRight: i < arr.length - 1 ? "1px solid var(--card-border)" : "none",
+                    transition: "background 0.15s, color 0.15s",
+                    position: "relative",
+                  }}
                 >
+                  {adminPanelTab === tab.id && (
+                    <span style={{
+                      position: "absolute",
+                      bottom: 0,
+                      left: "20%",
+                      right: "20%",
+                      height: "2px",
+                      borderRadius: "1px",
+                      background: "var(--c-indigo)",
+                    }} />
+                  )}
                   {tab.label}
                 </button>
               ))}
@@ -1904,64 +2059,35 @@ export default function AdminPage() {
 
             {/* Manage tab */}
             {adminPanelTab === "manage" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Manage Hackathons</h2>
-                {loading ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "64px" }} />)}</div>
-                ) : visibleHackathons.length === 0 ? (
-                  <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>
-                    {isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
-                  </div>
-                ) : (
-                  <div key={version} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    {visibleHackathons.map((h) => (
-                      <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="manage" />
-                    ))}
-                  </div>
-                )}
-              </div>
+              <PhaseGroupedHackathons
+                hackathons={visibleHackathons}
+                loading={loading}
+                version={version}
+                emptyLabel={isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
+                renderCard={(h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="manage" />}
+              />
             )}
 
             {/* Resolutions tab */}
             {adminPanelTab === "resolutions" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Deposit Approvals &amp; Rankings</h2>
-                  {loading ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "64px" }} />)}</div>
-                  ) : visibleHackathons.length === 0 ? (
-                    <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>
-                      {isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
-                    </div>
-                  ) : (
-                    <div key={version} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                      {visibleHackathons.map((h) => (
-                        <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="resolutions" />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <PhaseGroupedHackathons
+                hackathons={visibleHackathons}
+                loading={loading}
+                version={version}
+                emptyLabel={isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
+                renderCard={(h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="resolutions" />}
+              />
             )}
 
             {/* Advanced tab */}
             {adminPanelTab === "advanced" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Advanced</h2>
-                {loading ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "64px" }} />)}</div>
-                ) : visibleHackathons.length === 0 ? (
-                  <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>
-                    {isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
-                  </div>
-                ) : (
-                  <div key={version} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    {visibleHackathons.map((h) => (
-                      <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="advanced" />
-                    ))}
-                  </div>
-                )}
-              </div>
+              <PhaseGroupedHackathons
+                hackathons={visibleHackathons}
+                loading={loading}
+                version={version}
+                emptyLabel={isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
+                renderCard={(h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="advanced" />}
+              />
             )}
 
             {/* How-to tab */}

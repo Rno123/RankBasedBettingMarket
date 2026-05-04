@@ -117,22 +117,28 @@ function ProjectRow({
         {/* Top row: rank + name + action */}
         <div className="mobile-stack-between" style={{ gap: "10px" }}>
           <div style={{ display: "flex", minWidth: 0, alignItems: "center", gap: "12px" }}>
-            <div
-              style={{
-                display: "flex",
-                height: "36px",
-                width: "36px",
-                flexShrink: 0,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "8px",
-                fontSize: "0.875rem",
-                fontWeight: 900,
-                ...rankBadgeStyle(project.rank),
-              }}
-            >
-              {project.rank > 0 ? project.rank : "–"}
-            </div>
+            {metadata?.icon_url ? (
+              <div style={{ height: "36px", width: "36px", flexShrink: 0, borderRadius: "8px", overflow: "hidden", border: "1px solid var(--c-divider)" }}>
+                <img src={metadata.icon_url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  height: "36px",
+                  width: "36px",
+                  flexShrink: 0,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "8px",
+                  fontSize: "0.875rem",
+                  fontWeight: 900,
+                  ...rankBadgeStyle(project.rank),
+                }}
+              >
+                {project.rank > 0 ? project.rank : "–"}
+              </div>
+            )}
             <div style={{ minWidth: 0 }}>
               <a
                 href={project.githubUrl}
@@ -243,7 +249,7 @@ function ProjectDetailModal({
   return (
     <>
       <div
-        style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(0,0,0,0.5)", padding: "16px", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
+        style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", padding: "16px", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
         onClick={(e) => e.target === e.currentTarget && onClose()}
       >
         <div style={{ width: "100%", maxWidth: "28rem", borderRadius: "16px", border: "1px solid var(--card-border)", background: "var(--modal-bg)", padding: "24px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)", maxHeight: "85vh", overflowY: "auto" }}>
@@ -251,9 +257,15 @@ function ProjectDetailModal({
           <div style={{ marginBottom: "16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                <div style={{ display: "flex", height: "32px", width: "32px", flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: "8px", fontSize: "0.875rem", fontWeight: 900, ...rankBadgeStyle(project.rank) }}>
-                  {project.rank > 0 ? project.rank : "–"}
-                </div>
+                {metadata?.icon_url ? (
+                  <div style={{ height: "32px", width: "32px", flexShrink: 0, borderRadius: "8px", overflow: "hidden", border: "1px solid var(--c-divider)" }}>
+                    <img src={metadata.icon_url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", height: "32px", width: "32px", flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: "8px", fontSize: "0.875rem", fontWeight: 900, ...rankBadgeStyle(project.rank) }}>
+                    {project.rank > 0 ? project.rank : "–"}
+                  </div>
+                )}
                 <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 900, color: "var(--c-text)" }}>{projectLabel}</h2>
               </div>
               <a href={project.githubUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem", color: "var(--c-indigo-text)", textDecoration: "none" }}>{repoLabel}</a>
@@ -515,8 +527,8 @@ export default function HackathonPage({
     Promise.all([
       supabase.from("project_metadata").select("*").eq("hackathon_pubkey", hpk),
       supabase
-        .from("project_submissions")
-        .select("project_pubkey, github_url, project_name, twitter_handle, telegram, discord, wallet_address")
+        .from("project_submissions_public")
+        .select("project_pubkey, github_url, icon_url, project_name, twitter_handle, telegram, discord, wallet_address")
         .eq("hackathon_pubkey", hpk),
     ]).then(([{ data: metaData }, { data: subData }]) => {
       const map: Record<string, ProjectMetadata> = {};
@@ -531,6 +543,7 @@ export default function HackathonPage({
               project_pubkey: row.project_pubkey,
               hackathon_pubkey: hpk,
               github_url: row.github_url ?? "",
+              icon_url: row.icon_url ?? null,
               project_name: row.project_name ?? null,
               twitter_handle: row.twitter_handle ?? null,
               telegram: row.telegram ?? null,
