@@ -19,7 +19,7 @@ const audienceCards = [
     cta: { label: "Dev Portal", href: "/devs" },
   },
   {
-    title: "Organisers",
+    title: "Organizers",
     lightSrc: "/landing/organizer-light.png",
     darkSrc: "/landing/organizer-dark.png",
     alt: "Organiser audience illustration",
