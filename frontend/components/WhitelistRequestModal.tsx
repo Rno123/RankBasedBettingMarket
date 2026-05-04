@@ -2,17 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { usePrivy } from "@privy-io/react-auth";
-import dynamic from "next/dynamic";
 import {
   submitWhitelistRequest,
   type WhitelistRequestSubmitState,
 } from "@/lib/whitelist-request";
-
-const WalletMultiButton = dynamic(
-  () => import("@solana/wallet-adapter-react-ui").then((m) => m.WalletMultiButton),
-  { ssr: false },
-);
+import ConnectWalletButton from "@/components/ConnectWalletButton";
 
 interface Props {
   hackathonPubkey?: string | null;
@@ -30,7 +24,6 @@ export default function WhitelistRequestModal({
   onClose,
 }: Props) {
   const { publicKey, signMessage } = useWallet();
-  const { login, ready, authenticated } = usePrivy();
   const [selectedHackathon, setSelectedHackathon] = useState(
     hackathonPubkey ?? hackathonOptions?.[0]?.pubkey ?? "",
   );
@@ -149,34 +142,10 @@ export default function WhitelistRequestModal({
               Connect a wallet to identify yourself and sign your request.
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", alignItems: "stretch" }}>
-              <div style={{ display: "flex", justifyContent: "center" }}>
-                <WalletMultiButton style={{ borderRadius: "10px", fontSize: "13px", height: "40px" }} />
-              </div>
-              {ready && !authenticated && (
-                <button
-                  onClick={() => login()}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                    height: "40px",
-                    borderRadius: "10px",
-                    border: "1px solid var(--c-indigo-border)",
-                    background: "var(--c-indigo-light)",
-                    color: "var(--c-indigo-text)",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  Sign in with Privy →
-                </button>
-              )}
+              <ConnectWalletButton fullWidth />
             </div>
             <p style={{ marginTop: "14px", fontSize: "0.75rem", color: "var(--c-text-5)", textAlign: "center" }}>
-              Privy: sign in first, then connect the embedded wallet above.
+              Open the connect modal to choose Privy, Phantom, Backpack, Solflare, MetaMask, and more.
             </p>
           </div>
         ) : (

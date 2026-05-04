@@ -393,7 +393,7 @@ function HackathonWhitelistPanel({ hackathon }: { hackathon: HackathonEntry }) {
   );
 }
 
-function DepositManagementPanel({ hackathon }: { hackathon: HackathonEntry }) {
+function DepositManagementPanel({ hackathon, view }: { hackathon: HackathonEntry; view: "resolutions" | "advanced" }) {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
   const anchorWallet = useAnchorWallet();
@@ -419,6 +419,14 @@ function DepositManagementPanel({ hackathon }: { hackathon: HackathonEntry }) {
     !project.depositRefunded &&
     !project.builderDeclared &&
     !project.submitted;
+
+  // For view filtering — which projects have relevant actions?
+  const hasResolutionsAction = (p: (typeof projects)[number]) =>
+    p.builderDeclared && !p.submitted && !p.depositForfeited && !p.depositRefunded;
+  const canEnableRefund = (p: (typeof projects)[number]) =>
+    !p.isRefundEnabled && !(hackathon.isResolved && p.rank > 0);
+  const hasAdvancedAction = (p: (typeof projects)[number]) =>
+    canForfeit(p) || canEnableRefund(p);
 
   async function approveProjectPubkeys(projectPubkeys: PublicKey[]) {
     if (!publicKey || !anchorWallet || projectPubkeys.length === 0) return;
@@ -529,53 +537,65 @@ function DepositManagementPanel({ hackathon }: { hackathon: HackathonEntry }) {
     } finally { setBusy(null); }
   }
 
+  const visibleProjects = view === "resolutions"
+    ? projects.filter(hasResolutionsAction)
+    : projects.filter(hasAdvancedAction);
+
   return (
     <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "16px" }}>
       <h3 style={{ margin: "0 0 4px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>
-        Deposit management ({formatTokens(hackathon.depositAmount)} USDC per builder)
+        Deposit management
       </h3>
       <p style={{ margin: "0 0 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
         Builders claim deposit refunds themselves. This panel controls the approval gate for refund-locked hackathons plus the emergency override and forfeit paths.
       </p>
 
-      <div style={{ marginBottom: "16px", borderRadius: "10px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "14px 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
-          <div>
-            <p style={{ margin: "0 0 2px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>Approve declared builders</p>
-            <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-3)" }}>
-              Builder deposits unlock only after organizer approval. Eligible now: {approvalEligible.length}.
-            </p>
+      {view === "resolutions" && (
+        <div style={{ marginBottom: "16px", borderRadius: "10px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+            <div>
+              <p style={{ margin: "0 0 2px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>Approve declared builders</p>
+              <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-3)" }}>
+                Builder deposits unlock only after organizer approval. Eligible now: {approvalEligible.length}.
+              </p>
+            </div>
+            <button
+              onClick={approveAllDeclared}
+              disabled={busy === "bulk_approve" || approvalEligible.length === 0}
+              className="ui-btn ui-btn-emerald ui-btn-sm"
+              style={{ flexShrink: 0 }}
+            >
+              {busy === "bulk_approve"
+                ? "Approving…"
+                : approvalEligible.length === 0 ? "Nothing pending" : "Approve all declared"}
+            </button>
           </div>
-          <button
-            onClick={approveAllDeclared}
-            disabled={busy === "bulk_approve" || approvalEligible.length === 0}
-            className="ui-btn ui-btn-emerald ui-btn-sm"
-            style={{ flexShrink: 0 }}
-          >
-            {busy === "bulk_approve"
-              ? "Approving…"
-              : approvalEligible.length === 0 ? "Nothing pending" : "Approve all declared"}
-          </button>
+          {bulkResult && (
+            <p style={{ margin: "8px 0 0", fontSize: "0.75rem", fontWeight: 500, color: bulkResult.toLowerCase().includes("failed") ? "var(--c-red-text)" : "var(--c-emerald-text)" }}>
+              {bulkResult}
+            </p>
+          )}
         </div>
-        {bulkResult && (
-          <p style={{ margin: "8px 0 0", fontSize: "0.75rem", fontWeight: 500, color: bulkResult.toLowerCase().includes("failed") ? "var(--c-red-text)" : "var(--c-emerald-text)" }}>
-            {bulkResult}
-          </p>
-        )}
-      </div>
+      )}
 
-      <div style={{ marginBottom: "12px", borderRadius: "8px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "10px 14px", fontSize: "0.75rem", color: "var(--c-amber-text)" }}>
-        <strong>Forfeit deposit</strong> is only valid at least 14 days after the hackathon&apos;s results date, and only if the builder never declared the project as submitted.
-      </div>
-      <div style={{ marginBottom: "12px", borderRadius: "8px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "10px 14px", fontSize: "0.75rem", color: "var(--c-red-text)" }}>
-        <strong>Enable refund override</strong> is the exceptional path. It enables stake refunds and also bypasses the normal builder deposit checks, so it should only be used for cancellations, judging mistakes, or explicit organizer exceptions.
-      </div>
+      {view === "advanced" && (
+        <>
+          <div style={{ marginBottom: "12px", borderRadius: "8px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "10px 14px", fontSize: "0.75rem", color: "var(--c-amber-text)" }}>
+            <strong>Forfeit deposit</strong> is only valid at least 14 days after the hackathon&apos;s results date, and only if the builder never declared the project as submitted.
+          </div>
+          <div style={{ marginBottom: "12px", borderRadius: "8px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "10px 14px", fontSize: "0.75rem", color: "var(--c-red-text)" }}>
+            <strong>Enable refund override</strong> is the exceptional path. It enables stake refunds and also bypasses the normal builder deposit checks, so it should only be used for cancellations, judging mistakes, or explicit organizer exceptions.
+          </div>
+        </>
+      )}
 
-      {projects.length === 0 ? (
-        <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>No projects registered.</p>
+      {visibleProjects.length === 0 ? (
+        <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>
+          {view === "resolutions" ? "No pending builder declarations awaiting approval." : "No projects with advanced deposit actions."}
+        </p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {projects.map((p) => {
+          {visibleProjects.map((p) => {
             const repoShort = p.githubUrl.replace("https://github.com/", "");
             const pkStr = p.pubkey.toBase58();
             const msg = messages[pkStr] ?? {};
@@ -603,7 +623,7 @@ function DepositManagementPanel({ hackathon }: { hackathon: HackathonEntry }) {
                     </p>
                   </div>
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                    {p.builderDeclared && !p.submitted && !p.depositForfeited && !p.depositRefunded && (
+                    {view === "resolutions" && p.builderDeclared && !p.submitted && !p.depositForfeited && !p.depositRefunded && (
                       <button
                         onClick={() => approveSingle(pkStr)}
                         disabled={busy === "approve_" + pkStr}
@@ -612,7 +632,7 @@ function DepositManagementPanel({ hackathon }: { hackathon: HackathonEntry }) {
                         {busy === "approve_" + pkStr ? "…" : "Approve submission"}
                       </button>
                     )}
-                    {canForfeit(p) && (
+                    {view === "advanced" && canForfeit(p) && (
                       <button
                         onClick={() => forfeitDeposit(pkStr)}
                         disabled={busy === pkStr}
@@ -622,7 +642,7 @@ function DepositManagementPanel({ hackathon }: { hackathon: HackathonEntry }) {
                         {busy === pkStr ? "…" : "Forfeit deposit"}
                       </button>
                     )}
-                    {!p.isRefundEnabled && (
+                    {view === "advanced" && canEnableRefund(p) && (
                       <button
                         onClick={() => enableRefund(pkStr)}
                         disabled={busy === "refund_" + pkStr}
@@ -631,7 +651,7 @@ function DepositManagementPanel({ hackathon }: { hackathon: HackathonEntry }) {
                         {busy === "refund_" + pkStr ? "…" : "Enable refund override"}
                       </button>
                     )}
-                    {p.isRefundEnabled && (
+                    {view === "advanced" && p.isRefundEnabled && (
                       <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--c-amber-text)" }}>Refund override active</span>
                     )}
                   </div>
@@ -930,35 +950,59 @@ function CreateHackathonPanel({
 function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathons>["hackathons"][0] }) {
   const { publicKey } = useWallet();
   const anchorWallet = useAnchorWallet();
-  const { projects } = useProjects(hackathon.pubkey);
+  const { projects, reload: reloadProjects } = useProjects(hackathon.pubkey);
   const [ranks, setRanks] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [finalizeConfirm, setFinalizeConfirm] = useState(false);
+  const [finalized, setFinalized] = useState(false);
+
+  // Seed rank inputs from on-chain state so returning admins see existing values.
+  useEffect(() => {
+    if (projects.length === 0) return;
+    setRanks((current) => {
+      const next = { ...current };
+      for (const p of projects) {
+        const key = p.pubkey.toBase58();
+        if (p.rank > 0 && !next[key]) next[key] = String(p.rank);
+      }
+      return next;
+    });
+  }, [projects]);
 
   async function handleResolveAll() {
     if (!publicKey || !anchorWallet) return;
+    const toSet = projects.filter((p) => parseInt(ranks[p.pubkey.toBase58()] ?? "0") > 0);
+    if (toSet.length === 0) {
+      setErr("Enter at least one rank before submitting.");
+      return;
+    }
     setErr(null); setOk(null); setBusy(true);
     try {
       const program = getProgram(anchorWallet);
-      for (const p of projects) {
-        const rank = parseInt(ranks[p.pubkey.toBase58()] ?? "0");
-        if (rank > 0) {
-          await (program.methods as any)
-            .resolve(rank)
-            .accounts({ admin: publicKey, hackathon: hackathon.pubkey, project: p.pubkey })
-            .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey, hackathon.admin))
-            .rpc();
-        }
+      for (const p of toSet) {
+        const rank = parseInt(ranks[p.pubkey.toBase58()]);
+        await (program.methods as any)
+          .resolve(rank)
+          .accounts({ admin: publicKey, hackathon: hackathon.pubkey, project: p.pubkey })
+          .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey, hackathon.admin))
+          .rpc();
       }
-      setOk("All ranks set. Now run Finalize.");
+      setOk(`${toSet.length} rank${toSet.length > 1 ? "s" : ""} set. Now run Finalize.`);
+      reloadProjects();
     } catch (e: any) { setErr(e.message ?? "Failed"); }
     finally { setBusy(false); }
   }
 
   async function handleFinalize() {
     if (!publicKey || !anchorWallet) return;
+    const hasRanked = projects.some((p) => p.rank > 0) ||
+      projects.some((p) => parseInt(ranks[p.pubkey.toBase58()] ?? "0") > 0);
+    if (!hasRanked) {
+      setErr("No ranked projects found. Run 'Set ranks' first.");
+      return;
+    }
     setErr(null); setOk(null); setBusy(true);
     try {
       const program = getProgram(anchorWallet);
@@ -970,7 +1014,8 @@ function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathon
           ...projects.map((p) => ({ pubkey: p.pubkey, isWritable: false, isSigner: false })),
         ])
         .rpc();
-      setOk("Finalized! is_resolved = true");
+      setFinalizeConfirm(false);
+      setFinalized(true);
     } catch (e: any) { setErr(e.message ?? "Failed"); }
     finally { setBusy(false); }
   }
@@ -986,20 +1031,26 @@ function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathon
           </div>
         ))}
       </div>
-      <div style={{ marginTop: "12px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
-        <button onClick={handleResolveAll} disabled={busy || !publicKey} className="ui-btn ui-btn-amber ui-btn-sm">{busy ? "…" : "Set ranks"}</button>
-        {!finalizeConfirm ? (
-          <button onClick={() => setFinalizeConfirm(true)} disabled={busy || !publicKey} className="ui-btn ui-btn-emerald ui-btn-sm">Finalize resolve</button>
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", borderRadius: "12px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "8px 12px" }}>
-            <span style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--c-red-text)" }}>This is irreversible on-chain. Confirm?</span>
-            <button onClick={handleFinalize} disabled={busy} className="ui-btn ui-btn-red ui-btn-xs">{busy ? "…" : "Yes, finalize"}</button>
-            <button onClick={() => setFinalizeConfirm(false)} className="ui-btn ui-btn-outline ui-btn-xs">Cancel</button>
-          </div>
-        )}
-      </div>
+      {finalized ? (
+        <div style={{ marginTop: "12px", borderRadius: "10px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "10px 14px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>
+          ✓ Ranks finalized and claims are now open.
+        </div>
+      ) : (
+        <div style={{ marginTop: "12px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
+          <button onClick={handleResolveAll} disabled={busy || !publicKey} className="ui-btn ui-btn-amber ui-btn-sm">{busy ? "…" : "Set ranks"}</button>
+          {!finalizeConfirm ? (
+            <button onClick={() => setFinalizeConfirm(true)} disabled={busy || !publicKey} className="ui-btn ui-btn-emerald ui-btn-sm">Finalize resolve</button>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", borderRadius: "12px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "8px 12px" }}>
+              <span style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--c-red-text)" }}>This is irreversible on-chain. Confirm?</span>
+              <button onClick={handleFinalize} disabled={busy} className="ui-btn ui-btn-red ui-btn-xs">{busy ? "…" : "Yes, finalize"}</button>
+              <button onClick={() => setFinalizeConfirm(false)} className="ui-btn ui-btn-outline ui-btn-xs">Cancel</button>
+            </div>
+          )}
+        </div>
+      )}
       {err && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
-      {ok && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
+      {ok && !finalized && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
     </div>
   );
 }
@@ -1271,9 +1322,11 @@ function GlobalWhitelistPanel({
 function HackathonAdminCard({
   hackathon,
   adminAuth,
+  view,
 }: {
   hackathon: HackathonEntry;
   adminAuth: AdminApiAuth;
+  view: "manage" | "resolutions" | "advanced";
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -1287,11 +1340,28 @@ function HackathonAdminCard({
       </button>
       {expanded && (
         <div style={{ borderTop: "1px solid var(--c-divider-2)", padding: "0 24px 24px" }}>
-          <HackathonWhitelistPanel hackathon={hackathon} />
-          <MetadataPanel hackathon={hackathon} adminAuth={adminAuth} />
-          <DepositManagementPanel hackathon={hackathon} />
-          {!hackathon.isResolved && <ResolvePanel hackathon={hackathon} />}
-          {hackathon.isResolved && <p style={{ marginTop: "16px", fontSize: "0.875rem", color: "var(--c-text-4)" }}>Hackathon resolved. Stakers can now claim.</p>}
+          {view === "manage" && (
+            <MetadataPanel hackathon={hackathon} adminAuth={adminAuth} />
+          )}
+          {view === "resolutions" && (
+            <>
+              <DepositManagementPanel hackathon={hackathon} view="resolutions" />
+              {!hackathon.isResolved && <ResolvePanel hackathon={hackathon} />}
+              {hackathon.isResolved && <p style={{ marginTop: "16px", fontSize: "0.875rem", color: "var(--c-text-4)" }}>Hackathon resolved. Stakers can now claim.</p>}
+            </>
+          )}
+          {view === "advanced" && (
+            <>
+              <SubmissionsSection
+                hackathons={[hackathon]}
+                adminAuth={adminAuth}
+                hackathonFilter={hackathon.pubkey.toBase58()}
+                compact
+              />
+              <HackathonWhitelistPanel hackathon={hackathon} />
+              <DepositManagementPanel hackathon={hackathon} view="advanced" />
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1316,12 +1386,141 @@ interface Submission {
   created_at: string;
 }
 
+type AdminPanelTab = "create" | "manage" | "resolutions" | "advanced" | "how-to";
+
+function AdminGuideSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-text-4)" }}>
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function AdminGuideStep({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", gap: "14px", alignItems: "flex-start" }}>
+      <div
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          height: "32px",
+          width: "32px",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: "9999px",
+          background: "var(--card-bg-alt)",
+          color: "var(--c-indigo-text)",
+          fontSize: "0.875rem",
+          fontWeight: 800,
+        }}
+      >
+        {n}
+      </div>
+      <div>
+        <p style={{ margin: "2px 0 6px", fontSize: "0.95rem", fontWeight: 700, color: "var(--c-text)" }}>{title}</p>
+        <p style={{ margin: 0, fontSize: "0.875rem", lineHeight: 1.7, color: "var(--c-text-3)" }}>{children}</p>
+      </div>
+    </div>
+  );
+}
+
+function AdminGuideBullet({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+      <span
+        style={{
+          marginTop: "8px",
+          height: "6px",
+          width: "6px",
+          flexShrink: 0,
+          borderRadius: "9999px",
+          background: "var(--c-indigo)",
+        }}
+      />
+      <p style={{ margin: 0, fontSize: "0.875rem", lineHeight: 1.7, color: "var(--c-text-3)" }}>{children}</p>
+    </div>
+  );
+}
+
+function AdminHowToPanel({ canCreate }: { canCreate: boolean }) {
+  return (
+    <section className="ui-card" style={{ padding: "24px" }}>
+      <div style={{ marginBottom: "24px" }}>
+        <h2 style={{ margin: "0 0 6px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Admin How To</h2>
+        <p style={{ margin: 0, fontSize: "0.875rem", lineHeight: 1.7, color: "var(--c-text-3)" }}>
+          Use this page to run the organizer side of HackBet: create hackathons, approve submissions, manage staking access, and finalize results.
+        </p>
+      </div>
+
+      <div style={{ marginBottom: "24px", borderRadius: "16px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "18px" }}>
+        <p style={{ margin: "0 0 6px", fontSize: "0.8rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-amber-text)" }}>
+          Your role
+        </p>
+        <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.7, color: "var(--c-text-2)" }}>
+          Protocol admins can create hackathons and manage every event. Wallets assigned as a hackathon&apos;s admin can manage that specific event&apos;s submissions, deposits, whitelist flow, and final resolution.
+        </p>
+        {!canCreate && (
+          <p style={{ margin: "10px 0 0", fontSize: "0.8125rem", lineHeight: 1.6, color: "var(--c-amber-text)" }}>
+            This wallet can manage assigned hackathons here, but it cannot create brand new hackathons.
+          </p>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+        <AdminGuideSection title="Create and configure">
+          <AdminGuideStep n={1} title="Create the hackathon">
+            Use the Create tab to set the hackathon name, results timing, prize tiers, builder deposit amount, protocol fee, and fee recipient.
+          </AdminGuideStep>
+          <AdminGuideStep n={2} title="Add metadata after creation">
+            Once the hackathon exists, expand its card below and add the official link and icon so the public page has the right presentation.
+          </AdminGuideStep>
+          <AdminGuideStep n={3} title="Decide the approval flow">
+            Review whether staking is open or gated, then monitor builder submissions and community access from the panels on this page.
+          </AdminGuideStep>
+        </AdminGuideSection>
+
+        <AdminGuideSection title="Run the event">
+          <AdminGuideBullet>Approve project submissions so builders become live, on-chain projects that can receive deposits and staking.</AdminGuideBullet>
+          <AdminGuideBullet>Use staker access tools to whitelist wallets for one hackathon or across all hackathons when needed.</AdminGuideBullet>
+          <AdminGuideBullet>For deposit-backed events, organizer approval is what unlocks the normal builder refund path after builder declaration.</AdminGuideBullet>
+          <AdminGuideBullet>Refund override is the exceptional path for cancellations, judging mistakes, or organizer exceptions.</AdminGuideBullet>
+        </AdminGuideSection>
+
+        <AdminGuideSection title="Resolve and close">
+          <AdminGuideStep n={1} title="Set ranks">
+            Enter project ranks inside the hackathon card. Rank 1 is the winner, and leaving a project at 0 keeps it unranked.
+          </AdminGuideStep>
+          <AdminGuideStep n={2} title="Finalize the results">
+            Finalizing resolution is the permanent step that opens claims for stakers and locks in the official on-chain outcome.
+          </AdminGuideStep>
+          <AdminGuideStep n={3} title="Handle post-event cleanup">
+            After resolution, only use deposit forfeits or refund overrides when the builder flow truly requires an exceptional intervention.
+          </AdminGuideStep>
+        </AdminGuideSection>
+
+        <AdminGuideSection title="Admin rights">
+          <AdminGuideBullet>The super-admin can delegate protocol admin rights to additional wallets from the Admin Delegation panel.</AdminGuideBullet>
+          <AdminGuideBullet>Delegated protocol admins can create hackathons and manage the full organizer workflow.</AdminGuideBullet>
+          <AdminGuideBullet>The wallet stored as the hackathon admin can manage that event even without global protocol-admin rights.</AdminGuideBullet>
+        </AdminGuideSection>
+      </div>
+    </section>
+  );
+}
+
 function SubmissionsSection({
   hackathons,
   adminAuth,
+  hackathonFilter,
+  compact,
 }: {
   hackathons: ReturnType<typeof useHackathons>["hackathons"];
   adminAuth: AdminApiAuth;
+  hackathonFilter?: string;
+  compact?: boolean;
 }) {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
@@ -1455,8 +1654,14 @@ function SubmissionsSection({
     }
   }
 
-  const visible = filter === "all" ? submissions : submissions.filter((s) => s.status === filter);
-  if (loading) return <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />;
+  const filtered = hackathonFilter
+    ? submissions.filter((s) => s.hackathon_pubkey === hackathonFilter)
+    : submissions;
+  const visible = compact
+    ? filtered.filter((s) => s.status === "pending")
+    : filter === "all" ? filtered : filtered.filter((s) => s.status === filter);
+  if (loading && !compact) return <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />;
+  if (compact && !loading && visible.length === 0) return null;
 
   function subBorderBg(status: string) {
     if (status === "pending") return { border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)" };
@@ -1468,6 +1673,54 @@ function SubmissionsSection({
     if (status === "pending") return { background: "var(--c-amber-light)", color: "var(--c-amber-text)" };
     if (status === "approved") return { background: "var(--c-emerald-light)", color: "var(--c-emerald-text)" };
     return { background: "var(--c-divider)", color: "var(--c-text-3)" };
+  }
+
+  const submissionsList = (
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      {visible.map((s) => (
+        <div key={s.id} style={{ borderRadius: "12px", padding: "16px", ...subBorderBg(s.status) }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: "8px" }}>
+            <div>
+              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{s.project_name?.trim() || s.github_url.replace("https://github.com/", "")}</p>
+              <a href={s.github_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem", color: "var(--c-indigo-text)", textDecoration: "none" }}>{s.github_url.replace("https://github.com/", "")}</a>
+              <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-3)" }}>{s.hackathon_name || s.hackathon_pubkey.slice(0, 12) + "…"} · {s.wallet_address.slice(0, 8)}…{s.wallet_address.slice(-4)}{s.auth_email && ` · ${s.auth_email}`}</p>
+              <div style={{ marginTop: "4px", display: "flex", flexWrap: "wrap", gap: "8px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>{s.twitter_handle && <span>𝕏 @{s.twitter_handle}</span>}{s.telegram && <span>✈ {s.telegram}</span>}{s.discord && <span>💬 {s.discord}</span>}</div>
+              {s.status === "pending" && (
+                <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                  Approving this submission will register the project on-chain and make it eligible to go live once the builder finishes the deposit flow.
+                </p>
+              )}
+              {(hackathons.find((entry) => entry.pubkey.toBase58() === s.hackathon_pubkey)?.depositAmount ?? 0n) > 0n && (
+                <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "var(--c-amber-text)" }}>
+                  Deposit-backed projects still need organizer approval after the builder declaration before the builder can reclaim the deposit.
+                </p>
+              )}
+              <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>{new Date(s.created_at).toLocaleString()}</p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ borderRadius: "9999px", padding: "2px 10px", fontSize: "0.75rem", fontWeight: 500, textTransform: "capitalize", ...statusBadgeStyle(s.status) }}>{s.status}</span>
+              {s.status === "pending" && (
+                <>
+                  <button onClick={() => updateStatus(s.id, "approved")} disabled={busy === s.id} className="ui-btn ui-btn-emerald ui-btn-xs">{busy === s.id ? "…" : "Approve"}</button>
+                  <button onClick={() => updateStatus(s.id, "rejected")} disabled={busy === s.id} className="ui-btn ui-btn-outline-red ui-btn-xs">Reject</button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  if (compact) {
+    return (
+      <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "16px" }}>
+        <h3 style={{ margin: "0 0 12px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>Pending Submissions</h3>
+        {err && <p style={{ marginBottom: "12px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
+        {ok && <p style={{ marginBottom: "12px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
+        {submissionsList}
+      </div>
+    );
   }
 
   return (
@@ -1483,40 +1736,7 @@ function SubmissionsSection({
       {err && <p style={{ marginBottom: "12px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
       {ok && <p style={{ marginBottom: "12px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
       {visible.length === 0 && <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>No {filter === "all" ? "" : filter} submissions.</p>}
-      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-        {visible.map((s) => (
-          <div key={s.id} style={{ borderRadius: "12px", padding: "16px", ...subBorderBg(s.status) }}>
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: "8px" }}>
-              <div>
-                <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{s.project_name?.trim() || s.github_url.replace("https://github.com/", "")}</p>
-                <a href={s.github_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem", color: "var(--c-indigo-text)", textDecoration: "none" }}>{s.github_url.replace("https://github.com/", "")}</a>
-                <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-3)" }}>{s.hackathon_name || s.hackathon_pubkey.slice(0, 12) + "…"} · {s.wallet_address.slice(0, 8)}…{s.wallet_address.slice(-4)}{s.auth_email && ` · ${s.auth_email}`}</p>
-                <div style={{ marginTop: "4px", display: "flex", flexWrap: "wrap", gap: "8px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>{s.twitter_handle && <span>𝕏 @{s.twitter_handle}</span>}{s.telegram && <span>✈ {s.telegram}</span>}{s.discord && <span>💬 {s.discord}</span>}</div>
-                {s.status === "pending" && (
-                  <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-                    Approving this submission will register the project on-chain and make it eligible to go live once the builder finishes the deposit flow.
-                  </p>
-                )}
-                {(hackathons.find((entry) => entry.pubkey.toBase58() === s.hackathon_pubkey)?.depositAmount ?? 0n) > 0n && (
-                  <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "var(--c-amber-text)" }}>
-                    Deposit-backed projects still need organizer approval after the builder declaration before the builder can reclaim the deposit.
-                  </p>
-                )}
-                <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>{new Date(s.created_at).toLocaleString()}</p>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ borderRadius: "9999px", padding: "2px 10px", fontSize: "0.75rem", fontWeight: 500, textTransform: "capitalize", ...statusBadgeStyle(s.status) }}>{s.status}</span>
-                {s.status === "pending" && (
-                  <>
-                    <button onClick={() => updateStatus(s.id, "approved")} disabled={busy === s.id} className="ui-btn ui-btn-emerald ui-btn-xs">{busy === s.id ? "…" : "Approve"}</button>
-                    <button onClick={() => updateStatus(s.id, "rejected")} disabled={busy === s.id} className="ui-btn ui-btn-outline-red ui-btn-xs">Reject</button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+      {submissionsList}
     </section>
   );
 }
@@ -1527,6 +1747,7 @@ export default function AdminPage() {
   const { publicKey, signMessage } = useWallet();
   const { hackathons, loading, reload: reloadHackathons } = useHackathons();
   const [version, setVersion] = useState(0);
+  const [adminPanelTab, setAdminPanelTab] = useState<AdminPanelTab>("manage");
   const [adminSessionReady, setAdminSessionReady] = useState(false);
   const [adminSessionBusy, setAdminSessionBusy] = useState(false);
   const [adminSessionErr, setAdminSessionErr] = useState<string | null>(null);
@@ -1611,7 +1832,7 @@ export default function AdminPage() {
     ready: adminSessionReady,
   };
 
-  const visibleHackathons = isProtocolAdmin || !publicKey
+  const visibleHackathons = isSuperAdmin || !publicKey
     ? hackathons
     : hackathons.filter((hackathon) => hackathon.admin.equals(publicKey));
 
@@ -1630,7 +1851,7 @@ export default function AdminPage() {
           {isAdmin && !adminSessionReady && (
             <div style={{ marginTop: "16px", borderRadius: "12px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "16px" }}>
               <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-amber-text)" }}>
-                Admin data now loads only after an explicit sign-in click. This avoids Backpack getting spammed by automatic signature popups while the page is mounting.
+                Click here to sign in as admin. This signature does not cost gas.
               </p>
               <div style={{ marginTop: "12px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                 <button
@@ -1656,30 +1877,97 @@ export default function AdminPage() {
         </div>
         {isAdmin && adminSessionReady && (
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {isProtocolAdmin && <CreateHackathonPanel adminAuth={adminAuth} onCreated={() => { setVersion((v) => v + 1); reloadHackathons(); }} />}
-            {isSuperAdmin && <AdminDelegationPanel />}
-            {isProtocolAdmin && <GlobalWhitelistPanel hackathons={hackathons} adminAuth={adminAuth} />}
-            <SubmissionsSection hackathons={hackathons} adminAuth={adminAuth} />
-            <div>
-              <h2 style={{ margin: "0 0 12px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Hackathons</h2>
-              {loading ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "64px" }} />)}</div>
-              ) : visibleHackathons.length === 0 ? (
-                <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>
-                  {isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
-                </div>
-              ) : (
-                <div key={version} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {visibleHackathons.map((h) => (
-                    <HackathonAdminCard
-                      key={h.pubkey.toBase58()}
-                      hackathon={h}
-                      adminAuth={adminAuth}
-                    />
-                  ))}
-                </div>
-              )}
+            {/* Tab strip */}
+            <div style={{ display: "flex", gap: "4px", borderRadius: "12px", border: "1px solid var(--c-divider)", padding: "4px" }}>
+              {([
+                ...(isProtocolAdmin ? [{ id: "create" as const, label: "Create" }] : []),
+                { id: "manage" as const, label: "Manage" },
+                { id: "resolutions" as const, label: "Resolutions" },
+                { id: "advanced" as const, label: "Advanced" },
+                { id: "how-to" as const, label: "How to" },
+              ] as Array<{ id: AdminPanelTab; label: string }>).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setAdminPanelTab(tab.id)}
+                  className={`ui-sort-tab ${adminPanelTab === tab.id ? "ui-sort-tab-active" : "ui-sort-tab-inactive"}`}
+                  style={{ flex: 1 }}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
+
+            {/* Create tab */}
+            {adminPanelTab === "create" && isProtocolAdmin && (
+              <CreateHackathonPanel adminAuth={adminAuth} onCreated={() => { setVersion((v) => v + 1); reloadHackathons(); }} />
+            )}
+
+            {/* Manage tab */}
+            {adminPanelTab === "manage" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Manage Hackathons</h2>
+                {loading ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "64px" }} />)}</div>
+                ) : visibleHackathons.length === 0 ? (
+                  <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>
+                    {isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
+                  </div>
+                ) : (
+                  <div key={version} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {visibleHackathons.map((h) => (
+                      <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="manage" />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Resolutions tab */}
+            {adminPanelTab === "resolutions" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Deposit Approvals &amp; Rankings</h2>
+                  {loading ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "64px" }} />)}</div>
+                  ) : visibleHackathons.length === 0 ? (
+                    <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>
+                      {isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
+                    </div>
+                  ) : (
+                    <div key={version} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      {visibleHackathons.map((h) => (
+                        <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="resolutions" />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Advanced tab */}
+            {adminPanelTab === "advanced" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Advanced</h2>
+                {loading ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "64px" }} />)}</div>
+                ) : visibleHackathons.length === 0 ? (
+                  <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>
+                    {isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
+                  </div>
+                ) : (
+                  <div key={version} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {visibleHackathons.map((h) => (
+                      <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="advanced" />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* How-to tab */}
+            {adminPanelTab === "how-to" && (
+              <AdminHowToPanel canCreate={isProtocolAdmin} />
+            )}
           </div>
         )}
       </main>

@@ -1,7 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
-import { PublicKey } from "@solana/web3.js";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useWallet, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
@@ -11,11 +10,15 @@ import { escrowPda, stakePda } from "@/lib/pda";
 import Navbar from "@/components/Navbar";
 import StakeModal from "@/components/StakeModal";
 import ClaimButton from "@/components/ClaimButton";
+import ClaimSlipButton from "@/components/ClaimSlipButton";
+import ParlayModal from "@/components/ParlayModal";
 import { useProjects } from "@/hooks/useProjects";
 import { useHackathons } from "@/hooks/useHackathons";
 import { useUserStake } from "@/hooks/useUserStake";
+import { useUserStakesForProjects } from "@/hooks/useUserStakesForProjects";
 import {
   formatTokens,
+  formatTokensRounded,
   formatDate,
   hackathonStatus,
   timeUntil,
@@ -49,7 +52,6 @@ function rankBadgeStyle(rank: number): React.CSSProperties {
 function ProjectRow({
   project,
   hackathon,
-  allProjects,
   status,
   isWhitelisted,
   onStakeUpdated,
@@ -59,7 +61,6 @@ function ProjectRow({
 }: {
   project: ProjectInfo;
   hackathon: HackathonInfo;
-  allProjects: ProjectInfo[];
   status: ReturnType<typeof hackathonStatus>;
   isWhitelisted: boolean | null;
   onStakeUpdated: () => void;
@@ -70,7 +71,7 @@ function ProjectRow({
   const { publicKey } = useWallet();
   const anchorWallet = useAnchorWallet();
   const { stake } = useUserStake(publicKey, project.pubkey, stakeRefreshKey);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [refundBusy, setRefundBusy] = useState(false);
   const [refundErr, setRefundErr] = useState<string | null>(null);
 
@@ -114,7 +115,7 @@ function ProjectRow({
     <>
       <div className="ui-project-row">
         {/* Top row: rank + name + action */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "8px" }}>
+        <div className="mobile-stack-between" style={{ gap: "10px" }}>
           <div style={{ display: "flex", minWidth: 0, alignItems: "center", gap: "12px" }}>
             <div
               style={{
@@ -137,7 +138,8 @@ function ProjectRow({
                 href={project.githubUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, color: "var(--c-text)", textDecoration: "none", transition: "color 0.15s" }}
+                className="mobile-link-wrap"
+                style={{ fontWeight: 600, color: "var(--c-text)", lineHeight: 1.35, textDecoration: "none", transition: "color 0.15s" }}
               >
                 {projectLabel}
               </a>
@@ -146,54 +148,30 @@ function ProjectRow({
           </div>
 
           {/* Action button */}
-          <div style={{ flexShrink: 0 }}>
+          <div className="mobile-fill" style={{ flexShrink: 0 }}>
             {project.isRefundEnabled && stake && stake.amount > 0n && !stake.isClaimed ? (
               <div>
-                <button onClick={handleRefund} disabled={refundBusy || !publicKey} className="ui-btn ui-btn-amber ui-btn-sm">
+                <button onClick={handleRefund} disabled={refundBusy || !publicKey} className="ui-btn ui-btn-amber ui-btn-sm mobile-fill">
                   {refundBusy ? "Refunding…" : "Refund stake"}
                 </button>
                 {refundErr && <p style={{ marginTop: "4px", fontSize: "0.75rem", color: "var(--c-red-text)" }}>{refundErr}</p>}
               </div>
-            ) : status === "resolved" && stake && !stake.isClaimed && stake.amount > 0n ? (
+            ) : status === "resolved" && stake && !stake.isClaimed && stake.amount > 0n && project.rank > 0 ? (
               <ClaimButton
                 hackathon={hackathon}
                 project={project}
-                allProjects={allProjects}
                 onSuccess={onStakeUpdated}
               />
             ) : status === "resolved" && stake?.isClaimed ? (
-              <span style={{ borderRadius: "9999px", background: "var(--c-emerald-light)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>
-                Claimed
-              </span>
-            ) : status === "open" && !stakingEnabled ? (
-              <span style={{ borderRadius: "9999px", background: "var(--c-divider-2)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-4)" }}>
-                FYI only
-              </span>
-            ) : status === "open" && !publicKey ? (
-              <span style={{ borderRadius: "9999px", background: "var(--c-divider-2)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-4)" }}>
-                Connect wallet
-              </span>
-            ) : status === "open" && isWhitelisted !== true ? (
-              <span style={{ borderRadius: "9999px", background: "var(--c-divider-2)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-4)" }}>
-                Whitelist required
-              </span>
-            ) : status === "open" ? (
-              <button
-                onClick={() => setModalOpen(true)}
-                className="ui-btn ui-btn-indigo ui-btn-sm"
-              >
-                {stake && stake.amount > 0n ? "Manage stake" : "Stake"}
-              </button>
-            ) : status === "cutoff" ? (
-              <span style={{ borderRadius: "9999px", background: "var(--c-amber-light)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-amber-text)" }}>
-                Cutoff
-              </span>
-            ) : null}
+              <span style={{ borderRadius: "9999px", background: "var(--c-emerald-light)", padding: "4px 12px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>Claimed</span>
+            ) : (
+              <button onClick={() => setDetailOpen(true)} className="ui-btn ui-btn-amber ui-btn-sm mobile-fill">View</button>
+            )}
           </div>
         </div>
 
         {/* Stats row */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px 20px" }}>
           <div>
             <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Staked</p>
             <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>
@@ -201,82 +179,177 @@ function ProjectRow({
             </p>
           </div>
           <div>
-            <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }} title="% of total staked USDC backing this project">Pool share</p>
+            <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Pool share</p>
             <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{share.toFixed(1)}%</p>
           </div>
-          {stake && stake.amount > 0n && (
-            <div>
-              <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Your stake</p>
-              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-indigo-text)" }}>
-                {formatTokens(stake.amount)} <span style={{ fontSize: "0.75rem", color: "var(--c-text-3)" }}>USDC</span>
-              </p>
-            </div>
-          )}
-          {project.builderStaked > 0n && (
-            <div>
-              <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Builder self-stake</p>
-              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text-2)" }}>
-                {formatTokens(project.builderStaked)} <span style={{ fontSize: "0.75rem", color: "var(--c-text-3)" }}>USDC</span>
-              </p>
-            </div>
-          )}
+          <div>
+            <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Builder self-stake</p>
+            <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text-2)" }}>
+              {formatTokens(project.builderStaked)} <span style={{ fontSize: "0.75rem", color: "var(--c-text-3)" }}>USDC</span>
+            </p>
+          </div>
         </div>
 
-        {!stakingEnabled && (
-          <div style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "10px 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-            FYI only for now. This builder hasn&apos;t activated staking on the project yet, so crowd staking and self-staking stay disabled.
-          </div>
-        )}
-
-        {/* GitHub stats row */}
-        {githubStats !== undefined && (
-          <div style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-            {githubStats === null ? (
-              <span style={{ fontStyle: "italic" }}>GitHub stats unavailable</span>
-            ) : (
-              <>
-                Last commit: <span style={{ fontWeight: 500, color: "var(--c-text-3)" }}>{daysAgo(githubStats.last_commit_at)}</span>
-                {" · "}
-                <span style={{ fontWeight: 500, color: "var(--c-text-3)" }}>
-                  {githubStats.commits_7d ?? "?"} commit{githubStats.commits_7d !== 1 ? "s" : ""} this week
-                </span>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Social links row */}
-        {metadata && (metadata.twitter_handle || metadata.telegram || metadata.discord) && (
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "0.875rem" }}>
-            {metadata.twitter_handle && (
-              <a href={`https://twitter.com/${metadata.twitter_handle}`} target="_blank" rel="noopener noreferrer"
-                style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--c-sky-text)", textDecoration: "none" }}>
-                <span>🐦</span><span style={{ fontSize: "0.75rem" }}>Twitter</span>
-              </a>
-            )}
-            {metadata.telegram && (
-              <a href={metadata.telegram.startsWith("http") ? metadata.telegram : `https://t.me/${metadata.telegram}`} target="_blank" rel="noopener noreferrer"
-                style={{ display: "flex", alignItems: "center", gap: "4px", color: "#3b82f6", textDecoration: "none" }}>
-                <span>✈️</span><span style={{ fontSize: "0.75rem" }}>Telegram</span>
-              </a>
-            )}
-            {metadata.discord && (
-              <a href={metadata.discord.startsWith("http") ? metadata.discord : `https://discord.gg/${metadata.discord}`} target="_blank" rel="noopener noreferrer"
-                style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--c-indigo-text)", textDecoration: "none" }}>
-                <span>💬</span><span style={{ fontSize: "0.75rem" }}>Discord</span>
-              </a>
-            )}
-          </div>
-        )}
       </div>
 
-      {modalOpen && (
+      {detailOpen && (
+        <ProjectDetailModal
+          hackathon={hackathon}
+          project={project}
+          status={status}
+          isWhitelisted={isWhitelisted}
+          stake={stake}
+          metadata={metadata}
+          githubStats={githubStats}
+          onStakeUpdated={onStakeUpdated}
+          onClose={() => setDetailOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// ── Project Detail Modal ──────────────────────────────────────────────────────
+
+function ProjectDetailModal({
+  hackathon,
+  project,
+  status,
+  isWhitelisted,
+  stake,
+  metadata,
+  githubStats,
+  onStakeUpdated,
+  onClose,
+}: {
+  hackathon: HackathonInfo;
+  project: ProjectInfo;
+  status: ReturnType<typeof hackathonStatus>;
+  isWhitelisted: boolean | null;
+  stake: ReturnType<typeof useUserStake>["stake"];
+  metadata?: ProjectMetadata;
+  githubStats?: GithubStats | null;
+  onStakeUpdated: () => void;
+  onClose: () => void;
+}) {
+  const { publicKey } = useWallet();
+  const [stakeModalOpen, setStakeModalOpen] = useState(false);
+  const totalPool = hackathon.totalPool;
+  const share = totalPool > 0n ? Number((project.totalStaked * 10000n) / totalPool) / 100 : 0;
+  const repoLabel = repoName(project.githubUrl);
+  const projectLabel = metadata?.project_name?.trim() || repoLabel;
+  const stakingEnabled = hackathon.depositAmount === 0n || project.depositAmountPaid > 0n;
+
+  return (
+    <>
+      <div
+        style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(0,0,0,0.5)", padding: "16px", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <div style={{ width: "100%", maxWidth: "28rem", borderRadius: "16px", border: "1px solid var(--card-border)", background: "var(--modal-bg)", padding: "24px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)", maxHeight: "85vh", overflowY: "auto" }}>
+          {/* Header */}
+          <div style={{ marginBottom: "16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                <div style={{ display: "flex", height: "32px", width: "32px", flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: "8px", fontSize: "0.875rem", fontWeight: 900, ...rankBadgeStyle(project.rank) }}>
+                  {project.rank > 0 ? project.rank : "–"}
+                </div>
+                <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 900, color: "var(--c-text)" }}>{projectLabel}</h2>
+              </div>
+              <a href={project.githubUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem", color: "var(--c-indigo-text)", textDecoration: "none" }}>{repoLabel}</a>
+            </div>
+            <button onClick={onClose} aria-label="Close" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--c-text-4)", fontSize: "1rem", lineHeight: 1, padding: "4px", flexShrink: 0 }}>✕</button>
+          </div>
+
+          {/* Stats */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+            <div style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px" }}>
+              <p style={{ margin: "0 0 2px", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Staked</p>
+              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{formatTokens(project.totalStaked)} <span style={{ fontSize: "0.75rem", color: "var(--c-text-3)" }}>USDC</span></p>
+            </div>
+            <div style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px" }}>
+              <p style={{ margin: "0 0 2px", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Pool share</p>
+              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{share.toFixed(1)}%</p>
+            </div>
+            <div style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px" }}>
+              <p style={{ margin: "0 0 2px", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Builder self-stake</p>
+              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text-2)" }}>{formatTokens(project.builderStaked)} <span style={{ fontSize: "0.75rem", color: "var(--c-text-3)" }}>USDC</span></p>
+            </div>
+            {stake && stake.amount > 0n && !stake.isClaimed && (
+              <div style={{ borderRadius: "10px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "12px" }}>
+                <p style={{ margin: "0 0 2px", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-indigo-text)" }}>Your stake</p>
+                <p style={{ margin: 0, fontWeight: 700, color: "var(--c-indigo-text)" }}>{formatTokens(stake.amount)} <span style={{ fontSize: "0.75rem" }}>USDC</span></p>
+              </div>
+            )}
+          </div>
+
+          {/* GitHub stats */}
+          {githubStats !== undefined && githubStats !== null && (
+            <div style={{ marginBottom: "12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+              Last commit: <span style={{ fontWeight: 500, color: "var(--c-text-3)" }}>{daysAgo(githubStats.last_commit_at)}</span>
+              {" · "}
+              <span style={{ fontWeight: 500, color: "var(--c-text-3)" }}>{githubStats.commits_7d ?? "?"} commit{githubStats.commits_7d !== 1 ? "s" : ""} this week</span>
+            </div>
+          )}
+
+          {/* Social links */}
+          {metadata && (metadata.twitter_handle || metadata.telegram || metadata.discord) && (
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px 12px", fontSize: "0.875rem", marginBottom: "16px" }}>
+              {metadata.twitter_handle && (
+                <a href={`https://twitter.com/${metadata.twitter_handle}`} target="_blank" rel="noopener noreferrer"
+                  style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--c-sky-text)", textDecoration: "none" }}>
+                  <span>🐦</span><span style={{ fontSize: "0.75rem" }}>Twitter</span>
+                </a>
+              )}
+              {metadata.telegram && (
+                <a href={metadata.telegram.startsWith("http") ? metadata.telegram : `https://t.me/${metadata.telegram}`} target="_blank" rel="noopener noreferrer"
+                  style={{ display: "flex", alignItems: "center", gap: "4px", color: "#3b82f6", textDecoration: "none" }}>
+                  <span>✈️</span><span style={{ fontSize: "0.75rem" }}>Telegram</span>
+                </a>
+              )}
+              {metadata.discord && (
+                <a href={metadata.discord.startsWith("http") ? metadata.discord : `https://discord.gg/${metadata.discord}`} target="_blank" rel="noopener noreferrer"
+                  style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--c-indigo-text)", textDecoration: "none" }}>
+                  <span>💬</span><span style={{ fontSize: "0.75rem" }}>Discord</span>
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* FYI notice */}
+          {!stakingEnabled && (
+            <div style={{ marginBottom: "16px", borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "10px 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+              FYI only. This builder hasn&apos;t activated staking yet.
+            </div>
+          )}
+
+          {/* Action button */}
+          {status === "open" && stakingEnabled && (
+            <>
+              {!publicKey ? (
+                <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>Connect your wallet to stake.</p>
+              ) : isWhitelisted === false ? (
+                <p style={{ fontSize: "0.875rem", color: "var(--c-amber-text)" }}>Your wallet isn&apos;t whitelisted for this hackathon.</p>
+              ) : (
+                <button
+                  onClick={() => setStakeModalOpen(true)}
+                  className="ui-btn ui-btn-indigo"
+                  style={{ width: "100%" }}
+                >
+                  {stake && stake.amount > 0n && !stake.isClaimed ? "Manage stake" : "Stake"}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      {stakeModalOpen && (
         <StakeModal
           hackathon={hackathon}
           project={project}
-          stake={stake}
-          onClose={() => setModalOpen(false)}
-          onSuccess={onStakeUpdated}
+          stake={stake ?? null}
+          onClose={() => setStakeModalOpen(false)}
+          onSuccess={() => { onStakeUpdated(); setStakeModalOpen(false); }}
         />
       )}
     </>
@@ -301,9 +374,9 @@ function CrowdVsJudges({ projects }: { projects: ProjectInfo[] }) {
       <p style={{ margin: "0 0 16px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
         Did the crowd call it? Judge ranking (official results) vs. crowd ranking (by backing).
       </p>
-      <div className="ui-card" style={{ overflow: "hidden" }}>
+      <div className="ui-card mobile-scroll-x">
         {/* Header */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "16px", borderBottom: "1px solid var(--c-divider-2)", padding: "10px 16px", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>
+        <div style={{ minWidth: "460px", display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "16px", borderBottom: "1px solid var(--c-divider-2)", padding: "10px 16px", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>
           <span>Project</span>
           <span style={{ width: "80px", textAlign: "center" }}>Judge rank</span>
           <span style={{ width: "80px", textAlign: "center" }}>Crowd rank</span>
@@ -319,7 +392,7 @@ function CrowdVsJudges({ projects }: { projects: ProjectInfo[] }) {
           return (
             <div
               key={p.pubkey.toBase58()}
-              style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", alignItems: "center", gap: "16px", borderBottom: "1px solid var(--c-divider-2)", padding: "12px 16px", transition: "background 0.15s" }}
+              style={{ minWidth: "460px", display: "grid", gridTemplateColumns: "1fr auto auto auto", alignItems: "center", gap: "16px", borderBottom: "1px solid var(--c-divider-2)", padding: "12px 16px", transition: "background 0.15s" }}
             >
               <a
                 href={p.githubUrl}
@@ -390,16 +463,7 @@ function CrowdVsJudges({ projects }: { projects: ProjectInfo[] }) {
 
 // ── Sort type ────────────────────────────────────────────────────────────────
 
-type SortMode = "stake" | "last_commit" | "commits_week";
-
-// ── Status labels ────────────────────────────────────────────────────────────
-
-const STATUS_LABELS = {
-  open: "Open for staking",
-  cutoff: "Cutoff passed",
-  pending: "Awaiting resolution",
-  resolved: "Resolved",
-};
+type SortMode = "stake" | "last_commit";
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
@@ -417,6 +481,12 @@ export default function HackathonPage({
   const { isWhitelisted } = useWhitelistStatus(hackathonPk, publicKey ?? null, hackathon?.openStaking);
   const { projects, loading: pLoading, error: pError, reload: reloadProjects } = useProjects(hackathonPk);
   const [version, setVersion] = useState(0);
+  const [parlayOpen, setParlayOpen] = useState(false);
+  const { stakesByProject, loading: stakesLoading } = useUserStakesForProjects(
+    publicKey ?? null,
+    projects,
+    version,
+  );
 
   const [hackathonMeta, setHackathonMeta] = useState<{ official_link?: string | null; icon_url?: string | null } | null>(null);
   const [metadataMap, setMetadataMap] = useState<Record<string, ProjectMetadata>>({});
@@ -496,6 +566,28 @@ export default function HackathonPage({
     });
   }, [projects.map((p) => p.githubUrl).join(",")]);
 
+  // Derived state — all useMemo calls must be before any early return (Rules of Hooks)
+  const status = hackathon
+    ? hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved)
+    : ("open" as ReturnType<typeof hackathonStatus>);
+
+  const projectNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const project of projects) {
+      const projectKey = project.pubkey.toBase58();
+      names[projectKey] = metadataMap[projectKey]?.project_name?.trim() || repoName(project.githubUrl);
+    }
+    return names;
+  }, [metadataMap, projects]);
+
+  const claimableProjects = useMemo(() => {
+    if (status !== "resolved") return [];
+    return projects.filter((project) => {
+      const stake = stakesByProject[project.pubkey.toBase58()];
+      return project.rank > 0 && !!stake && stake.amount > 0n && !stake.isClaimed;
+    });
+  }, [projects, stakesByProject, status]);
+
   if (hLoading) {
     return (
       <div style={{ minHeight: "100vh" }}>
@@ -518,13 +610,17 @@ export default function HackathonPage({
         <Navbar />
         <main style={{ margin: "0 auto", maxWidth: "896px", padding: "48px 16px", textAlign: "center", color: "var(--c-text-3)" }}>
           Hackathon not found.{" "}
-          <Link href="/" className="ui-text-link">Go back</Link>
+          <Link href="/hackathons" className="ui-text-link">Go back</Link>
         </main>
       </div>
     );
   }
 
-  const status = hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
+  function refreshHackathonView() {
+    setVersion((value) => value + 1);
+    reloadProjects();
+    reloadHackathons();
+  }
 
   const sortedProjects = [...projects].sort((a, b) => {
     if (sortMode === "stake") {
@@ -540,13 +636,6 @@ export default function HackathonPage({
       const bDate = bStats?.last_commit_at ? new Date(bStats.last_commit_at).getTime() : 0;
       return bDate - aDate;
     }
-    if (sortMode === "commits_week") {
-      const aStats = githubStatsMap[a.githubUrl];
-      const bStats = githubStatsMap[b.githubUrl];
-      const aC = aStats?.commits_7d ?? -1;
-      const bC = bStats?.commits_7d ?? -1;
-      return bC - aC;
-    }
     return 0;
   });
 
@@ -556,11 +645,11 @@ export default function HackathonPage({
 
       <main style={{ margin: "0 auto", maxWidth: "896px", padding: "40px 16px" }}>
         {/* Back */}
-        <Link href="/" className="ui-back-link">← All hackathons</Link>
+        <Link href="/hackathons" className="ui-back-link">← All hackathons</Link>
 
         {/* Header card */}
-        <div className="ui-card" style={{ marginBottom: "24px", padding: "24px" }}>
-          <div className="sm-flex-row" style={{ gap: "12px", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div className="ui-card" style={{ marginBottom: "24px", padding: "clamp(18px, 5vw, 24px)" }}>
+          <div className="mobile-stack-between">
             <div>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px" }}>
                 {hackathonMeta?.icon_url && (
@@ -572,13 +661,9 @@ export default function HackathonPage({
                   <h1 style={{ margin: 0, fontSize: "clamp(1.25rem, 3vw, 1.5rem)", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>
                     {hackathon.name || "Hackathon"}
                   </h1>
-                  <span className={`ui-badge ui-badge-${status}`}>{STATUS_LABELS[status]}</span>
                 </div>
               </div>
-              <div style={{ marginTop: "4px", display: "flex", alignItems: "center", gap: "12px" }}>
-                <p style={{ margin: 0, fontFamily: "monospace", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-                  {id.slice(0, 16)}…
-                </p>
+              <div style={{ marginTop: "4px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px" }}>
                 {hackathonMeta?.official_link && (
                   <a
                     href={hackathonMeta.official_link}
@@ -596,30 +681,28 @@ export default function HackathonPage({
               </div>
             </div>
             {/* Pool */}
-            <div style={{ textAlign: "right" }}>
+            <div style={{ minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Total pool</p>
               <p style={{ margin: 0, fontSize: "1.5rem", fontWeight: 900, color: "var(--c-text)" }}>
-                {formatTokens(hackathon.totalPool)}{" "}
+                {formatTokensRounded(hackathon.totalPool)}{" "}
                 <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-3)" }}>USDC</span>
               </p>
             </div>
           </div>
 
           {/* Meta row */}
-          <div style={{ marginTop: "16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
-            <div style={{ display: "flex", gap: "64px" }}>
-              <div>
-                <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Cutoff</p>
-                <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)" }}>{formatDate(hackathon.cutoffTimestamp)}</p>
-                <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Staking closes</p>
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Results</p>
-                <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)" }}>{formatDate(hackathon.resultsTimestamp)}</p>
-                <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Judge announcement</p>
-              </div>
+          <div className="grid-auto-3" style={{ marginTop: "16px", gap: "12px 16px" }}>
+            <div>
+              <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Cutoff</p>
+              <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)" }}>{formatDate(hackathon.cutoffTimestamp)}</p>
+              <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Staking closes</p>
             </div>
-            <div style={{ textAlign: "right" }}>
+            <div>
+              <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Results</p>
+              <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)" }}>{formatDate(hackathon.resultsTimestamp)}</p>
+              <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Judge announcement</p>
+            </div>
+            <div>
               <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Projects</p>
               <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 700, color: "var(--c-text-2)" }}>
                 {pLoading ? "…" : projects.length}
@@ -630,11 +713,11 @@ export default function HackathonPage({
           {/* Prize tiers */}
           <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "12px" }}>
             <p style={{ margin: "0 0 6px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Prize tiers</p>
-            <div style={{ display: "inline-flex", overflow: "hidden", borderRadius: "6px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)" }}>
+            <div className="mobile-chip-wrap">
               {hackathon.tierPcts.map((pct, i) => (
                 <span
                   key={i}
-                  style={{ padding: "4px 10px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-indigo-text)", borderLeft: i > 0 ? "1px solid var(--c-indigo-border)" : "none" }}
+                  style={{ borderRadius: "6px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "4px 10px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-indigo-text)" }}
                 >
                   #{i + 1}: {pct}%
                 </span>
@@ -674,16 +757,65 @@ export default function HackathonPage({
           )}
         </div>
 
+        {status === "open" && (
+          <div className="ui-card" style={{ marginBottom: "16px", padding: "16px" }}>
+            <div className="mobile-stack-between" style={{ gap: "14px", alignItems: "center" }}>
+              <div>
+                <h2 style={{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 900, color: "var(--c-text)" }}>
+                  Parlay Bet
+                </h2>
+                <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-text-3)" }}>
+                  Pick 3 projects you think will win — one wallet prompt, one bet.
+                </p>
+              </div>
+              <button
+                onClick={() => setParlayOpen(true)}
+                className="ui-btn ui-btn-indigo"
+                style={{ flexShrink: 0, fontWeight: 800 }}
+              >
+                Bet
+              </button>
+            </div>
+          </div>
+        )}
+
+        {parlayOpen && (
+          <ParlayModal
+            hackathon={hackathon}
+            projects={projects}
+            projectNames={projectNames}
+            stakesByProject={stakesByProject}
+            isWhitelisted={isWhitelisted}
+            onClose={() => setParlayOpen(false)}
+            onSuccess={() => {
+              setParlayOpen(false);
+              refreshHackathonView();
+            }}
+          />
+        )}
+
+        {status === "resolved" && publicKey && (
+          stakesLoading ? (
+            <div className="ui-skeleton" style={{ marginBottom: "16px", height: "112px" }} />
+          ) : (
+            <ClaimSlipButton
+              hackathon={hackathon}
+              claimableProjects={claimableProjects}
+              stakesByProject={stakesByProject}
+              onSuccess={refreshHackathonView}
+            />
+          )
+        )}
+
         {/* Projects header + sort controls */}
-        <div className="sm-flex-row" style={{ marginBottom: "12px", gap: "8px", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="mobile-stack-between" style={{ marginBottom: "12px", gap: "10px" }}>
           <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>Projects</h2>
           {projects.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: "4px", borderRadius: "12px", border: "1px solid var(--card-border)", background: "var(--card-bg)", padding: "4px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px", borderRadius: "12px", border: "1px solid var(--card-border)", background: "var(--card-bg)", padding: "4px" }}>
               {(
                 [
                   { mode: "stake", label: "Stake", labelFull: "By stake" },
                   { mode: "last_commit", label: "Commit", labelFull: "By last commit" },
-                  { mode: "commits_week", label: "Activity", labelFull: "By commits/week" },
                 ] as const
               ).map(({ mode, label, labelFull }) => (
                 <button
@@ -716,7 +848,7 @@ export default function HackathonPage({
             {status === "open" && (
               <p style={{ margin: "8px 0 0", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
                 Building something?{" "}
-                <Link href="/dev" className="ui-text-link" style={{ fontWeight: 500 }}>Submit your project →</Link>
+                <Link href="/devs" className="ui-text-link" style={{ fontWeight: 500 }}>Submit your project →</Link>
               </p>
             )}
           </div>
@@ -727,14 +859,9 @@ export default function HackathonPage({
                 key={p.pubkey.toBase58()}
                 project={p}
                 hackathon={hackathon}
-                allProjects={projects}
                 status={status}
                 isWhitelisted={isWhitelisted}
-                onStakeUpdated={() => {
-                  setVersion((v) => v + 1);
-                  reloadProjects();
-                  reloadHackathons();
-                }}
+                onStakeUpdated={refreshHackathonView}
                 metadata={metadataMap[p.pubkey.toBase58()]}
                 githubStats={
                   p.githubUrl in githubStatsMap

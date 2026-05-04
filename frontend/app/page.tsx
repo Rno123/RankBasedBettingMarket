@@ -1,204 +1,177 @@
-"use client";
-
-
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 
-import { useHackathons } from "@/hooks/useHackathons";
-import { useHackathonMeta } from "@/hooks/useHackathonMeta";
-import { useProjectCounts } from "@/hooks/useProjectCounts";
-import { formatTokens, timeUntil, hackathonStatus } from "@/lib/format";
+const audienceCards = [
+  {
+    title: "Community",
+    lightSrc: "/landing/community-light.png",
+    darkSrc: "/landing/community-dark.png",
+    alt: "Community audience illustration",
+    body: "Support your favourite builders. Stake USDC on undervalued projects.",
+    cta: { label: "Hackathons", href: "/hackathons" },
+  },
+  {
+    title: "Builders",
+    lightSrc: "/landing/builder-light.png",
+    darkSrc: "/landing/builder-dark.png",
+    alt: "Builder audience illustration",
+    body: "Find market validation for your ideas or increase your project's visibility.",
+    cta: { label: "Dev Portal", href: "/devs" },
+  },
+  {
+    title: "Organisers",
+    lightSrc: "/landing/organizer-light.png",
+    darkSrc: "/landing/organizer-dark.png",
+    alt: "Organiser audience illustration",
+    body: "Organizing a hackathon? We'd love to work with you. Get in touch here.",
+    cta: { label: "Get in touch", href: "https://forms.gle/bppkdxJQWCATqnz99" },
+  },
+];
 
-const STATUS_LABELS = {
-  open: "Open",
-  cutoff: "Cutoff passed",
-  pending: "Judging",
-  resolved: "Resolved",
-};
+function PlaceholderBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        width: "fit-content",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: "9999px",
+        border: "1px solid var(--c-orange-border)",
+        background: "var(--c-orange-light)",
+        padding: "8px 16px",
+        fontSize: "0.82rem",
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        color: "var(--c-orange-text)",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
 
 export default function HomePage() {
-  const { hackathons, loading, error } = useHackathons();
-  const hackathonMeta = useHackathonMeta(hackathons.map((h) => h.pubkey.toBase58()));
-  const projectCounts = useProjectCounts(hackathons.map((h) => h.pubkey.toBase58()));
-
-  const openHackathons = hackathons.filter(
-    (hackathon) =>
-      hackathonStatus(
-        hackathon.resultsTimestamp,
-        hackathon.cutoffTimestamp,
-        hackathon.isResolved,
-      ) === "open",
-  );
-
   return (
     <div style={{ minHeight: "100vh" }}>
       <div className="ambient-glow">
-        <div style={{ position: "absolute", top: "-160px", right: "25%", height: "700px", width: "700px", borderRadius: "9999px", background: "rgba(79,70,229,0.2)", filter: "blur(140px)" }} />
-        <div style={{ position: "absolute", bottom: 0, left: 0, height: "500px", width: "500px", borderRadius: "9999px", background: "rgba(109,28,217,0.15)", filter: "blur(120px)" }} />
+        <div style={{ position: "absolute", top: "-160px", right: "25%", height: "700px", width: "700px", borderRadius: "9999px", background: "rgba(255,91,20,0.18)", filter: "blur(140px)" }} />
+        <div style={{ position: "absolute", bottom: 0, left: 0, height: "500px", width: "500px", borderRadius: "9999px", background: "rgba(255,91,20,0.10)", filter: "blur(120px)" }} />
       </div>
 
       <Navbar />
 
-      <main style={{ margin: "0 auto", maxWidth: "1280px", padding: "48px 16px" }}>
-        {/* Hero */}
-        <div style={{ marginBottom: "64px", paddingTop: "32px", textAlign: "center" }}>
-          <div style={{ marginBottom: "16px", display: "inline-flex", alignItems: "center", gap: "8px", borderRadius: "9999px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "6px 16px", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--c-indigo-text)" }}>
-            On-Chain · Real Stakes
-          </div>
-          <h1 style={{ marginTop: "16px", fontSize: "clamp(60px, 9vw, 96px)", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", lineHeight: 1 }}>
-            <span style={{ color: "var(--c-text)" }}>HACK</span>
-            <span style={{ color: "var(--c-indigo-text)" }}>BET</span>
-          </h1>
-          <p style={{ margin: "20px auto 0", maxWidth: "32rem", fontSize: "1.125rem", fontWeight: 500, color: "var(--c-text-2)" }}>
-            Back the builders you believe in.
-          </p>
-          <p style={{ margin: "8px auto 0", maxWidth: "42rem", fontSize: "1rem", color: "var(--c-text-3)" }}>
-            Stake on builders with USDC. Signal your conviction with your wallet.
-            Put your money where your mouth is and earn when your picks place.
-          </p>
-        </div>
+      <main style={{ margin: "0 auto", maxWidth: "1200px", padding: "48px 20px 84px" }}>
+        <section className="ui-card" style={{ overflow: "hidden" }}>
+          <div style={{ borderBottom: "1px solid var(--c-divider)", padding: "clamp(36px, 7vw, 68px) clamp(24px, 7vw, 56px)" }}>
+            <div style={{ margin: "0 auto", maxWidth: "700px", textAlign: "center" }}>
+              <p style={{ margin: "0 0 16px", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--c-orange-text)" }}>
+                Conviction markets for Hackathons
+              </p>
+              <h1 style={{ margin: 0, fontSize: "clamp(3.35rem, 12vw, 6.1rem)", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.04em", lineHeight: 0.95 }}>
+                <span style={{ color: "var(--c-text)" }}>HACK</span>
+                <span style={{ color: "var(--c-indigo-text)" }}>BET</span>
+              </h1>
 
-        {/* How it works */}
-        <div style={{ marginBottom: "40px" }}>
-          <h2 style={{ marginBottom: "24px", textAlign: "center", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--c-text-4)" }}>
-            How it works
-          </h2>
-          <div className="grid-auto-3" style={{ gap: "16px" }}>
-            {[
-              {
-                n: "01",
-                title: "Builders submit projects",
-                body: "Builders submit their projects on-chain for a specific hackathon. After which, builders can pay an optional commitment deposit and self-stake. Upon organizer's confirmation of project submission, the deposit becomes refundable.",
-              },
-              {
-                n: "02",
-                title: "Community backs builders",
-                body: "Builders, and whitelisted wallets, can stake on participants with USDC before the cutoff. See what the crowd favorites are and signal your conviction with your money.",
-              },
-              {
-                n: "03",
-                title: "Judges rank, backers earn",
-                body: "When results are announced, backers of winning projects earn a share of the prize pool. The higher your pick places, the more you earn.",
-              },
-            ].map(({ n, title, body }) => (
-              <div key={n} className="ui-card" style={{ padding: "24px" }}>
-                <div style={{ marginBottom: "12px", fontFamily: "monospace", fontSize: "1.5rem", fontWeight: 900, color: "var(--c-indigo-text)" }}>
-                  {n}
+              <div style={{ marginTop: "36px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "28px" }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", padding: "10px 12px" }}>
+                  <PlaceholderBadge>For stakers</PlaceholderBadge>
+                  <Link href="/hackathons" className="ui-btn ui-btn-indigo mobile-fill" style={{ width: "100%", maxWidth: "250px", fontWeight: 800, fontSize: "1rem" }}>
+                    Browse projects
+                  </Link>
                 </div>
-                <h3 style={{ margin: "0 0 8px", fontWeight: 700, color: "var(--c-text)" }}>{title}</h3>
-                <p style={{ margin: 0, fontSize: "0.875rem", lineHeight: "1.6", color: "var(--c-text-3)" }}>{body}</p>
+
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", padding: "10px 12px" }}>
+                  <PlaceholderBadge>For builders</PlaceholderBadge>
+                  <Link href="/devs" className="ui-btn ui-btn-indigo mobile-fill" style={{ width: "100%", maxWidth: "250px", fontWeight: 800, fontSize: "1rem" }}>
+                    Submit projects
+                  </Link>
+                </div>
               </div>
-            ))}
-          </div>
-          <p style={{ marginTop: "24px", textAlign: "center", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
-            Prize tiers split the pool by rank — e.g. 1st place tier gets 50% of the total pool, split amongst all backers, 2nd place tier gets 30%, 3rd gets 10% and so on. Project onboarding, deposits, and staking close 24h before the hackathon&apos;s results date.
-          </p>
-        </div>
-
-        {/* Stats strip */}
-        <div className="ui-card" style={{ marginBottom: "40px", display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "8px", padding: "16px" }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "var(--c-text)" }}>{hackathons.length}</div>
-            <div style={{ marginTop: "4px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-3)" }}>Hackathons</div>
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "var(--c-text)" }}>{hackathons.filter((h) => !h.isResolved).length}</div>
-            <div style={{ marginTop: "4px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-3)" }}>Active</div>
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "var(--c-indigo-text)" }}>
-              {formatTokens(hackathons.reduce((sum, h) => sum + h.totalPool, 0n))}
             </div>
-            <div style={{ marginTop: "4px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-3)" }}>USDC staked</div>
           </div>
-        </div>
 
-        {/* Hackathon cards */}
-        {loading ? (
-          <div className="grid-auto-3" style={{ gap: "16px" }}>
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="ui-skeleton" style={{ height: "176px" }} />
-            ))}
-          </div>
-        ) : error ? (
-          <div style={{ borderRadius: "16px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "24px", textAlign: "center", color: "var(--c-red-text)" }}>
-            {error}
-          </div>
-        ) : hackathons.length === 0 ? (
-          <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", background: "var(--card-bg)", padding: "48px", textAlign: "center", color: "var(--c-text-4)" }}>
-            No hackathons found yet.
-          </div>
-        ) : (
-          <div className="grid-auto-3" style={{ gap: "20px" }}>
-            {hackathons.map((h) => {
-              const status = hackathonStatus(h.resultsTimestamp, h.cutoffTimestamp, h.isResolved);
-              const id = h.pubkey.toBase58();
-              return (
-                <div key={id} className="ui-card" style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "24px" }}>
-                  {/* Header */}
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "8px" }}>
-                    <div style={{ display: "flex", height: "40px", width: "40px", flexShrink: 0, alignItems: "center", justifyContent: "center", overflow: "hidden", borderRadius: "12px", background: "var(--c-indigo-light)", border: "1px solid var(--c-indigo-border)", fontSize: "1.125rem", fontWeight: 900, color: "var(--c-indigo-text)" }}>
-                      {hackathonMeta[id]?.icon_url ? (
-                        <img src={hackathonMeta[id].icon_url!} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
-                      ) : "H"}
-                    </div>
-                    <span className={`ui-badge ui-badge-${status}`}>{STATUS_LABELS[status]}</span>
-                  </div>
+          <div style={{ borderBottom: "1px solid var(--c-divider)", padding: "clamp(34px, 7vw, 56px) clamp(24px, 7vw, 56px)" }}>
+            <div style={{ margin: "0 auto", maxWidth: "860px" }}>
+              <h2 style={{ margin: "0 0 34px", textAlign: "center", fontSize: "1.35rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>
+                Who we are for
+              </h2>
 
-                  {/* Name / address */}
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>
-                      {h.name || <span style={{ fontFamily: "monospace", fontSize: "0.75rem", color: "var(--c-text-4)" }}>{id.slice(0, 8)}…{id.slice(-6)}</span>}
-                    </p>
-                    {h.name && (
-                      <p style={{ margin: 0, fontFamily: "monospace", fontSize: "0.75rem", color: "var(--c-text-5)" }}>
-                        {id.slice(0, 8)}…{id.slice(-6)}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Pool + project count */}
-                  <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "8px" }}>
-                    <div>
-                      <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Total pool</p>
-                      <p style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "var(--c-text)" }}>
-                        {formatTokens(h.totalPool)}{" "}
-                        <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-3)" }}>USDC</span>
-                      </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "34px 28px" }}>
+                {audienceCards.map((card) => (
+                  <div key={card.title} style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        height: "136px",
+                        width: "136px",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: "9999px",
+                        background: "transparent",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <img
+                        src={card.lightSrc}
+                        alt={card.alt}
+                        className="landing-theme-image landing-theme-image-light"
+                        style={{ height: "100%", width: "100%", objectFit: "contain" }}
+                        loading="lazy"
+                      />
+                      <img
+                        src={card.darkSrc}
+                        alt={card.alt}
+                        className="landing-theme-image landing-theme-image-dark"
+                        style={{ height: "100%", width: "100%", objectFit: "contain" }}
+                        loading="lazy"
+                      />
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Projects</p>
-                      <p style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "var(--c-text)" }}>
-                        {projectCounts[id] ?? 0}
-                      </p>
+                    <h3 style={{ margin: "20px 0 14px", fontSize: "1.08rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.02em", color: "var(--c-text)" }}>
+                      {card.title}
+                    </h3>
+                    <div
+                      style={{
+                        width: "100%",
+                        maxWidth: "210px",
+                        minHeight: "86px",
+                        borderRadius: "20px",
+                        background: "var(--card-bg-alt)",
+                        padding: "16px 18px",
+                        fontSize: "0.82rem",
+                        color: "var(--c-text)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {card.body}
                     </div>
+                    <Link
+                      href={card.cta.href}
+                      className="ui-btn ui-btn-indigo ui-btn-sm"
+                      style={{ marginTop: "16px", fontWeight: 700, minWidth: "140px" }}
+                      {...(card.cta.href.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                    >
+                      {card.cta.label}
+                    </Link>
                   </div>
-
-                  {/* Bottom row */}
-                  <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "12px" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-                        {status === "open" && <>Closes in <span style={{ fontWeight: 600, color: "var(--c-text-3)" }}>{timeUntil(h.cutoffTimestamp)}</span></>}
-                        {status === "cutoff" && <>Results in <span style={{ fontWeight: 600, color: "var(--c-text-3)" }}>{timeUntil(h.resultsTimestamp)}</span></>}
-                        {status === "pending" && <span>Awaiting resolution</span>}
-                        {status === "resolved" && <span>Resolved</span>}
-                      </span>
-                      <Link
-                        href={`/hackathon/${id}`}
-                        className="ui-btn ui-btn-indigo ui-btn-sm"
-                        style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.05em" }}
-                      >
-                        View Hackathon
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            </div>
           </div>
-        )}
+
+          <div style={{ padding: "clamp(30px, 6vw, 48px) clamp(24px, 7vw, 56px)", textAlign: "center" }}>
+            <h2 style={{ margin: "0 0 22px", fontSize: "1.35rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>
+              Partners and Sponsors
+            </h2>
+            <div style={{ margin: "0 auto", maxWidth: "520px", borderRadius: "22px", border: "1px dashed var(--c-orange-border)", background: "var(--card-bg-alt)", padding: "28px 22px", fontSize: "0.94rem", fontWeight: 600, color: "var(--c-text-4)" }}>
+              Coming Soon
+            </div>
+          </div>
+        </section>
       </main>
-
     </div>
   );
 }

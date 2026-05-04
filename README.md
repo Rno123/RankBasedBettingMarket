@@ -6,6 +6,7 @@ It is not a prediction market. It is a conviction signal layer built on top of h
 
 Live on devnet: **[hackbet.vercel.app](https://hackbet.vercel.app)**  
 Program ID: `5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd`
+Contract reference: [CONTRACT_REFERENCE.md](./CONTRACT_REFERENCE.md)
 
 ---
 
@@ -81,12 +82,14 @@ Unstaking before cutoff incurs a fixed **3% penalty**: 1.5% goes to the fee reci
 |---|---|
 | `pay_deposit` | Builder pays the hackathon's optional commitment deposit into escrow when that hackathon requires one. Required before backers can stake. |
 | `self_stake(amount)` | Builder stakes their own funds. Min: `deposit_amount`. Max cumulative: $2,000. |
-| `submit_project` | Builder declares on-chain submission before cutoff. Organizer approval of that submission is still required before `claim_deposit_refund` unless refund override is enabled. |
+| `submit_project` | Builder declares on-chain submission before results. Organizer approval of that submission is still required before `claim_deposit_refund` unless refund override is enabled. |
 | `stake(amount)` | Whitelisted wallet stakes USDC. Cap: $2,000. Requires `WhitelistedWallet` PDA, deposit paid, and a project that is already live on-chain. |
 | `unstake` | Withdraw all stake before cutoff. Flat 3% penalty. Shares zeroed. |
 | `claim` | After `finalize_resolve`, claim payout. Marks `is_claimed = true`. Irreversible. |
 | `refund` | Admin-enabled exceptional refund path. Returns original stake, no penalty. |
 | `claim_deposit_refund` | Builder reclaims the optional commitment deposit after organizer approval of the submission or refund override. |
+
+Multi-pick products such as a "Top 3 slip" do not need a separate on-chain payout path. The client can batch multiple existing `stake(amount)` instructions into one Solana transaction, one leg per selected project, and later batch the matching `claim()` instructions the same way. Equal-weight and custom-weight slips are both just different per-leg stake amounts using the existing payout formula.
 
 #### Hackathon Admin / Protocol-Admin Callables
 
@@ -267,6 +270,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (safe to expose client-side) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server-side API routes only) |
 | `GITHUB_TOKEN` | Optional — increases GitHub API rate limit for `/api/github-stats` |
+
+For X / Twitter sign-in, enable the X (OAuth 2.0) provider in Supabase Authentication -> Providers and use the callback URL shown there. The frontend prefers the current `x` provider and falls back to legacy `twitter` for older Supabase setups.
 
 ---
 

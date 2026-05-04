@@ -21,6 +21,12 @@ function getTierFromRank(rank: number, hackathon: HackathonInfo): number | null 
   return hackathon.tierCount - 1;
 }
 
+function getStakeLifecycleStatus(entry: MyStakeEntry, hackathon: HackathonInfo | null) {
+  if (entry.stake.isClaimed) return "claimed" as const;
+  if (!hackathon) return "unknown" as const;
+  return hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
+}
+
 function StakeCard({ entry, hackathon, onRefresh }: {
   entry: MyStakeEntry;
   hackathon: HackathonInfo | null;
@@ -178,13 +184,38 @@ export default function ProfilePage() {
   const { entries, loading: stakesLoading } = useMyStakes(publicKey ?? null, refreshKey);
 
   const hackathonMap = new Map(hackathons.map(h => [h.pubkey.toBase58(), h]));
+  const entriesWithHackathons = entries.map((entry) => ({
+    entry,
+    hackathon: entry.project
+      ? hackathonMap.get(entry.project.hackathon.toBase58()) ?? null
+      : null,
+  }));
 
-  const totalStaked = entries.reduce(
-    (sum, e) => sum + (e.stake.isClaimed ? 0n : e.stake.amount),
+  const totalStaked = entriesWithHackathons.reduce(
+    (sum, { entry }) => sum + (entry.stake.isClaimed ? 0n : entry.stake.amount),
     0n,
   );
-  const activeCount = entries.filter(e => !e.stake.isClaimed && e.stake.amount > 0n).length;
-  const claimedCount = entries.filter(e => e.stake.isClaimed).length;
+  const openCount = entriesWithHackathons.filter(({ entry, hackathon }) =>
+    entry.stake.amount > 0n && getStakeLifecycleStatus(entry, hackathon) === "open",
+  ).length;
+  const claimedCount = entriesWithHackathons.filter(({ entry }) => entry.stake.isClaimed).length;
+
+  const statusSortOrder: Record<string, number> = {
+    open: 0,
+    cutoff: 1,
+    pending: 2,
+    resolved: 3,
+    unknown: 4,
+    claimed: 5,
+  };
+
+  const sortedEntries = [...entriesWithHackathons].sort((a, b) => {
+    const statusDiff =
+      statusSortOrder[getStakeLifecycleStatus(a.entry, a.hackathon)] -
+      statusSortOrder[getStakeLifecycleStatus(b.entry, b.hackathon)];
+    if (statusDiff !== 0) return statusDiff;
+    return b.entry.stake.stakeTimestamp - a.entry.stake.stakeTimestamp;
+  });
 
   const loading = hackathonsLoading || stakesLoading;
 
@@ -197,11 +228,6 @@ export default function ProfilePage() {
           <h1 style={{ margin: 0, fontSize: "clamp(28px,5vw,40px)", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>
             My Portfolio
           </h1>
-          {publicKey && (
-            <p style={{ margin: "4px 0 0", fontFamily: "monospace", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-              {publicKey.toBase58()}
-            </p>
-          )}
         </div>
 
         {!publicKey ? (
@@ -210,7 +236,7 @@ export default function ProfilePage() {
           </div>
         ) : loading ? (
           <>
-            <div style={{ marginBottom: "24px", display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "12px" }}>
+            <div style={{ marginBottom: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px" }}>
               {[0,1,2].map(i => <div key={i} className="ui-skeleton" style={{ height: "72px" }} />)}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -220,16 +246,16 @@ export default function ProfilePage() {
         ) : (
           <>
             {/* Summary strip */}
-            <div className="ui-card" style={{ marginBottom: "28px", display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "8px", padding: "16px" }}>
+            <div className="ui-card" style={{ marginBottom: "28px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "8px", padding: "16px" }}>
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: "1.375rem", fontWeight: 900, color: "var(--c-indigo-text)" }}>
                   {formatTokens(totalStaked)}
                 </div>
-                <div style={{ marginTop: "4px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-3)" }}>USDC active</div>
+                <div style={{ marginTop: "4px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-3)" }}>USDC staked</div>
               </div>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "1.375rem", fontWeight: 900, color: "var(--c-text)" }}>{activeCount}</div>
-                <div style={{ marginTop: "4px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-3)" }}>Active positions</div>
+                <div style={{ fontSize: "1.375rem", fontWeight: 900, color: "var(--c-text)" }}>{openCount}</div>
+                <div style={{ marginTop: "4px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-3)" }}>Open positions</div>
               </div>
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: "1.375rem", fontWeight: 900, color: "var(--c-text)" }}>{claimedCount}</div>
@@ -240,14 +266,11 @@ export default function ProfilePage() {
             {entries.length === 0 ? (
               <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "48px", textAlign: "center", color: "var(--c-text-4)" }}>
                 No stakes yet.{" "}
-                <Link href="/" className="ui-text-link">Browse hackathons →</Link>
+                <Link href="/hackathons" className="ui-text-link">Browse hackathons →</Link>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                {entries.map((entry) => {
-                  const hackathon = entry.project
-                    ? hackathonMap.get(entry.project.hackathon.toBase58()) ?? null
-                    : null;
+                {sortedEntries.map(({ entry, hackathon }) => {
                   return (
                     <StakeCard
                       key={entry.stake.pubkey.toBase58()}

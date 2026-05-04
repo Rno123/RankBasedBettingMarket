@@ -5,24 +5,22 @@ import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import { useWallet, useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import type { Session } from "@supabase/supabase-js";
+import type { Provider, Session } from "@supabase/supabase-js";
 import type { AnchorWallet } from "@solana/wallet-adapter-react";
 import dynamic from "next/dynamic";
 import Navbar from "@/components/Navbar";
 import { getSupabase } from "@/lib/supabase";
 import { useHackathons } from "@/hooks/useHackathons";
+import { useTokenBalance } from "@/hooks/useTokenBalance";
 import type { HackathonInfo } from "@/hooks/useHackathons";
-import { hackathonStatus, formatDate, timeUntil, formatTokens } from "@/lib/format";
+import { hackathonStatus, formatDate, timeUntil, formatTokens, parseTokens } from "@/lib/format";
 import { getProgram, getReadonlyProgram } from "@/lib/program";
 import { buildProjectRegistrationMessage } from "@/lib/project-signing";
 import { projectPdaFromUrl, escrowPda, stakePda, hashUrl } from "@/lib/pda";
 import { signatureToBase64 } from "@/lib/signature";
 import { USDC_MINT } from "@/lib/constants";
 
-const WalletMultiButton = dynamic(
-  () => import("@solana/wallet-adapter-react-ui").then((m) => m.WalletMultiButton),
-  { ssr: false },
-);
+import ConnectWalletButton from "@/components/ConnectWalletButton";
 const TX_CONFIRM_TIMEOUT_MS = 30_000;
 type SubmissionModalState = "depositPrompt" | "depositUnpaid" | "eligible";
 
@@ -163,17 +161,23 @@ function SubmissionNoticeModal({
           <p style={{ margin: 0, fontSize: "1rem", fontWeight: 700, color: accentColor }}>{title}</p>
           <p style={{ margin: "6px 0 0", fontSize: "0.875rem", color: accentColor }}>{body}</p>
         </div>
-        {error && <p style={{ margin: "0 0 12px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{error}</p>}
+        {error && (
+          <div style={{ marginBottom: "12px", borderRadius: "8px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "12px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>
+            {error}
+          </div>
+        )}
         {isPrompt ? (
-          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-            <button onClick={onSkipDeposit} disabled={busy} className="ui-btn ui-btn-outline ui-btn-sm">Later</button>
-            <button onClick={onPayDeposit} disabled={busy} className="ui-btn ui-btn-indigo ui-btn-sm">
-              {busy ? `Paying ${formatTokens(depositAmount)} USDC...` : `Pay ${formatTokens(depositAmount)} USDC`}
+          <div className="mobile-actions-row" style={{ justifyContent: "flex-end" }}>
+            <button onClick={onSkipDeposit} disabled={busy} className="ui-btn ui-btn-outline ui-btn-sm mobile-fill">
+              {error ? "Close" : "Later"}
+            </button>
+            <button onClick={onPayDeposit} disabled={busy} className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill">
+              {busy ? `Paying ${formatTokens(depositAmount)} USDC...` : error ? "Try again" : `Pay ${formatTokens(depositAmount)} USDC`}
             </button>
           </div>
         ) : (
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button onClick={onClose} className={`ui-btn ${isEligible ? "ui-btn-emerald" : "ui-btn-amber"} ui-btn-sm`}>
+          <div className="mobile-actions-row" style={{ justifyContent: "flex-end" }}>
+            <button onClick={onClose} className={`ui-btn ${isEligible ? "ui-btn-emerald" : "ui-btn-amber"} ui-btn-sm mobile-fill`}>
               Got it
             </button>
           </div>
@@ -188,7 +192,7 @@ function SubmissionNoticeModal({
 function StepIndicator({ current }: { current: 1 | 2 | 3 }) {
   const steps = ["Sign in", "Connect wallet", "Submit project"];
   return (
-    <div style={{ marginBottom: "32px", display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 0 }}>
+    <div style={{ marginBottom: "32px", display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 0, overflowX: "auto", paddingBottom: "4px" }}>
       {steps.map((label, i) => {
         const n = (i + 1) as 1 | 2 | 3;
         const done = current > n;
@@ -271,9 +275,32 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
     setSent(true);
   }
 
-  async function signInOAuth(provider: "google" | "twitter") {
+  async function signInOAuth(provider: "google" | "x") {
     if (!supabase) { setErr("Auth not configured"); return; }
-    await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: authRedirectUrl() } });
+    setBusy(true);
+    setErr(null);
+
+    const providers: Provider[] = provider === "x" ? ["x", "twitter"] : [provider];
+    let lastError: string | null = null;
+
+    for (const candidate of providers) {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: candidate,
+        options: { redirectTo: authRedirectUrl() },
+      });
+
+      if (!error) return;
+
+      lastError = error.message;
+      if (!/provider is not enabled/i.test(error.message)) break;
+    }
+
+    setBusy(false);
+    if (provider === "x" && lastError && /provider is not enabled/i.test(lastError)) {
+      setErr("X / Twitter login is not enabled in Supabase yet. Enable the X (OAuth 2.0) provider or legacy Twitter provider in Supabase Authentication > Providers.");
+      return;
+    }
+    setErr(lastError ?? "Could not start OAuth sign-in.");
   }
 
   if (!supabase) {
@@ -303,16 +330,16 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
   };
 
   return (
-    <div className="ui-card" style={{ margin: "0 auto", maxWidth: "24rem", padding: "32px" }}>
+    <div className="ui-card" style={{ margin: "0 auto", maxWidth: "24rem", padding: "clamp(20px, 5vw, 32px)" }}>
       <h2 style={{ margin: "0 0 8px", fontSize: "1.25rem", fontWeight: 700, color: "var(--c-text)" }}>Sign in to submit</h2>
       <p style={{ margin: "0 0 24px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>Sign in to register your project and put skin in the game.</p>
 
       <div style={{ marginBottom: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-        <button onClick={() => signInOAuth("google")} style={oauthBtnStyle}>
+        <button onClick={() => signInOAuth("google")} style={oauthBtnStyle} disabled={busy}>
           <svg style={{ height: "16px", width: "16px" }} viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
           Continue with Google
         </button>
-        <button onClick={() => signInOAuth("twitter")} style={oauthBtnStyle}>
+        <button onClick={() => signInOAuth("x")} style={oauthBtnStyle} disabled={busy}>
           <svg style={{ height: "16px", width: "16px" }} viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.264 5.633zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
           Continue with X / Twitter
         </button>
@@ -487,6 +514,7 @@ function SubmitForm({
           hackathonPubkey: hackathonPubkey.toBase58(),
           projectName: projectName.trim(),
           projectPubkey: projectPk.toBase58(),
+          requiresApproval,
           signature,
           telegram: normalizeTelegram(telegram),
           twitterHandle: twitter.replace(/^@/, "").trim() || undefined,
@@ -556,11 +584,11 @@ function SubmitForm({
         </div>
       </div>
       {err && <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
-      <div style={{ display: "flex", gap: "8px" }}>
-        <button onClick={handleSubmit} disabled={busy || !publicKey || !signMessage} className="ui-btn ui-btn-indigo ui-btn-sm">
+      <div className="mobile-actions-row">
+        <button onClick={handleSubmit} disabled={busy || !publicKey || !signMessage} className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill">
           {busy ? "Submitting…" : "Submit project"}
         </button>
-        <button onClick={onDone} className="ui-btn ui-btn-outline ui-btn-sm">Cancel</button>
+        <button onClick={onDone} className="ui-btn ui-btn-outline ui-btn-sm mobile-fill">Cancel</button>
       </div>
       </div>
       <SubmissionNoticeModal
@@ -602,7 +630,7 @@ function DevHackathonCard({
 
   return (
     <div className="ui-card" style={{ padding: "20px" }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+      <div className="mobile-stack-between">
         <div>
           <p style={{ margin: 0, fontWeight: 600, color: "var(--c-text)" }}>{hackathon.name || hackathon.pubkey.toBase58().slice(0, 12) + "…"}</p>
           <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
@@ -613,7 +641,7 @@ function DevHackathonCard({
           <button
             onClick={() => setSubmitting(true)}
             disabled={!publicKey}
-            className="ui-btn ui-btn-indigo ui-btn-sm"
+            className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill"
             style={{ flexShrink: 0 }}
             title={!publicKey ? "Connect wallet first" : undefined}
           >
@@ -677,6 +705,7 @@ function BuilderProjectCard({
   const [ok, setOk] = useState<string | null>(null);
   const [selfStakeAmt, setSelfStakeAmt] = useState("");
   const [tick, setTick] = useState(0);
+  const walletBalance = useTokenBalance(publicKey, usdcMint, tick);
 
   useEffect(() => {
     let cancelled = false;
@@ -744,8 +773,8 @@ function BuilderProjectCard({
   }
 
   async function selfStake() {
-    const raw = Math.round(parseFloat(selfStakeAmt) * 1_000_000);
-    if (isNaN(raw) || raw <= 0) { setErr("Enter a valid amount"); return; }
+    const raw = parseTokens(selfStakeAmt);
+    if (raw <= 0n) { setErr("Enter a valid amount"); return; }
     if (!hackathon) { setErr("Hackathon not found — try refreshing, or re-submit your project to the current hackathon."); return; }
     setBusy("selfstake"); setErr(null); setOk(null);
     try {
@@ -787,6 +816,10 @@ function BuilderProjectCard({
   }
 
   async function submitProject() {
+    if (hackathon && Math.floor(Date.now() / 1000) >= hackathon.resultsTimestamp) {
+      setErr("Submission window closed — builder declarations must happen before results.");
+      return;
+    }
     setBusy("submit"); setErr(null); setOk(null);
     try {
       const program = getProgram(anchorWallet);
@@ -865,7 +898,7 @@ function BuilderProjectCard({
   const hasDeposit = depositAmt > 0n;
   const stakingActivated = !hasDeposit || project?.depositAmountPaid ? true : false;
   const canSelfStake = hasDeposit && !!project?.depositAmountPaid;
-  const MAX_SELF_STAKE = 2_000_000_000n;
+  const MAX_SELF_STAKE = 250_000_000n;
   const selfStakeDisabledLabel = hasDeposit
     ? "Disabled until deposit is paid"
     : "Disabled for no-deposit FYI entries";
@@ -877,7 +910,7 @@ function BuilderProjectCard({
     !project.depositRefunded &&
     (project.isRefundEnabled || project.submitted);
 
-  const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", padding: "10px 0", borderBottom: "1px solid var(--c-divider-2)" };
+  const rowStyle: React.CSSProperties = { gap: "12px", padding: "10px 0", borderBottom: "1px solid var(--c-divider-2)" };
   const labelStyle: React.CSSProperties = { fontSize: "0.875rem", color: "var(--c-text-3)" };
   const checkStyle: React.CSSProperties = { fontSize: "0.875rem", fontWeight: 600, color: "var(--c-emerald-text)" };
 
@@ -895,13 +928,13 @@ function BuilderProjectCard({
     <div className={`ui-step-connector ${done ? "ui-step-connector-done" : "ui-step-connector-idle"}`} />
   );
 
-  const selfStakeBarPct = Math.min(100, Number(project?.builderStaked ?? 0n) / 2_000_000_000 * 100);
+  const selfStakeBarPct = Math.min(100, Number(project?.builderStaked ?? 0n) / 250_000_000 * 100);
 
   return (
     <div className="ui-card" style={{ padding: "20px" }}>
       <div style={{ marginBottom: "4px" }}>
         <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{projectLabel}</p>
-        <a href={sub.github_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem", color: "var(--c-indigo-text)", textDecoration: "none" }}>{repoShort}</a>
+        <a href={sub.github_url} target="_blank" rel="noopener noreferrer" className="mobile-link-wrap" style={{ fontSize: "0.875rem", color: "var(--c-indigo-text)", textDecoration: "none" }}>{repoShort}</a>
         <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
           {hackathon?.name || sub.hackathon_pubkey.slice(0, 12) + "…"}
         </p>
@@ -918,7 +951,7 @@ function BuilderProjectCard({
 
       {!hackathon && (
         <div style={{ marginBottom: "8px", borderRadius: "8px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "10px 14px", fontSize: "0.8125rem", color: "var(--c-amber-text)" }}>
-          Hackathon not found. Re-submit from Open Hackathons above.
+          Hackathon not found. Re-submit from the submit-projects list above.
         </div>
       )}
       {sub.status === "rejected" && !project && (
@@ -933,24 +966,24 @@ function BuilderProjectCard({
         <div>
           {/* Deposit row */}
           {hasDeposit && (
-            <div style={rowStyle}>
+            <div className="mobile-stack-between" style={rowStyle}>
               <span style={labelStyle}>Deposit ({formatTokens(depositAmt)} USDC)</span>
               {project.depositForfeited ? (
                 <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-red-text)" }}>Forfeited</span>
               ) : project.depositRefunded ? (
                 <span style={checkStyle}>✓ Refunded</span>
               ) : project.depositAmountPaid > 0n ? (
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div className="mobile-actions-row">
                   <span style={checkStyle}>✓ Paid</span>
                   {canClaimDepositRefund ? (
-                    <button onClick={claimDepositRefund} disabled={busy === "refund"} className="ui-btn ui-btn-emerald ui-btn-sm">
+                    <button onClick={claimDepositRefund} disabled={busy === "refund"} className="ui-btn ui-btn-emerald ui-btn-sm mobile-fill">
                       {busy === "refund" ? "…" : "Claim refund"}
                     </button>
                   ) : (
                     <span className="ui-tooltip-wrap">
                       <button
                         disabled
-                        className="ui-btn ui-btn-outline ui-btn-sm"
+                        className="ui-btn ui-btn-outline ui-btn-sm mobile-fill"
                         style={{ cursor: "help" }}
                       >
                         Claim refund
@@ -966,7 +999,7 @@ function BuilderProjectCard({
                   )}
                 </div>
               ) : (
-                <button onClick={payDeposit} disabled={busy === "deposit"} className="ui-btn ui-btn-indigo ui-btn-sm">
+                <button onClick={payDeposit} disabled={busy === "deposit"} className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill">
                   {busy === "deposit" ? "Paying…" : `Pay ${formatTokens(depositAmt)} USDC`}
                 </button>
               )}
@@ -974,17 +1007,17 @@ function BuilderProjectCard({
           )}
 
           {/* Self-stake row */}
-          <div style={{ ...rowStyle, alignItems: "flex-start", paddingTop: "12px" }}>
+          <div className="mobile-stack-between" style={{ ...rowStyle, paddingTop: "12px" }}>
             <span style={{ ...labelStyle, paddingTop: "2px" }}>Self-stake</span>
             {!canSelfStake ? (
-              <span className="ui-tooltip-wrap">
-                <button disabled className="ui-btn ui-btn-indigo ui-btn-sm" style={{ cursor: "help" }}>
+              <span className="ui-tooltip-wrap mobile-fill">
+                <button disabled className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill" style={{ cursor: "help" }}>
                   Stake
                 </button>
                 <span className="ui-tooltip">{selfStakeDisabledLabel}</span>
               </span>
             ) : selfStakeCapReached ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
+              <div className="mobile-fill" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                 <span style={checkStyle}>✓ {formatTokens(project.builderStaked)} USDC</span>
                 <div style={{ width: "120px" }}>
                   <div className="ui-stake-bar-track">
@@ -994,13 +1027,13 @@ function BuilderProjectCard({
                 </div>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
+              <div className="mobile-fill" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                 {project.builderStaked > 0n && (
                   <div style={{ width: "100%", minWidth: "160px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
                       <span style={{ fontSize: "0.625rem", color: "var(--c-text-4)" }}>Self-staked</span>
                       <span style={{ fontSize: "0.625rem", color: "var(--c-text-3)", fontWeight: 600 }}>
-                        {formatTokens(project.builderStaked)} / 2,000 USDC
+                        {formatTokens(project.builderStaked)} / 250 USDC
                       </span>
                     </div>
                     <div className="ui-stake-bar-track">
@@ -1008,7 +1041,12 @@ function BuilderProjectCard({
                     </div>
                   </div>
                 )}
-                <div style={{ display: "flex", gap: "8px" }}>
+                {walletBalance !== null && (
+                  <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                    Wallet available: <span style={{ fontWeight: 600, color: "var(--c-text-3)" }}>{formatTokens(walletBalance)} USDC</span>
+                  </p>
+                )}
+                <div className="mobile-actions-row">
                   <input
                     type="number"
                     min="0"
@@ -1017,9 +1055,9 @@ function BuilderProjectCard({
                     value={selfStakeAmt}
                     onChange={(e) => setSelfStakeAmt(e.target.value)}
                     className="ui-input-sm"
-                    style={{ width: "90px" }}
+                    style={{ width: "100%" }}
                   />
-                  <button onClick={selfStake} disabled={busy === "selfstake" || !selfStakeAmt} className="ui-btn ui-btn-indigo ui-btn-sm">
+                  <button onClick={selfStake} disabled={busy === "selfstake" || !selfStakeAmt} className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill">
                     {busy === "selfstake" ? "…" : "Stake"}
                   </button>
                 </div>
@@ -1028,19 +1066,19 @@ function BuilderProjectCard({
           </div>
 
           {/* Builder declaration row */}
-          <div style={rowStyle}>
+          <div className="mobile-stack-between" style={rowStyle}>
             <span style={labelStyle}>Builder declaration</span>
             {project.builderDeclared ? (
               <span style={checkStyle}>✓ Declared</span>
             ) : (
-              <button onClick={submitProject} disabled={busy === "submit"} className="ui-btn ui-btn-amber ui-btn-sm">
+              <button onClick={submitProject} disabled={busy === "submit"} className="ui-btn ui-btn-amber ui-btn-sm mobile-fill">
                 {busy === "submit" ? "…" : "Mark submitted"}
               </button>
             )}
           </div>
 
           {/* Organizer approval row */}
-          <div style={{ ...rowStyle, borderBottom: "none" }}>
+          <div className="mobile-stack-between" style={{ ...rowStyle, borderBottom: "none" }}>
             <span style={labelStyle}>Organizer approval</span>
             {project.submitted ? (
               <span style={checkStyle}>✓ Approved</span>
@@ -1052,7 +1090,7 @@ function BuilderProjectCard({
                 <span className="ui-tooltip">
                   {project.builderDeclared
                     ? "Organizer will review and approve your submission"
-                    : "Mark your project as submitted first"}
+                    : "Mark your project as submitted before results are posted"}
                 </span>
               </span>
             )}
@@ -1114,7 +1152,7 @@ function BuilderProjectsSection({
 
   return (
     <div>
-      <h2 style={{ margin: "0 0 12px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>My Projects</h2>
+      <h2 style={{ margin: "0 0 12px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Manage submissions</h2>
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         {submissions.map((sub) => {
           const hackathon = hackathons.find((h) => h.pubkey.toBase58() === sub.hackathon_pubkey);
@@ -1144,6 +1182,7 @@ export default function DevPortalPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [builderRefreshKey, setBuilderRefreshKey] = useState(0);
+  const [devTab, setDevTab] = useState<"submit" | "manage">("submit");
   const { hackathons, loading: hLoading } = useHackathons();
 
   useEffect(() => {
@@ -1166,7 +1205,7 @@ export default function DevPortalPage() {
   }
 
   const authEmail = session?.user?.email ?? session?.user?.user_metadata?.user_name ?? "";
-  const openHackathons = hackathons.filter((h) => {
+  const ongoingHackathons = hackathons.filter((h) => {
     const s = hackathonStatus(h.resultsTimestamp, h.cutoffTimestamp, h.isResolved);
     return s === "open";
   });
@@ -1195,7 +1234,7 @@ export default function DevPortalPage() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             {/* Logged-in banner */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderRadius: "16px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "12px 20px" }}>
+            <div className="mobile-stack-between" style={{ borderRadius: "16px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "12px 20px" }}>
               <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>
                 Signed in as <strong>{authEmail || "wallet user"}</strong>
               </p>
@@ -1206,23 +1245,35 @@ export default function DevPortalPage() {
             {!publicKey && (
               <div className="ui-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", padding: "32px", textAlign: "center" }}>
                 <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-text-3)" }}>Connect your wallet to register a project on-chain.</p>
-                <WalletMultiButton style={{ borderRadius: "12px", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", fontSize: "13px" }} />
+                <ConnectWalletButton />
+              </div>
+            )}
+
+            {publicKey && (
+              <div style={{ display: "flex", gap: "4px", borderRadius: "12px", border: "1px solid var(--c-divider)", padding: "4px" }}>
+                <button onClick={() => setDevTab("submit")} className={`ui-sort-tab ${devTab === "submit" ? "ui-sort-tab-active" : "ui-sort-tab-inactive"}`} style={{ flex: 1 }}>
+                  Submit projects
+                </button>
+                <button onClick={() => setDevTab("manage")} className={`ui-sort-tab ${devTab === "manage" ? "ui-sort-tab-active" : "ui-sort-tab-inactive"}`} style={{ flex: 1 }}>
+                  Manage submissions
+                </button>
               </div>
             )}
 
             {/* Hackathon list */}
-            {publicKey && (
+            {publicKey && devTab === "submit" && (
               <div>
-                <h2 style={{ margin: "0 0 12px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Open Hackathons</h2>
+                <h2 style={{ margin: "0 0 4px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Submit projects</h2>
+                <p style={{ margin: "0 0 12px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>Ongoing hackathons that are currently accepting builder submissions.</p>
                 {hLoading ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>{[...Array(2)].map((_, i) => <div key={i} className="ui-skeleton" style={{ height: "96px" }} />)}</div>
-                ) : openHackathons.length === 0 ? (
+                ) : ongoingHackathons.length === 0 ? (
                   <div className="ui-card" style={{ padding: "32px", textAlign: "center", color: "var(--c-text-4)" }}>
                     No hackathons currently accepting project submissions.
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    {openHackathons.map((h) => (
+                    {ongoingHackathons.map((h) => (
                       <DevHackathonCard
                         key={h.pubkey.toBase58()}
                         hackathon={h}
@@ -1236,7 +1287,7 @@ export default function DevPortalPage() {
             )}
 
             {/* My Projects — deposit, self-stake, submit, refund */}
-            {publicKey && anchorWallet && (
+            {publicKey && anchorWallet && devTab === "manage" && (
               <BuilderProjectsSection
                 publicKey={publicKey}
                 anchorWallet={anchorWallet}

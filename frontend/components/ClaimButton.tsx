@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
-import { useWallet, useAnchorWallet } from "@solana/wallet-adapter-react";
+import { SystemProgram, Transaction } from "@solana/web3.js";
+import { useWallet, useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 import { getProgram } from "@/lib/program";
 import { escrowPda, stakePda } from "@/lib/pda";
@@ -15,18 +16,17 @@ import type { ProjectInfo } from "@/hooks/useProjects";
 interface Props {
   hackathon: HackathonInfo;
   project: ProjectInfo;
-  allProjects: ProjectInfo[];
   onSuccess: () => void;
 }
 
 export default function ClaimButton({
   hackathon,
   project,
-  allProjects,
   onSuccess,
 }: Props) {
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
   const anchorWallet = useAnchorWallet();
+  const { connection } = useConnection();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -36,18 +36,12 @@ export default function ClaimButton({
     setErr(null);
     try {
       const program = getProgram(anchorWallet);
-      const userAta = getAssociatedTokenAddressSync(
-        hackathon.usdcMint,
-        publicKey,
-      );
-      const feeRecipientAta = getAssociatedTokenAddressSync(
-        hackathon.usdcMint,
-        hackathon.feeRecipient,
-      );
+      const userAta = getAssociatedTokenAddressSync(hackathon.usdcMint, publicKey);
+      const feeRecipientAta = getAssociatedTokenAddressSync(hackathon.usdcMint, hackathon.feeRecipient);
       const escrow = escrowPda(hackathon.pubkey);
       const userStake = stakePda(publicKey, project.pubkey);
 
-      await (program.methods as any)
+      const claimIx = await (program.methods as any)
         .claim()
         .accounts({
           user: publicKey,
@@ -60,14 +54,20 @@ export default function ClaimButton({
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
-        .remainingAccounts(
-          allProjects.map((p) => ({
-            pubkey: p.pubkey,
-            isWritable: false,
-            isSigner: false,
-          })),
-        )
-        .rpc();
+        .instruction();
+
+      const tx = new Transaction().add(
+        createAssociatedTokenAccountIdempotentInstruction(
+          publicKey,
+          feeRecipientAta,
+          hackathon.feeRecipient,
+          hackathon.usdcMint,
+        ),
+        claimIx,
+      );
+
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, "confirmed");
 
       onSuccess();
     } catch (e: any) {

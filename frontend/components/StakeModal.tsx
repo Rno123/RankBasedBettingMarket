@@ -1,19 +1,21 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
-import { useWallet, useAnchorWallet } from "@solana/wallet-adapter-react";
+import { useWallet, useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
   getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
-import { SystemProgram } from "@solana/web3.js";
 import { getProgram } from "@/lib/program";
 import { escrowPda, stakePda, whitelistPda } from "@/lib/pda";
 import { parseTokens, formatTokens } from "@/lib/format";
 import { computeShares, estimatePayout, formatRoi } from "@/lib/payout";
+import { MAX_STAKE_PER_WALLET } from "@/lib/constants";
 import { useWhitelistStatus } from "@/hooks/useWhitelistStatus";
+import { useTokenBalance } from "@/hooks/useTokenBalance";
 import type { HackathonInfo } from "@/hooks/useHackathons";
 import type { ProjectInfo } from "@/hooks/useProjects";
 import type { UserStakeInfo } from "@/hooks/useUserStake";
@@ -33,11 +35,13 @@ export default function StakeModal({
   onClose,
   onSuccess,
 }: Props) {
-  const { publicKey } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
   const anchorWallet = useAnchorWallet();
+  const { connection } = useConnection();
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [txError, setTxError] = useState<string | null>(null);
+  const walletBalance = useTokenBalance(publicKey, hackathon.usdcMint);
 
   const { isWhitelisted, loading: checkingWhitelist } = useWhitelistStatus(
     hackathon.pubkey,
@@ -46,7 +50,7 @@ export default function StakeModal({
   );
 
   const nowSecs = Math.floor(Date.now() / 1000);
-  const canUnstake = !!stake && stake.amount > 0n && nowSecs < hackathon.cutoffTimestamp;
+  const canUnstake = !!stake && stake.amount > 0n && !stake.isClaimed && nowSecs < hackathon.cutoffTimestamp;
 
   // Live tier-1 payout estimate for the amount being typed
   const tier1Estimate = useMemo(() => {
@@ -81,6 +85,16 @@ export default function StakeModal({
     if (!publicKey || !anchorWallet) return;
     const raw = parseTokens(amount);
     if (raw <= 0n) { setTxError("Enter a valid amount"); return; }
+    // Frontend-side cap enforcement — saves the user a failed transaction.
+    const existingAmount = stake?.amount ?? 0n;
+    if (existingAmount + raw > BigInt(MAX_STAKE_PER_WALLET)) {
+      setTxError(`Stake would exceed the ${Number(MAX_STAKE_PER_WALLET) / 1_000_000} USDC per-wallet cap`);
+      return;
+    }
+    if (walletBalance !== null && raw > walletBalance) {
+      setTxError("Insufficient wallet balance");
+      return;
+    }
 
     setBusy(true);
     setTxError(null);
@@ -134,7 +148,7 @@ export default function StakeModal({
       const escrow = escrowPda(hackathon.pubkey);
       const userStake = stakePda(publicKey, project.pubkey);
 
-      await (program.methods as any)
+      const unstakeIx = await (program.methods as any)
         .unstake()
         .accounts({
           user: publicKey,
@@ -147,7 +161,20 @@ export default function StakeModal({
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
-        .rpc();
+        .instruction();
+
+      const tx = new Transaction().add(
+        createAssociatedTokenAccountIdempotentInstruction(
+          publicKey,
+          feeRecipientAta,
+          hackathon.feeRecipient,
+          hackathon.usdcMint,
+        ),
+        unstakeIx,
+      );
+
+      const signature = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(signature, "confirmed");
 
       onSuccess();
       onClose();
@@ -159,7 +186,7 @@ export default function StakeModal({
   }
 
   const repoLabel = project.githubUrl.replace("https://github.com/", "");
-  const hasStake = stake && stake.amount > 0n;
+  const hasStake = stake && stake.amount > 0n && !stake.isClaimed;
 
   return (
     <div
@@ -248,14 +275,14 @@ export default function StakeModal({
             )}
             {/* Wallet cap progress bar */}
             {stake && stake.amount > 0n && (() => {
-              const pct = Math.min(100, Number(stake.amount) / 2_000_000_000 * 100);
-              const remaining = 2_000_000_000n - stake.amount;
+              const pct = Math.min(100, Number(stake.amount) / MAX_STAKE_PER_WALLET * 100);
+              const remaining = BigInt(MAX_STAKE_PER_WALLET) - stake.amount;
               return (
                 <div style={{ marginBottom: "16px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
                     <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>Wallet limit</span>
                     <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--c-text-3)" }}>
-                      {formatTokens(stake.amount)} / 2,000 USDC · <span style={{ color: "var(--c-indigo-text)" }}>{formatTokens(remaining)} left</span>
+                      {formatTokens(stake.amount)} / {Number(MAX_STAKE_PER_WALLET) / 1_000_000} USDC · <span style={{ color: "var(--c-indigo-text)" }}>{formatTokens(remaining)} left</span>
                     </span>
                   </div>
                   <div className="ui-stake-bar-track">
@@ -271,9 +298,14 @@ export default function StakeModal({
                   Add stake (USDC)
                 </label>
                 {(!stake || stake.amount === 0n) && (
-                  <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>max 2,000 USDC</span>
+                  <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>max {Number(MAX_STAKE_PER_WALLET) / 1_000_000} USDC</span>
                 )}
               </div>
+              {walletBalance !== null && (
+                <p style={{ margin: "0 0 6px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                  Wallet available: <span style={{ fontWeight: 600, color: "var(--c-text-3)" }}>{formatTokens(walletBalance)} USDC</span>
+                </p>
+              )}
               <input
                 type="number"
                 inputMode="decimal"
@@ -296,7 +328,7 @@ export default function StakeModal({
             <div style={{ display: "flex", gap: "12px" }}>
               <button
                 onClick={handleStake}
-                disabled={busy || !publicKey || isWhitelisted === false}
+                disabled={busy || !publicKey || isWhitelisted === false || nowSecs >= hackathon.cutoffTimestamp}
                 className="ui-btn ui-btn-indigo"
                 style={{ flex: 1 }}
               >

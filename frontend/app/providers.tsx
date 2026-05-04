@@ -9,7 +9,6 @@ import { useMemo, useEffect, useRef } from "react";
 import {
   ConnectionProvider,
   WalletProvider,
-  useWallet,
 } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import {
@@ -17,37 +16,32 @@ import {
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
 import { RPC_URL } from "@/lib/constants";
-import { PrivyWalletName } from "@/lib/privy-wallet-adapter";
+import { useTheme } from "@/hooks/useTheme";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 const BASE_WALLETS = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 
-// Reconnects returning Privy users without triggering the login modal.
-// Sits inside <WalletProvider> so it can call useWallet().
-function AutoConnectPrivy({ embeddedWalletAddress }: { embeddedWalletAddress: string | undefined }) {
-  const { wallet, connected, select, connect } = useWallet();
+type LinkedSolanaAccount = {
+  address?: string;
+  chainType?: string;
+  walletClientType?: string;
+};
 
-  useEffect(() => {
-    if (!embeddedWalletAddress) return;
-    if (wallet?.adapter.name === PrivyWalletName) return;
-    select(PrivyWalletName);
-  }, [embeddedWalletAddress, wallet?.adapter.name, select]);
+type BridgeSolanaWallet = {
+  address: string;
+  walletClientType?: string;
+  signTransaction(input: { transaction: Uint8Array }): Promise<{ signedTransaction: Uint8Array }>;
+  signMessage(input: { message: Uint8Array; address: string }): Promise<{ signature: Uint8Array }>;
+};
 
-  useEffect(() => {
-    if (wallet?.adapter.name !== PrivyWalletName) return;
-    if (connected) return;
-    connect().catch(() => {});
-  }, [wallet?.adapter.name, connected, connect]);
-
-  return null;
+function isEmbeddedPrivyWallet(wallet: { walletClientType?: string } | null | undefined) {
+  return wallet?.walletClientType === "privy" || wallet?.walletClientType === "privy-v2";
 }
 
-// Bridges the Privy embedded Solana wallet into the standard wallet adapter.
-// Defined at module level so React sees a stable component identity — defining
-// it inside PrivyProviders would remount the wallet subtree on every render.
-// Must be rendered inside <PrivyProvider>.
+// Bridges the active Privy-linked Solana wallet into the standard wallet adapter.
+// Defined at module level so React sees a stable component identity.
 function WalletAdapterBridge({ children }: { children: React.ReactNode }) {
   const { usePrivy } = require("@privy-io/react-auth");
   const { useWallets } = require("@privy-io/react-auth/solana");
@@ -56,51 +50,50 @@ function WalletAdapterBridge({ children }: { children: React.ReactNode }) {
   const { user, login, logout } = usePrivy();
   const { wallets: solanaWallets } = useWallets();
 
-  // One stable adapter for the page lifetime.
   const adapterRef = useRef<InstanceType<typeof PrivyWalletAdapter> | null>(null);
   if (!adapterRef.current) {
     adapterRef.current = new PrivyWalletAdapter();
   }
 
-  // Keep login/logout callbacks fresh so the adapter never captures stale closures.
   useEffect(() => {
     const a = adapterRef.current!;
     a.onLoginRequest = login;
     a.onLogout = logout;
   }, [login, logout]);
 
-  // Detect the Privy embedded Solana wallet and push it into the adapter.
-  const privyAddr = (user?.linkedAccounts as any[])?.find(
-    (a: any) => a.walletClientType === "privy" && a.chainType === "solana",
-  )?.address as string | undefined;
+  const linkedSolanaAccounts = useMemo(
+    () =>
+      (((user?.linkedAccounts as LinkedSolanaAccount[] | undefined) ?? []).filter(
+        (account) => account.chainType === "solana" && typeof account.address === "string",
+      ) as Array<Required<Pick<LinkedSolanaAccount, "address">> & LinkedSolanaAccount>),
+    [user?.linkedAccounts],
+  );
 
-  const embeddedWallet = privyAddr
-    ? solanaWallets.find((w: any) => w.address === privyAddr) ?? null
-    : null;
+  const selectedPrivyWallet = useMemo(() => {
+    const matchedWallets = linkedSolanaAccounts
+      .map((account) => solanaWallets.find((wallet: BridgeSolanaWallet) => wallet.address === account.address) ?? null)
+      .filter((wallet): wallet is BridgeSolanaWallet => wallet !== null);
+    return matchedWallets.find((wallet) => !isEmbeddedPrivyWallet(wallet)) ?? matchedWallets[0] ?? null;
+  }, [linkedSolanaAccounts, solanaWallets]);
 
   useEffect(() => {
-    adapterRef.current?.setWallet(embeddedWallet);
-  }, [embeddedWallet]);
+    adapterRef.current?.setWallet(selectedPrivyWallet);
+  }, [selectedPrivyWallet]);
 
-  // Wallet list is stable: Privy (email login) always first, then injected wallets.
-  // autoConnect={false} avoids a race where the adapter fires login() before
-  // Privy has had time to restore the user's session on page load.
-  const wallets = useMemo(() => [adapterRef.current!, ...BASE_WALLETS], []);
+  // Phantom and Solflare come first so they appear at the top of the wallet modal.
+  // Privy is last — it shows up as an option but is not the default.
+  const wallets = useMemo(() => [...BASE_WALLETS, adapterRef.current!], []);
 
   return (
-    <WalletProvider wallets={wallets} autoConnect={false}>
-      <WalletModalProvider>
-        <AutoConnectPrivy embeddedWalletAddress={privyAddr} />
-        {children}
-      </WalletModalProvider>
+    <WalletProvider wallets={wallets} autoConnect={true}>
+      <WalletModalProvider>{children}</WalletModalProvider>
     </WalletProvider>
   );
 }
 
-// ── Privy-enabled providers ───────────────────────────────────────────────────
-
 function PrivyProviders({ children }: { children: React.ReactNode }) {
   const { PrivyProvider } = require("@privy-io/react-auth");
+  const { theme } = useTheme();
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
@@ -110,7 +103,7 @@ function PrivyProviders({ children }: { children: React.ReactNode }) {
           ethereum: { createOnLogin: "users-without-wallets" },
           solana: { createOnLogin: "users-without-wallets" },
         },
-        appearance: { theme: "dark", accentColor: "#6366f1" },
+        appearance: { theme, accentColor: "#FF5B14" },
       }}
     >
       <WalletAdapterBridge>{children}</WalletAdapterBridge>
@@ -118,19 +111,13 @@ function PrivyProviders({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ── Fallback providers (no Privy) ─────────────────────────────────────────────
-
 function PlainProviders({ children }: { children: React.ReactNode }) {
   return (
-    // Keep injected wallets opt-in so route changes like /admin do not
-    // eagerly trigger Phantom/Solflare popups before the user clicks connect.
-    <WalletProvider wallets={BASE_WALLETS} autoConnect={false}>
+    <WalletProvider wallets={BASE_WALLETS} autoConnect={true}>
       <WalletModalProvider>{children}</WalletModalProvider>
     </WalletProvider>
   );
 }
-
-// ── Root providers ────────────────────────────────────────────────────────────
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const Inner = PRIVY_APP_ID ? PrivyProviders : PlainProviders;

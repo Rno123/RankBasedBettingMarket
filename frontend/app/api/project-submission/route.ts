@@ -4,6 +4,7 @@ import nacl from "tweetnacl";
 import { PublicKey } from "@solana/web3.js";
 import { PROGRAM_ID } from "@/lib/constants";
 import { buildProjectRegistrationMessage } from "@/lib/project-signing";
+import { getReadonlyProgram } from "@/lib/program";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
 interface ProjectSubmissionBody {
@@ -148,7 +149,25 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  const status = existing?.status === "approved" ? "approved" : "pending";
+  // Resolve requires_approval from on-chain — never trust the client.
+  let onChainRequiresApproval = true;
+  try {
+    const program = getReadonlyProgram();
+    const hackathonPk = new PublicKey(hackathonPubkey);
+    const hackathonAccount = await (program.account as any).hackathonState.fetchNullable(hackathonPk);
+    if (hackathonAccount) {
+      onChainRequiresApproval = (hackathonAccount.requiresApproval as boolean) ?? true;
+    }
+  } catch {
+    // If on-chain lookup fails, default to requiring approval (safe default).
+  }
+  // Preserve an existing "approved" status on re-submission.
+  // For new submissions, auto-approve when the hackathon has open registration.
+  const status = existing?.status === "approved"
+    ? "approved"
+    : !onChainRequiresApproval
+      ? "approved"
+      : "pending";
   const record = {
     auth_email: authEmail?.trim() || null,
     discord: discord || null,

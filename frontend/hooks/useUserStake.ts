@@ -4,16 +4,9 @@ import { useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { getReadonlyProgram } from "@/lib/program";
 import { stakePda } from "@/lib/pda";
+import { fetchUserStakeAccount, type UserStakeInfo } from "@/lib/userStakeAccounts";
 
-export interface UserStakeInfo {
-  pubkey: PublicKey;
-  user: PublicKey;
-  project: PublicKey;
-  amount: bigint;
-  shares: bigint;
-  stakeTimestamp: number;
-  isClaimed: boolean;
-}
+export type { UserStakeInfo } from "@/lib/userStakeAccounts";
 
 export function useUserStake(
   userPubkey: PublicKey | null,
@@ -32,21 +25,9 @@ export function useUserStake(
       try {
         const program = getReadonlyProgram();
         const pda = stakePda(userPubkey!, projectPubkey!);
-        const acc = await (program.account as any).userStake.fetchNullable(pda);
+        const acc = await fetchUserStakeAccount(program, pda);
         if (!cancelled) {
-          if (acc) {
-            setStake({
-              pubkey: pda,
-              user: acc.user,
-              project: acc.project,
-              amount: BigInt((acc.amount ?? 0).toString()),
-              shares: BigInt((acc.shares ?? 0).toString()),
-              stakeTimestamp: Number(acc.stakeTimestamp),
-              isClaimed: acc.isClaimed,
-            });
-          } else {
-            setStake(null);
-          }
+          setStake(acc);
         }
       } catch {
         if (!cancelled) setStake(null);

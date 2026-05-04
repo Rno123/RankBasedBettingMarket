@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -9,15 +8,7 @@ import { getSupabase } from "@/lib/supabase";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsProtocolAdmin } from "@/hooks/useIsProtocolAdmin";
 import { DEPLOYER } from "@/lib/constants";
-import { usePrivy } from "@privy-io/react-auth";
-
-const WalletMultiButton = dynamic(
-  () =>
-    import("@solana/wallet-adapter-react-ui").then(
-      (mod) => mod.WalletMultiButton,
-    ),
-  { ssr: false },
-);
+import ConnectWalletButton from "@/components/ConnectWalletButton";
 
 export default function Navbar() {
   const { publicKey } = useWallet();
@@ -29,14 +20,6 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
-
-  // Privy auth state — used only for identity display; login/logout go through WalletMultiButton
-  const { authenticated, user } = usePrivy();
-  const privyLabel =
-    user?.email?.address ??
-    user?.google?.email ??
-    user?.twitter?.username ??
-    null;
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -53,7 +36,14 @@ export default function Navbar() {
   useEffect(() => { setMenuOpen(false); }, [pathname]);
 
   function navLinkStyle(href: string): React.CSSProperties {
-    const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+    const active =
+      href === "/hackathons"
+        ? pathname === "/hackathons" || pathname.startsWith("/hackathon/")
+        : href === "/devs"
+          ? pathname === "/devs" || pathname.startsWith("/dev")
+          : href === "/how-to-use"
+            ? pathname === "/how-to-use" || pathname.startsWith("/eli5")
+            : pathname === href || pathname.startsWith(`${href}/`);
     return {
       fontSize: "0.875rem",
       fontWeight: 500,
@@ -79,25 +69,26 @@ export default function Navbar() {
 
   return (
     <nav className="ui-nav">
-      <div style={{ margin: "0 auto", display: "flex", maxWidth: "1280px", alignItems: "center", justifyContent: "space-between", padding: "12px 16px" }}>
+      <div style={{ margin: "0 auto", display: "flex", maxWidth: "1280px", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "12px 16px" }}>
         {/* Left: logo + desktop links */}
-        <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+        <div style={{ display: "flex", minWidth: 0, alignItems: "center", gap: "16px" }}>
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: "8px", textDecoration: "none" }}>
-            <span style={{ fontSize: "1.25rem", fontWeight: 900, letterSpacing: "-0.025em", color: "var(--c-text)" }}>
+            <span style={{ fontSize: "clamp(1.05rem, 4vw, 1.25rem)", fontWeight: 900, letterSpacing: "-0.025em", color: "var(--c-text)" }}>
               HACK<span style={{ color: "var(--c-indigo-text)" }}>BET</span>
             </span>
           </Link>
           <div className="hidden-sm-flex" style={{ alignItems: "center", gap: "16px" }}>
-            <Link href="/" style={navLinkStyle("/")}>Hackathons</Link>
-            <Link href="/dev" style={navLinkStyle("/dev")}>
-              {devUser ? "Dev Portal" : "Submit Project"}
-            </Link>
-            <Link href="/how-to-use" style={navLinkStyle("/how-to-use")}>How to Use</Link>
+            <Link href="/hackathons" style={navLinkStyle("/hackathons")}>Hackathons</Link>
+            <Link href="/devs" style={navLinkStyle("/devs")}>Builders</Link>
+            <Link href="/how-to-use" style={navLinkStyle("/how-to-use")}>How it works</Link>
             {publicKey && (
               <Link href="/profile" style={navLinkStyle("/profile")}>Portfolio</Link>
             )}
             {showAdmin && (
               <Link href="/admin" style={navLinkStyle("/admin")}>Admin</Link>
+            )}
+            {showAdmin && (
+              <Link href="/docs" style={navLinkStyle("/docs")}>Docs</Link>
             )}
             {showMaster && (
               <Link
@@ -111,17 +102,10 @@ export default function Navbar() {
         </div>
 
         {/* Right: privy login + wallet + theme toggle + hamburger */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", minWidth: 0, alignItems: "center", gap: "6px" }}>
           {devUser && (
             <span className="hidden-sm-block" style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
               {devUser.length > 20 ? devUser.slice(0, 18) + "…" : devUser}
-            </span>
-          )}
-
-          {/* Privy identity label — shown after email/social login */}
-          {authenticated && privyLabel && (
-            <span className="hidden-sm-block" style={{ fontSize: "0.75rem", color: "var(--c-text-4)", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {privyLabel}
             </span>
           )}
 
@@ -150,14 +134,7 @@ export default function Navbar() {
             )}
           </button>
 
-          <WalletMultiButton
-            style={{
-              height: "36px",
-              fontSize: "13px",
-              padding: "0 12px",
-              borderRadius: "8px",
-            }}
-          />
+          <ConnectWalletButton compact />
 
           {/* Hamburger — mobile only */}
           <button
@@ -183,26 +160,22 @@ export default function Navbar() {
       {menuOpen && (
         <div style={{ borderTop: "1px solid var(--c-divider)", background: "var(--nav-bg)", padding: "12px 16px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <Link href="/" style={{ ...navLinkStyle("/"), padding: "8px 12px", borderRadius: "8px" }}>Hackathons</Link>
-            <Link href="/dev" style={{ ...navLinkStyle("/dev"), padding: "8px 12px", borderRadius: "8px" }}>
-              {devUser ? "Dev Portal" : "Submit Project"}
-            </Link>
-            <Link href="/how-to-use" style={{ ...navLinkStyle("/how-to-use"), padding: "8px 12px", borderRadius: "8px" }}>How to Use</Link>
+            <Link href="/hackathons" style={{ ...navLinkStyle("/hackathons"), padding: "8px 12px", borderRadius: "8px" }}>Hackathons</Link>
+            <Link href="/devs" style={{ ...navLinkStyle("/devs"), padding: "8px 12px", borderRadius: "8px" }}>Builders</Link>
+            <Link href="/how-to-use" style={{ ...navLinkStyle("/how-to-use"), padding: "8px 12px", borderRadius: "8px" }}>How it works</Link>
             {publicKey && (
               <Link href="/profile" style={{ ...navLinkStyle("/profile"), padding: "8px 12px", borderRadius: "8px" }}>Portfolio</Link>
             )}
             {showAdmin && (
               <Link href="/admin" style={{ ...navLinkStyle("/admin"), padding: "8px 12px", borderRadius: "8px" }}>Admin</Link>
             )}
+            {showAdmin && (
+              <Link href="/docs" style={{ ...navLinkStyle("/docs"), padding: "8px 12px", borderRadius: "8px" }}>Docs</Link>
+            )}
             {showMaster && (
               <Link href="/master" style={{ fontSize: "0.875rem", fontWeight: 500, textDecoration: "none", color: "var(--c-amber-text)", padding: "8px 12px", borderRadius: "8px" }}>
                 Master
               </Link>
-            )}
-            {authenticated && privyLabel && (
-              <p style={{ margin: "4px 0 0", padding: "0 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-                {privyLabel}
-              </p>
             )}
             {devUser && (
               <p style={{ margin: "4px 0 0", padding: "0 12px", fontSize: "0.75rem", color: "var(--c-text-4)" }}>

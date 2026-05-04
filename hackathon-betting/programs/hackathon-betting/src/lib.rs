@@ -7,8 +7,9 @@ declare_id!("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd");
 
 /// Seconds before results_timestamp after which unstaking is forbidden.
 pub const SELL_CUTOFF_SECS: i64 = 86_400;
-/// Grace period after results before an unpaid/non-submitted builder deposit may be forfeited.
-pub const FORFEIT_GRACE_SECS: i64 = 14 * 86_400;
+/// Window after results_timestamp during which approved builders may claim their deposit back;
+/// after this window, unclaimed/undeclared deposits become forfeitable by the admin.
+pub const DEPOSIT_CLAIM_WINDOW_SECS: i64 = 14 * 86_400;
 /// Fixed unstake penalty in basis points (3%).
 pub const UNSTAKE_PENALTY_BPS: u64 = 300;
 /// Portion of the unstake penalty routed to fee_recipient (1.5%).
@@ -17,8 +18,8 @@ pub const UNSTAKE_PROTOCOL_BPS: u64 = 150;
 pub const EARLY_MULTIPLIER_BPS: u64 = 15_000;
 /// Shares multiplier at cutoff in basis points (1.0×).
 pub const BASE_MULTIPLIER_BPS: u64 = 10_000;
-/// Hard cap on stake per wallet per project ($2 000, 6 decimals).
-pub const MAX_STAKE_PER_WALLET: u64 = 2_000_000_000;
+/// Hard cap on stake per wallet per project ($250, 6 decimals).
+pub const MAX_STAKE_PER_WALLET: u64 = 250_000_000;
 /// Maximum length of a hackathon name in bytes.
 pub const NAME_MAX_LEN: usize = 50;
 /// Basis-point denominator for all fixed-point math.
@@ -31,8 +32,8 @@ pub const TIER_BPS_TOTAL: u32 = 10_000;
 pub const DEFAULT_PROTOCOL_FEE_BPS: u16 = 150;
 /// Default builder commitment deposit in USDC lamports ($10, 6 decimals).
 pub const DEFAULT_DEPOSIT_AMOUNT: u64 = 10_000_000;
-/// Maximum cumulative self-stake a builder may place on their own project ($2,000, 6 decimals).
-pub const MAX_SELF_STAKE: u64 = 2_000_000_000;
+/// Maximum cumulative self-stake a builder may place on their own project ($250, 6 decimals).
+pub const MAX_SELF_STAKE: u64 = 250_000_000;
 
 /// Protocol-level admin: the only wallet allowed to call initialize_hackathon.
 /// In `testing` builds this is swapped to the local test payer so bankrun tests
@@ -118,6 +119,12 @@ pub enum BettingError {
     DuplicateProjectAccount,
     #[msg("Builder deposits can only be forfeited after the post-results grace period")]
     ForfeitTooEarly,
+    #[msg("Submission window has closed — builder declarations must happen before results")]
+    SubmissionClosed,
+    #[msg("Deposit refund window has not opened yet — results_timestamp not yet reached")]
+    DepositClaimTooEarly,
+    #[msg("Deposit refund window has expired — must claim within 14 days of results_timestamp")]
+    DepositClaimExpired,
 }
 
 // ── Pure helpers ───────────────────────────────────────────────────────────
@@ -502,8 +509,8 @@ pub mod hackathon_betting {
     // ── 4.5  submit_project ───────────────────────────────────────────────
 
     /// Builder declares on-chain that they have submitted their project.
-    /// Must be called before cutoff_timestamp (after cutoff, staking is frozen
-    /// anyway so a declaration has no effect for backers).
+    /// Must be called before results_timestamp. Staking still locks at cutoff,
+    /// but builders keep the full build window to declare completion.
     /// Sets builder_declared = true and records the timestamp.
     /// This records the builder-side declaration. Deposit refunds still require
     /// organizer approval via approve_submissions unless an explicit refund
@@ -511,8 +518,8 @@ pub mod hackathon_betting {
     pub fn submit_project(ctx: Context<SubmitProject>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         require!(
-            now < ctx.accounts.hackathon.cutoff_timestamp,
-            BettingError::CutoffPassed,
+            now < ctx.accounts.hackathon.results_timestamp,
+            BettingError::SubmissionClosed,
         );
         if ctx.accounts.hackathon.deposit_amount > 0 {
             require!(
@@ -1029,13 +1036,25 @@ pub mod hackathon_betting {
     /// Builder reclaims their commitment deposit after the organizer has
     /// approved their submission via approve_submissions.
     pub fn claim_deposit_refund(ctx: Context<ClaimDepositRefund>) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
         require!(
             ctx.accounts.project.builder_wallet == ctx.accounts.builder.key(),
             BettingError::NotBuilder,
         );
-        if !ctx.accounts.project.is_refund_enabled {
-            require!(ctx.accounts.project.submitted, BettingError::NotSubmitted);
-        }
+        require!(
+            ctx.accounts.project.builder_declared,
+            BettingError::NotDeclared,
+        );
+        require!(ctx.accounts.project.submitted, BettingError::NotSubmitted);
+        require!(
+            now >= ctx.accounts.hackathon.results_timestamp,
+            BettingError::DepositClaimTooEarly,
+        );
+        require!(
+            now <= ctx.accounts.hackathon.results_timestamp
+                .saturating_add(DEPOSIT_CLAIM_WINDOW_SECS),
+            BettingError::DepositClaimExpired,
+        );
         require!(
             !ctx.accounts.project.deposit_forfeited,
             BettingError::DepositAlreadyForfeited,
@@ -1130,7 +1149,7 @@ pub mod hackathon_betting {
         )?;
         let now = Clock::get()?.unix_timestamp;
         let forfeitable_at = ctx.accounts.hackathon.results_timestamp
-            .checked_add(FORFEIT_GRACE_SECS)
+            .checked_add(DEPOSIT_CLAIM_WINDOW_SECS)
             .ok_or(BettingError::Overflow)?;
         require!(now >= forfeitable_at, BettingError::ForfeitTooEarly);
         require!(
@@ -1142,7 +1161,7 @@ pub mod hackathon_betting {
             BettingError::DepositAlreadyRefunded,
         );
         require!(
-            !ctx.accounts.project.builder_declared && !ctx.accounts.project.submitted,
+            !ctx.accounts.project.submitted,
             BettingError::AlreadySubmitted,
         );
         require!(
@@ -2225,10 +2244,7 @@ pub struct ClaimDepositRefund<'info> {
 #[derive(Accounts)]
 pub struct ForfeitDeposit<'info> {
     pub admin: Signer<'info>,
-    #[account(
-        mut,
-        constraint = !hackathon.is_resolved @ BettingError::AlreadyResolved,
-    )]
+    #[account(mut)]
     pub hackathon: Account<'info, HackathonState>,
     #[account(
         mut,

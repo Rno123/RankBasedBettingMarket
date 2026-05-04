@@ -4,12 +4,22 @@ export function formatTokens(raw: bigint, decimals = TOKEN_DECIMALS): string {
   const divisor = BigInt(10 ** decimals);
   const whole = raw / divisor;
   const frac = raw % divisor;
+  const wholeStr = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
-  return fracStr ? `${whole}.${fracStr}` : `${whole}`;
+  return fracStr ? `${wholeStr}.${fracStr}` : `${wholeStr}`;
+}
+
+export function formatTokensRounded(raw: bigint, decimals = TOKEN_DECIMALS): string {
+  const divisor = BigInt(10 ** decimals);
+  const rounded = ((raw + divisor / 2n) / divisor) * divisor;
+  return formatTokens(rounded, decimals);
 }
 
 export function parseTokens(amount: string, decimals = TOKEN_DECIMALS): bigint {
-  const [whole = "0", frac = ""] = amount.split(".");
+  const normalized = amount.trim();
+  if (!normalized || !/^\d*(\.\d*)?$/.test(normalized)) return 0n;
+  const [wholeRaw = "0", frac = ""] = normalized.split(".");
+  const whole = wholeRaw === "" ? "0" : wholeRaw;
   const fracPadded = frac.slice(0, decimals).padEnd(decimals, "0");
   return BigInt(whole) * BigInt(10 ** decimals) + BigInt(fracPadded);
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { getReadonlyProgram } from "@/lib/program";
-import type { UserStakeInfo } from "@/hooks/useUserStake";
+import { fetchUserStakeAccountsForWallet, type UserStakeInfo } from "@/lib/userStakeAccounts";
 import type { ProjectInfo } from "@/hooks/useProjects";
 
 export interface MyStakeEntry {
@@ -23,25 +23,12 @@ export function useMyStakes(walletPubkey: PublicKey | null, refreshKey?: number)
       setLoading(true);
       try {
         const program = getReadonlyProgram();
-
-        // All UserStake PDAs where user === walletPubkey
-        const stakeAccounts = await (program.account as any).userStake.all([
-          { memcmp: { offset: 8, bytes: walletPubkey!.toBase58() } },
-        ]);
+        const stakes = await fetchUserStakeAccountsForWallet(program, walletPubkey!);
         if (cancelled) return;
 
-        const stakes: UserStakeInfo[] = stakeAccounts.map((a: any) => ({
-          pubkey: a.publicKey as PublicKey,
-          user: a.account.user as PublicKey,
-          project: a.account.project as PublicKey,
-          amount: BigInt((a.account.amount ?? 0).toString()),
-          shares: BigInt((a.account.shares ?? 0).toString()),
-          stakeTimestamp: Number(a.account.stakeTimestamp),
-          isClaimed: a.account.isClaimed as boolean,
-        }));
-
-        // Include zero-amount stakes only if claimed (so history is visible)
-        const relevant = stakes.filter(s => s.amount > 0n || s.isClaimed);
+        // Keep all meaningful stake records visible, including older/self-stake
+        // accounts whose live amount may be zero while shares/history remain.
+        const relevant = stakes.filter(s => s.amount > 0n || s.shares > 0n || s.isClaimed);
 
         // Batch fetch project accounts in parallel
         const uniqueProjectKeys = [
