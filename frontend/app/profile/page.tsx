@@ -53,6 +53,7 @@ function StakeCard({ entry, hackathon, onRefresh }: {
           project!.totalShares,
           hackathon!.totalPool,
           pct,
+          hackathon!.tierExpectedCounts[i] ?? 1,
           hackathon!.protocolFeeBps,
         ),
       }))

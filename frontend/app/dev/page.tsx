@@ -16,7 +16,7 @@ import type { HackathonInfo } from "@/hooks/useHackathons";
 import { hackathonStatus, formatDate, timeUntil, formatTokens, parseTokens } from "@/lib/format";
 import { getProgram, getReadonlyProgram } from "@/lib/program";
 import { buildProjectRegistrationMessage } from "@/lib/project-signing";
-import { projectPdaFromUrl, escrowPda, stakePda, hashUrl } from "@/lib/pda";
+import { projectPdaFromUrl, escrowPda, stakePda, hashUrl, normalizeGitHubUrl } from "@/lib/pda";
 import { signatureToBase64 } from "@/lib/signature";
 import { USDC_MINT } from "@/lib/constants";
 
@@ -531,10 +531,11 @@ function SubmitForm({
           }
           // Project already on-chain under this wallet — skip .rpc()
         } else {
+          const normalized = normalizeGitHubUrl(url);
           const urlHash = Array.from(await hashUrl(url));
           const program = getProgram(anchorWallet);
           await (program.methods as any)
-            .registerProject(url, urlHash)
+            .registerProject(normalized, urlHash)
             .accounts({
               caller: publicKey,
               builder: publicKey,

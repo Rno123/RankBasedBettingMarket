@@ -88,9 +88,10 @@ export default function TopThreeSlipPanel({
       cutoffTimestamp: hackathon.cutoffTimestamp,
       hackathonTotalPool: hackathon.totalPool,
       tierPcts: hackathon.tierPcts,
+      tierExpectedCounts: hackathon.tierExpectedCounts,
       protocolFeeBps: hackathon.protocolFeeBps ?? 150,
     },
-  ), [draft.legs, hackathon.startTimestamp, hackathon.cutoffTimestamp, hackathon.totalPool, hackathon.tierPcts, hackathon.protocolFeeBps, stakesByProject]);
+  ), [draft.legs, hackathon.startTimestamp, hackathon.cutoffTimestamp, hackathon.totalPool, hackathon.tierPcts, hackathon.tierExpectedCounts, hackathon.protocolFeeBps, stakesByProject]);
 
   const validationError = useMemo(() => {
     if (!publicKey) return "Connect your wallet to place a Top 3 slip.";

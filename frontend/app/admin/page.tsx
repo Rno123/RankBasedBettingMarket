@@ -7,7 +7,7 @@ import { useWallet, useAnchorWallet, useConnection } from "@solana/wallet-adapte
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import Navbar from "@/components/Navbar";
 import { getProgram } from "@/lib/program";
-import { hackathonPda, escrowPda, hashUrl, whitelistPda, protocolAdminPda } from "@/lib/pda";
+import { hackathonPda, escrowPda, hashUrl, normalizeGitHubUrl, whitelistPda, protocolAdminPda } from "@/lib/pda";
 import { useHackathons } from "@/hooks/useHackathons";
 import { useProjects } from "@/hooks/useProjects";
 import { formatTokens, formatDate } from "@/lib/format";
@@ -1747,6 +1747,7 @@ function SubmissionsSection({
 
         const builder = new PublicKey(sub.wallet_address);
         const project = new PublicKey(sub.project_pubkey);
+        const normalized = normalizeGitHubUrl(sub.github_url);
         const urlHash = Array.from(await hashUrl(sub.github_url));
 
         const existingProject = await connection.getAccountInfo(project, "confirmed");
@@ -1754,7 +1755,7 @@ function SubmissionsSection({
           try {
             const program = getProgram(anchorWallet);
             const tx = await (program.methods as any)
-              .registerProject(sub.github_url, urlHash)
+              .registerProject(normalized, urlHash)
               .accounts({
                 caller: publicKey,
                 builder,

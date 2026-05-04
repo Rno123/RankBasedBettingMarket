@@ -65,6 +65,7 @@ export default function StakeModal({
       totalProjectShares,
       totalPool,
       hackathon.tierPcts[0],
+      hackathon.tierExpectedCounts[0] ?? 1,
       hackathon.protocolFeeBps ?? 150,
     );
     const totalStaked = (stake?.amount ?? 0n) + parsed;

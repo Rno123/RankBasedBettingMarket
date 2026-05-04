@@ -20,15 +20,6 @@ export interface SlipEstimateResult {
   combinedStaked: bigint;
 }
 
-// Integer square root matching Rust isqrt
-export function isqrt(n: bigint): bigint {
-  if (n <= 0n) return 0n;
-  let x = BigInt(Math.floor(Math.sqrt(Number(n))));
-  while (x > 0n && x * x > n) x -= 1n;
-  while ((x + 1n) * (x + 1n) <= n) x += 1n;
-  return x;
-}
-
 // Time-weighted shares matching on-chain compute_shares.
 // mult_bps decays linearly from 15000 (1.5x) at start to 10000 (1.0x) at cutoff.
 export function computeShares(
@@ -45,11 +36,11 @@ export function computeShares(
 }
 
 /**
- * Estimate net payout assuming the project is the sole winner in a tier.
- * When a project is alone in its tier, isqrt(project.totalStaked) cancels
- * with C_total_t, so the formula reduces to the share-weighted form below.
+ * Estimate net payout with equal split within a tier.
+ * Every ranked project gets 1/N of the tier pool.
  *
- * tierPct:        0-100 (configured tier percentage, sums to 100 across tiers)
+ * tierPct:        0-100 (configured tier percentage)
+ * projectsInTier: expected number of ranked projects sharing this tier
  * protocolFeeBps: e.g. 150 = 1.5%
  */
 export function estimatePayout(
@@ -57,10 +48,12 @@ export function estimatePayout(
   projectTotalShares: bigint,
   hackathonTotalPool: bigint,
   tierPct: number,
+  projectsInTier: number,
   protocolFeeBps: number,
 ): bigint {
-  if (projectTotalShares === 0n || hackathonTotalPool === 0n || tierPct <= 0) return 0n;
-  const gross = (userShares * BigInt(tierPct) * hackathonTotalPool) / (projectTotalShares * 100n);
+  if (projectTotalShares === 0n || hackathonTotalPool === 0n || tierPct <= 0 || projectsInTier <= 0) return 0n;
+  const gross = (userShares * BigInt(tierPct) * hackathonTotalPool)
+    / (projectTotalShares * BigInt(projectsInTier) * 100n);
   return (gross * BigInt(10000 - protocolFeeBps)) / 10000n;
 }
 
@@ -112,6 +105,7 @@ export function estimateSlipPayout(
     cutoffTimestamp,
     hackathonTotalPool,
     tierPcts,
+    tierExpectedCounts,
     protocolFeeBps,
   }: {
     nowSecs: number;
@@ -119,6 +113,7 @@ export function estimateSlipPayout(
     cutoffTimestamp: number;
     hackathonTotalPool: bigint;
     tierPcts: number[];
+    tierExpectedCounts: number[];
     protocolFeeBps: number;
   },
 ): SlipEstimateResult {
@@ -139,11 +134,13 @@ export function estimateSlipPayout(
     const totalUserShares = (leg.existingUserShares ?? 0n) + newShares;
     const totalProjectShares = leg.projectTotalShares + newShares;
     const tierPct = tierPcts[Math.min(index, Math.max(tierPcts.length - 1, 0))] ?? 0;
+    const projectsInTier = tierExpectedCounts[Math.min(index, Math.max(tierExpectedCounts.length - 1, 0))] ?? 1;
     const estimated = estimatePayout(
       totalUserShares,
       totalProjectShares,
       nextPool,
       tierPct,
+      projectsInTier,
       protocolFeeBps,
     );
     const positionStaked = (leg.existingUserAmount ?? 0n) + leg.amountLamports;

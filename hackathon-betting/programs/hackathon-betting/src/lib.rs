@@ -126,19 +126,6 @@ pub enum BettingError {
 
 // ── Pure helpers ───────────────────────────────────────────────────────────
 
-/// Integer square root — floor(sqrt(n)). Newton's method, no f64.
-fn isqrt(n: u64) -> u64 {
-    if n == 0 {
-        return 0;
-    }
-    let mut x = n;
-    let mut y = (x + 1) >> 1;
-    while y < x {
-        x = y;
-        y = (x + n / x) >> 1;
-    }
-    x
-}
 
 /// Map a rank (1-based) to a zero-based tier index.
 /// rank 1 → 0, rank 2 → 1, ..., rank > tier_count → tier_count-1 (rest tier).
@@ -703,10 +690,9 @@ pub mod hackathon_betting {
             }
             ranked_found = ranked_found.checked_add(1).ok_or(BettingError::Overflow)?;
             let tier = rank_to_tier_idx(project.rank, tier_count as u8);
-            // Accumulate sqrt-crowding denominator per tier (snapshotted here to prevent
-            // caller manipulation in claim — C-01 fix).
+            // Count ranked projects per tier — equal split, no sqrt weighting.
             tier_c_totals_new[tier] = tier_c_totals_new[tier]
-                .checked_add(isqrt(project.total_staked))
+                .checked_add(1)
                 .ok_or(BettingError::Overflow)?;
         }
         require!(
@@ -775,12 +761,12 @@ pub mod hackathon_betting {
     /// Stage 1 — tier allocation (from effective_tier_pcts set at finalize_resolve):
     ///   P_t = effective_tier_pcts[tier_of(project.rank)]  (basis points)
     ///
-    /// Stage 2 — within-tier distribution:
-    ///   C_i       = isqrt(project.total_staked)  — sqrt crowding between projects
-    ///   C_total_t = tier_c_totals[tier]  — snapshotted at finalize_resolve (C-01 fix)
+    /// Stage 2 — within-tier equal split:
+    ///   Every ranked project in a tier gets 1/N of the tier pool,
+    ///   where N = tier_c_totals[tier] (snapshotted at finalize_resolve).
     ///
     /// User payout (shares-weighted within project):
-    ///   payout = shares × C_i × P_t × total_pool / (total_shares × C_total_t × 10_000)
+    ///   payout = shares × P_t × total_pool / (total_shares × N × 10_000)
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
         let total_pool = ctx.accounts.hackathon.total_pool;
         let admin_key = ctx.accounts.hackathon.admin;
@@ -800,19 +786,17 @@ pub mod hackathon_betting {
 
         let tier = rank_to_tier_idx(project_rank, tier_count);
         let p_t = eff_pcts[tier] as u128;
-        let c_i = isqrt(project_total_staked) as u128;
 
-        // Use the tier denominator snapshotted at finalize_resolve.
-        // This prevents a claimer from manipulating the denominator by omitting
-        // competing projects from remaining_accounts (C-01 fix).
+        // Equal split within tier: every ranked project gets 1/N of the tier pool.
+        // N is stored in tier_c_totals (snapshotted at finalize_resolve).
         let c_total_t = ctx.accounts.hackathon.tier_c_totals[tier];
         require!(c_total_t > 0, BettingError::Overflow);
 
-        // payout = shares × C_i × P_t × pool / (total_shares × C_total_t × 10_000)
+        // payout = shares × P_t × pool / (total_shares × c_total_t × 10_000)
+        // c_total_t = number of ranked projects in this tier (equal split, no sqrt).
         let payout: u64 = {
             let num = (user_shares as u128)
-                .checked_mul(c_i)
-                .and_then(|n| n.checked_mul(p_t))
+                .checked_mul(p_t)
                 .and_then(|n| n.checked_mul(total_pool as u128))
                 .ok_or(BettingError::Overflow)?;
             let den = (project_total_shares as u128)

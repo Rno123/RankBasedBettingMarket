@@ -82,7 +82,8 @@ function estimateParlayPayout(
     const totalUserShares = (existing?.shares ?? 0n) + newShares;
     const totalProjectShares = project.totalShares + newShares;
     const { pct, label } = getEffectiveTierPct(i);
-    const estimated = estimatePayout(totalUserShares, totalProjectShares, nextPool, pct, feeBps);
+    const projectsInTier = tierExpectedCounts[i] ?? 1;
+    const estimated = estimatePayout(totalUserShares, totalProjectShares, nextPool, pct, projectsInTier, feeBps);
     return { amountLamports, estimated, tierLabel: label };
   });
 

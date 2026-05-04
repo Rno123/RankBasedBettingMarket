@@ -30,7 +30,7 @@
           "name": "authority",
           "writable": true,
           "signer": true,
-          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+          "address": "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
         },
         {
           "name": "new_admin"
@@ -111,12 +111,12 @@
         "Stage 1 — tier allocation (from effective_tier_pcts set at finalize_resolve):",
         "P_t = effective_tier_pcts[tier_of(project.rank)]  (basis points)",
         "",
-        "Stage 2 — within-tier distribution:",
-        "C_i       = isqrt(project.total_staked)  — sqrt crowding between projects",
-        "C_total_t = tier_c_totals[tier]  — snapshotted at finalize_resolve (C-01 fix)",
+        "Stage 2 — within-tier equal split:",
+        "Every ranked project in a tier gets 1/N of the tier pool,",
+        "where N = tier_c_totals[tier] (snapshotted at finalize_resolve).",
         "",
         "User payout (shares-weighted within project):",
-        "payout = shares × C_i × P_t × total_pool / (total_shares × C_total_t × 10_000)"
+        "payout = shares × P_t × total_pool / (total_shares × N × 10_000)"
       ],
       "discriminator": [
         62,
@@ -296,7 +296,12 @@
         "Intended for exceptional cases: judging errors, hackathon cancellations,",
         "or explicit admin override. Must be called before resolution; after",
         "resolution all stakes are settled (won or forfeited) and cannot be undone.",
-        "Once enabled, cannot be revoked."
+        "Once enabled, cannot be revoked.",
+        "",
+        "No time-based gate beyond !is_resolved. The admin already controls rankings",
+        "and could manipulate those directly — adding a time window on refunds would",
+        "block legitimate recourse (wrong results, no-project-placed scenarios) without",
+        "meaningfully changing the trust model."
       ],
       "discriminator": [
         5,
@@ -991,7 +996,7 @@
           "name": "authority",
           "writable": true,
           "signer": true,
-          "address": "5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP"
+          "address": "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD"
         },
         {
           "name": "admin_wallet"
@@ -1313,8 +1318,8 @@
       "name": "submit_project",
       "docs": [
         "Builder declares on-chain that they have submitted their project.",
-        "Must be called before cutoff_timestamp (after cutoff, staking is frozen",
-        "anyway so a declaration has no effect for backers).",
+        "Must be called before irl_hackathon_deadline_timestamp. Staking still locks at cutoff,",
+        "but builders keep the full build window to declare completion.",
         "Sets builder_declared = true and records the timestamp.",
         "This records the builder-side declaration. Deposit refunds still require",
         "organizer approval via approve_submissions unless an explicit refund",
@@ -1813,6 +1818,21 @@
       "code": 6035,
       "name": "ForfeitTooEarly",
       "msg": "Builder deposits can only be forfeited after the post-results grace period"
+    },
+    {
+      "code": 6036,
+      "name": "SubmissionClosed",
+      "msg": "Submission window has closed — builder declarations must happen before results"
+    },
+    {
+      "code": 6037,
+      "name": "DepositClaimTooEarly",
+      "msg": "Deposit refund window has not opened yet — irl_hackathon_deadline_timestamp not yet reached"
+    },
+    {
+      "code": 6038,
+      "name": "DepositClaimExpired",
+      "msg": "Deposit refund window has expired — must claim within 14 days of irl_hackathon_deadline_timestamp"
     }
   ],
   "types": [
