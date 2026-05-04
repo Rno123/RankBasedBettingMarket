@@ -737,9 +737,9 @@ export default function HackathonPage({
               <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Staking closes</p>
             </div>
             <div>
-              <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Results</p>
+              <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Deadline</p>
               <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)" }}>{formatDate(hackathon.irlHackathonDeadlineTimestamp)}</p>
-              <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Judge announcement</p>
+              <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Hackathon submissions closes</p>
             </div>
             <div>
               <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Projects</p>
