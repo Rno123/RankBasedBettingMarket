@@ -30,6 +30,21 @@ import type { HackathonInfo } from "@/hooks/useHackathons";
 import type { ProjectInfo } from "@/hooks/useProjects";
 import type { ProjectMetadata, GithubStats } from "@/lib/types";
 
+function ordinal(n: number): string {
+  if (n === 11 || n === 12 || n === 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+function fmtTierPct(totalPct: number, count: number): string {
+  const per = count > 0 ? totalPct / count : totalPct;
+  return Number.isInteger(per) ? `${per}%` : `${per.toFixed(1)}%`;
+}
+
 function daysAgo(isoDate: string | null): string {
   if (!isoDate) return "unknown";
   const diff = Date.now() - new Date(isoDate).getTime();
@@ -761,17 +776,20 @@ export default function HackathonPage({
           {/* Prize tiers */}
           <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "12px" }}>
             <p style={{ margin: "0 0 6px", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Prize tiers</p>
-            <div className="mobile-chip-wrap">
-              {hackathon.tierPcts.map((pct, i) => {
-                const count = hackathon.tierExpectedCounts[i];
-                return (
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px" }}>
+              {hackathon.tierPcts.flatMap((pct, i) => {
+                const count = hackathon.tierExpectedCounts[i] ?? 1;
+                const chip = (
                   <span
-                    key={i}
-                    style={{ borderRadius: "6px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "4px 10px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-indigo-text)" }}
+                    key={`tier-${i}`}
+                    style={{ borderRadius: "6px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "4px 10px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-indigo-text)", whiteSpace: "nowrap" }}
                   >
-                    {count > 1 ? `${count} × ${(pct / count).toFixed(0)}%` : `${pct}%`}
+                    {ordinal(i + 1)}: {count} × {fmtTierPct(pct, count)}
                   </span>
                 );
+                return i === 0
+                  ? [chip]
+                  : [<span key={`sep-${i}`} style={{ color: "var(--c-text-4)", fontSize: "0.75rem", userSelect: "none" }}>|</span>, chip];
               })}
             </div>
           </div>
