@@ -895,7 +895,7 @@ function CreateHackathonPanel({
             <input className="ui-input" placeholder="e.g. Frontier S1" value={hackathonName} onChange={(e) => setHackathonName(e.target.value)} />
           </div>
           <div>
-            <label style={labelStyle}>Results date &amp; time</label>
+            <label style={labelStyle}>Hackathon Deadline</label>
             <div style={{ display: "flex", gap: "8px" }}>
               <input
                 type="date"
