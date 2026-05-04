@@ -11,7 +11,7 @@ export interface HackathonInfo {
   usdcMint: PublicKey;
   feeRecipient: PublicKey;
   name: string;
-  resultsTimestamp: number;
+  irlHackathonDeadlineTimestamp: number;
   cutoffTimestamp: number;
   startTimestamp: number;
   totalPool: bigint;
@@ -61,7 +61,7 @@ export function useHackathons() {
               usdcMint: d.usdcMint as PublicKey,
               feeRecipient: d.feeRecipient as PublicKey,
               name: (d.name as string) ?? "",
-              resultsTimestamp: Number(d.resultsTimestamp),
+              irlHackathonDeadlineTimestamp: Number(d.irlHackathonDeadlineTimestamp),
               cutoffTimestamp: Number(d.cutoffTimestamp),
               startTimestamp: Number(d.startTimestamp),
               totalPool: BigInt((d.totalPool ?? 0).toString()),
@@ -82,10 +82,10 @@ export function useHackathons() {
           }
         });
 
-        // Sort: unresolved first, then by results_timestamp asc
+        // Sort: unresolved first, then by irlHackathonDeadlineTimestamp asc
         list.sort((a, b) => {
           if (a.isResolved !== b.isResolved) return a.isResolved ? 1 : -1;
-          return a.resultsTimestamp - b.resultsTimestamp;
+          return a.irlHackathonDeadlineTimestamp - b.irlHackathonDeadlineTimestamp;
         });
 
         setHackathons(list);

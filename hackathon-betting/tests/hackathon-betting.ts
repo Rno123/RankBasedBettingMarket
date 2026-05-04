@@ -214,7 +214,7 @@ let _hackIdx = 0;
 
 async function newHackathon(
   ctx: ProgramTestContext, program: any,
-  resultsTimestamp = RESULTS_TS,
+  irlHackathonDeadlineTimestamp = RESULTS_TS,
   tierPcts: number[]   = DEFAULT_TIER_PCTS,
   tierCounts: number[] = DEFAULT_TIER_COUNTS,
   name?: string,
@@ -233,7 +233,7 @@ async function newHackathon(
   const feeRecipientAta = await createAta(ctx, mint, feeRecipient.publicKey);
   await program.methods.initializeHackathon(
       uniqueName,
-      new BN(resultsTimestamp),
+      new BN(irlHackathonDeadlineTimestamp),
       Buffer.from(tierPcts),
       Buffer.from(tierCounts),
       feeRecipient.publicKey,
@@ -525,7 +525,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       const h = await program.account.hackathonState.fetch(fix.hackathon);
       assert.ok(h.admin.equals(fix.admin.publicKey));
       assert.ok(h.usdcMint.equals(fix.mint));
-      assert.equal(h.resultsTimestamp.toNumber(), RESULTS_TS);
+      assert.equal(h.irlHackathonDeadlineTimestamp.toNumber(), RESULTS_TS);
       assert.equal(h.cutoffTimestamp.toNumber(), CUTOFF_TS);
       assert.equal(h.totalPool.toNumber(), 0);
       assert.equal(h.isResolved, false);
@@ -537,15 +537,15 @@ describe("hackathon-betting — Bankrun suite", () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program, T0 + 200_000);
       const h = await program.account.hackathonState.fetch(fix.hackathon);
-      assert.equal(h.resultsTimestamp.toNumber() - h.cutoffTimestamp.toNumber(), 86_400);
+      assert.equal(h.irlHackathonDeadlineTimestamp.toNumber() - h.cutoffTimestamp.toNumber(), 86_400);
     });
 
-    it("rejects results_timestamp <= now + 86400 (M-01: cutoff already expired)", async () => {
+    it("rejects irl_hackathon_deadline_timestamp <= now + 86400 (M-01: cutoff already expired)", async () => {
       setClock(ctx, T0);
-      // results_timestamp = T0 + 86_399 means cutoff = T0 - 1 (already past)
+      // irl_hackathon_deadline_timestamp = T0 + 86_399 means cutoff = T0 - 1 (already past)
       try {
         await newHackathon(ctx, program, T0 + 86_399);
-        assert.fail("should have rejected near-future results_timestamp");
+        assert.fail("should have rejected near-future irl_hackathon_deadline_timestamp");
       } catch (e: any) {
         assert.include(e.message, "InvalidTimestamp");
       }

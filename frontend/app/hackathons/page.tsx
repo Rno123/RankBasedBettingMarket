@@ -87,7 +87,7 @@ function HackathonRow({
             </p>
             <p style={{ margin: "8px 0 0", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
               {status === "open" && <>Closes in <span style={{ fontWeight: 600, color: "var(--c-text-2)" }}>{timeUntil(hackathon.cutoffTimestamp)}</span></>}
-              {status === "cutoff" && <>Results in <span style={{ fontWeight: 600, color: "var(--c-text-2)" }}>{timeUntil(hackathon.resultsTimestamp)}</span></>}
+              {status === "cutoff" && <>Results in <span style={{ fontWeight: 600, color: "var(--c-text-2)" }}>{timeUntil(hackathon.irlHackathonDeadlineTimestamp)}</span></>}
               {status === "pending" && <span>Awaiting resolution</span>}
               {status === "resolved" && <span>Resolved</span>}
             </p>
@@ -127,13 +127,13 @@ export default function HackathonsPage() {
   const totalProjects = Object.values(projectCounts).reduce((sum, count) => sum + (count ?? 0), 0);
   const cumulativeStaked = hackathons.reduce((sum, hackathon) => sum + hackathon.totalPool, 0n);
   const activeHackathons = hackathons.filter(
-    (hackathon) => hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved) !== "resolved",
+    (hackathon) => hackathonStatus(hackathon.irlHackathonDeadlineTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved) !== "resolved",
   ).length;
 
   const rows = useMemo(() => {
     const currentTab = TABS.find((tab) => tab.key === activeTab)!;
     return hackathons.filter((hackathon) =>
-      currentTab.matches(hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved)),
+      currentTab.matches(hackathonStatus(hackathon.irlHackathonDeadlineTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved)),
     );
   }, [activeTab, hackathons]);
 
@@ -201,7 +201,7 @@ export default function HackathonsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {rows.map((hackathon) => {
               const id = hackathon.pubkey.toBase58();
-              const status = hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
+              const status = hackathonStatus(hackathon.irlHackathonDeadlineTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
               const tone = TABS.find((tab) => tab.key === activeTab)!.tone;
               return (
                 <HackathonRow

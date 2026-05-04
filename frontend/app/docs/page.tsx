@@ -208,7 +208,7 @@ function SectionLifecycle() {
           { tag: "orange", label: "1. Initialize Hackathon", body: "Admin calls initialize_hackathon with name, USDC mint, tier percentages, deposit amount, and timestamps. Creates the HackathonState PDA and escrow token account." },
           { tag: "orange", label: "2. Register Projects", body: "Builders call register_project with their GitHub URL. PDA is seeded with sha256(github_url) — duplicate URLs revert automatically. If requires_approval is set, admin must whitelist first." },
           { tag: "sky",    label: "3. Staking Window", body: "Stakers call stake() to deposit USDC into escrow. Shares are computed at stake time using the time-weighted multiplier (1.5× early → 1.0× at cutoff). UserStake PDAs are initialized." },
-          { tag: "amber",  label: "4. Cutoff (−24 h)", body: "results_timestamp − 86 400 seconds. All staking locks. Unstaking with a 3% penalty remains available until cutoff. At and after cutoff, unstaking is fully disabled." },
+          { tag: "amber",  label: "4. Cutoff (−24 h)", body: "irl_hackathon_deadline_timestamp − 86 400 seconds. All staking locks. Unstaking with a 3% penalty remains available until cutoff. At and after cutoff, unstaking is fully disabled." },
           { tag: "amber",  label: "5. Resolve", body: "Admin calls resolve_project for each project to assign its rank (1-indexed, 0 = unranked). This is reversible until finalize_resolve is called." },
           { tag: "red",    label: "6. Finalize Resolve", body: "Admin calls finalize_resolve once all ranks are set. This snapshots tier_c_totals and effective_tier_pcts onto HackathonState — the values that claim will use. Irreversible." },
           { tag: "emerald",label: "7. Claim", body: "Each staker calls claim() with their UserStake PDA. Payout is computed from snapshotted values — no iteration over remaining_accounts. Protocol fee is deducted at this point." },
@@ -252,7 +252,7 @@ function SectionStaking() {
           ["Max stake per wallet per project", "$250 USDC (250,000,000 μUSDC)"],
           ["Max builder self-stake", "$250 USDC (250,000,000 μUSDC)"],
           ["Builder self-stake requires", "Project must have deposit paid and be declared"],
-          ["Staking window closes", "results_timestamp − 86,400 s (24 hours before results)"],
+          ["Staking window closes", "irl_hackathon_deadline_timestamp − 86,400 s (24 hours before results)"],
         ]}
       />
       <div style={calloutStyle("warn")}>
@@ -387,7 +387,7 @@ function SectionConstants() {
       <Table
         head={["Constant", "Value", "Description"]}
         rows={[
-          [<IC>SELL_CUTOFF_SECS</IC>, "86,400", "Staking locks 24 h before results_timestamp"],
+          [<IC>SELL_CUTOFF_SECS</IC>, "86,400", "Staking locks 24 h before irl_hackathon_deadline_timestamp"],
           [<IC>UNSTAKE_PENALTY_BPS</IC>, "300 (3%)", "Flat early-exit penalty on full stake"],
           [<IC>UNSTAKE_PROTOCOL_BPS</IC>, "150 (1.5%)", "Portion of penalty sent to fee_recipient"],
           [<IC>EARLY_MULTIPLIER_BPS</IC>, "15,000 (1.5×)", "Share multiplier at hackathon start"],
@@ -420,8 +420,8 @@ function SectionAccounts() {
   usdc_mint: Pubkey,
   name: String,                   // max 50 bytes; also used in PDA seed
   start_timestamp: i64,
-  results_timestamp: i64,
-  cutoff_timestamp: i64,          // = results_timestamp − 86_400
+  irl_hackathon_deadline_timestamp: i64,
+  cutoff_timestamp: i64,          // = irl_hackathon_deadline_timestamp − 86_400
   total_pool: u64,                // running USDC balance in escrow
   is_resolved: bool,
   tier_count: u8,
@@ -593,7 +593,7 @@ function SectionAdminOps() {
       <Table
         head={["Instruction", "Who", "Description"]}
         rows={[
-          [<IC>initialize_hackathon</IC>, "Protocol Admin", "Creates HackathonState + escrow. Requires results_timestamp > now + 86,400 s (M-01 fix)."],
+          [<IC>initialize_hackathon</IC>, "Protocol Admin", "Creates HackathonState + escrow. Requires irl_hackathon_deadline_timestamp > now + 86,400 s (M-01 fix)."],
           [<IC>whitelist_wallet</IC>, "Protocol Admin", "Creates WhitelistedWallet PDA for a staker. Only needed when requires_approval = true."],
           [<IC>register_project</IC>, "Builder", "Creates ProjectAccount. Duplicate GitHub URLs revert via PDA collision."],
           [<IC>pay_deposit</IC>, "Builder", "Transfers deposit_amount from builder to escrow."],
@@ -638,7 +638,7 @@ function SectionAudit() {
           ["C-01", <span style={tagStyle("red")}>Critical</span>, "claim iterated remaining_accounts to compute C_total, allowing caller manipulation of the payout denominator.", "finalize_resolve snapshots tier_c_totals on-chain. claim reads the stored value — no remaining_accounts iteration."],
           ["C-02", <span style={tagStyle("red")}>Critical</span>, "refund did not decrement total_pool / total_staked / total_shares, leaving stale state after refunds.", "refund now decrements all three fields before the token transfer (CEI pattern)."],
           ["H-01", <span style={tagStyle("orange")}>High</span>, "claim_deposit_refund did not check deposit_forfeited, allowing forfeited-deposit wallets to double-claim.", "Instruction reverts if deposit_forfeited = true."],
-          ["M-01", <span style={tagStyle("amber")}>Medium</span>, "initialize_hackathon accepted results_timestamp in the past or within the cutoff window.", "Requires results_timestamp > Clock::get().unix_timestamp + SELL_CUTOFF_SECS."],
+          ["M-01", <span style={tagStyle("amber")}>Medium</span>, "initialize_hackathon accepted irl_hackathon_deadline_timestamp in the past or within the cutoff window.", "Requires irl_hackathon_deadline_timestamp > Clock::get().unix_timestamp + SELL_CUTOFF_SECS."],
           ["M-02", <span style={tagStyle("amber")}>Medium</span>, "No upper bound on protocol_fee_bps allowed fees up to 65,535 bps (655%).", "Fee capped at 3,000 bps (30%) at initialization."],
         ]}
       />

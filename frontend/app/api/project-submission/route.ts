@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
 
   const { data: existing, error: fetchError } = await db
     .from("project_submissions")
-    .select("github_url, hackathon_pubkey, status, wallet_address")
+    .select("github_url, hackathon_pubkey, icon_url, status, wallet_address")
     .eq("project_pubkey", projectPubkey)
     .maybeSingle();
 

@@ -112,9 +112,30 @@ async function sendWalletTransactionWithConfirmation({
     transaction.recentBlockhash = latestBlockhash.blockhash;
   }
 
-  const signature = await sendTransaction(transaction, connection, {
-    preflightCommitment: "confirmed",
-  });
+  let signature: string;
+  try {
+    const sig = await sendTransaction(transaction, connection, {
+      preflightCommitment: "confirmed",
+    });
+    if (!sig || typeof sig !== "string") {
+      throw new Error(
+        "Wallet returned an invalid transaction signature. The wallet may have rejected the transaction or encountered a simulation error."
+      );
+    }
+    signature = sig;
+  } catch (sendErr: any) {
+    const msg = sendErr?.message ?? String(sendErr);
+    if (
+      msg.includes("simulation") ||
+      msg.includes("Simulation") ||
+      msg.includes("rejected") ||
+      msg.includes("Rejected") ||
+      msg.includes("User rejected")
+    ) {
+      throw sendErr;
+    }
+    throw new Error(`Failed to send transaction: ${msg}`);
+  }
 
   try {
     const confirmation = await Promise.race([
@@ -130,25 +151,28 @@ async function sendWalletTransactionWithConfirmation({
         setTimeout(() => reject(new Error("Transaction confirmation timed out")), TX_CONFIRM_TIMEOUT_MS),
       ),
     ]);
-    if (confirmation.value.err) {
+    if (confirmation?.value?.err) {
       throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }
-  } catch (error) {
+  } catch (error: any) {
     if (verifySuccess && await verifySuccess()) {
       return signature;
     }
-
-    const status = await connection.getSignatureStatus(signature, {
-      searchTransactionHistory: true,
-    });
-    if (status.value?.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
-    }
-    if (
-      status.value?.confirmationStatus === "confirmed" ||
-      status.value?.confirmationStatus === "finalized"
-    ) {
-      return signature;
+    try {
+      const status = await connection.getSignatureStatus(signature, {
+        searchTransactionHistory: true,
+      });
+      if (status?.value?.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(status.value.err)}`);
+      }
+      if (
+        status?.value?.confirmationStatus === "confirmed" ||
+        status?.value?.confirmationStatus === "finalized"
+      ) {
+        return signature;
+      }
+    } catch {
+      // Fall through to the original error if getSignatureStatus also fails.
     }
     throw error;
   }
@@ -1467,7 +1491,7 @@ function HackathonAdminCard({
       <button onClick={() => setExpanded((v) => !v)} style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", padding: "16px 24px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
         <div>
           <p style={{ margin: 0, fontWeight: 600, color: "var(--c-text)" }}>{hackathon.name || hackathon.pubkey.toBase58().slice(0, 16) + "…"}</p>
-          <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Results: {formatDate(hackathon.resultsTimestamp)} · {formatTokens(hackathon.totalPool)} USDC · <span style={{ color: PHASE_COLOR[hackathonPhase(hackathon)], fontWeight: 600 }}>{PHASE_LABEL[hackathonPhase(hackathon)]}</span></p>
+          <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Results: {formatDate(hackathon.irlHackathonDeadlineTimestamp)} · {formatTokens(hackathon.totalPool)} USDC · <span style={{ color: PHASE_COLOR[hackathonPhase(hackathon)], fontWeight: 600 }}>{PHASE_LABEL[hackathonPhase(hackathon)]}</span></p>
         </div>
         <span style={{ color: "var(--c-text-4)" }}>{expanded ? "▲" : "▼"}</span>
       </button>

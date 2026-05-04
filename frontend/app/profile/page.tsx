@@ -24,7 +24,7 @@ function getTierFromRank(rank: number, hackathon: HackathonInfo): number | null 
 function getStakeLifecycleStatus(entry: MyStakeEntry, hackathon: HackathonInfo | null) {
   if (entry.stake.isClaimed) return "claimed" as const;
   if (!hackathon) return "unknown" as const;
-  return hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
+  return hackathonStatus(hackathon.irlHackathonDeadlineTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
 }
 
 function StakeCard({ entry, hackathon, onRefresh }: {
@@ -34,7 +34,7 @@ function StakeCard({ entry, hackathon, onRefresh }: {
 }) {
   const { stake, project } = entry;
   const status = hackathon
-    ? hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved)
+    ? hackathonStatus(hackathon.irlHackathonDeadlineTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved)
     : null;
 
   const resolvedTierIndex = (hackathon && project && project.rank > 0)

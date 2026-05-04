@@ -13,7 +13,7 @@ Contract reference: [CONTRACT_REFERENCE.md](./CONTRACT_REFERENCE.md)
 ## How It Works
 
 ### The Staking Window
-A hackathon is created with a `results_timestamp`. Staking is open from creation until `cutoff_timestamp` (24 hours before results). After cutoff, all positions are locked — no new stakes, no unstakes.
+A hackathon is created with a `irl_hackathon_deadline_timestamp`. Staking is open from creation until `cutoff_timestamp` (24 hours before results). After cutoff, all positions are locked — no new stakes, no unstakes.
 
 ### Time-Weighted Shares
 Staking earlier earns more shares per USDC. The multiplier decays linearly from **1.5× at open** to **1.0× at cutoff**.
@@ -97,7 +97,7 @@ Multi-pick products such as a "Top 3 slip" do not need a separate on-chain payou
 |---|---|
 | `register_project(github_url, url_hash)` | Register an approved project on-chain for a builder wallet. Callable by the hackathon admin or a protocol admin. |
 | `whitelist_wallet` | Grant a wallet the ability to stake in a specific hackathon. |
-| `resolve(rank)` | Set the judge rank on one project (after `results_timestamp`). |
+| `resolve(rank)` | Set the judge rank on one project (after `irl_hackathon_deadline_timestamp`). |
 | `finalize_resolve` | Compute effective tier percentages, snapshot `tier_c_totals`, set `is_resolved = true`. Irreversible. |
 | `enable_refund` | Mark a project refund-eligible (exceptional case). |
 | `approve_submissions` | Batch-approve builder submissions so optional deposits become claimable. |
@@ -290,7 +290,7 @@ For X / Twitter sign-in, enable the X (OAuth 2.0) provider in Supabase Authentic
 3. Protocol admins can also use the global staker access panel to grant access across every current hackathon and review pending requests
 
 ### Resolving Results
-After `results_timestamp`:
+After `irl_hackathon_deadline_timestamp`:
 1. Expand the hackathon card → **Resolve projects**
 2. Enter ranks (1 = winner), click **Set ranks** — one `resolve` transaction per project
 3. Click **Finalize resolve** → confirm the irreversible prompt

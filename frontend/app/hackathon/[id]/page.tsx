@@ -273,26 +273,52 @@ function ProjectDetailModal({
             <button onClick={onClose} aria-label="Close" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--c-text-4)", fontSize: "1rem", lineHeight: 1, padding: "4px", flexShrink: 0 }}>✕</button>
           </div>
 
-          {/* Stats */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
-            <div style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px" }}>
-              <p style={{ margin: "0 0 2px", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Staked</p>
-              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{formatTokens(project.totalStaked)} <span style={{ fontSize: "0.75rem", color: "var(--c-text-3)" }}>USDC</span></p>
+          {/* Stats — 3 rows */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+            {/* Row 1: Total staked + pool share */}
+            <div style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "14px 16px" }}>
+              <p style={{ margin: 0, fontSize: "1.5rem", fontWeight: 900, color: "var(--c-text)", lineHeight: 1.2 }}>
+                {formatTokens(project.totalStaked)} <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-3)" }}>USDC</span>
+              </p>
+              <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                Total staked · <span style={{ fontWeight: 600, color: "var(--c-text-2)" }}>{share.toFixed(1)}%</span> of pool
+              </p>
             </div>
-            <div style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px" }}>
-              <p style={{ margin: "0 0 2px", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Pool share</p>
-              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text)" }}>{share.toFixed(1)}%</p>
+
+            {/* Row 2: Builder self-stake */}
+            <div style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px 16px", display: "flex", alignItems: "center", gap: "10px" }}>
+              {project.builderStaked > 0n ? (
+                <span style={{ display: "flex", height: "22px", width: "22px", alignItems: "center", justifyContent: "center", borderRadius: "6px", background: "var(--c-emerald-light)", color: "var(--c-emerald-text)", fontSize: "0.75rem", fontWeight: 900, flexShrink: 0 }}>✓</span>
+              ) : (
+                <span style={{ display: "flex", height: "22px", width: "22px", alignItems: "center", justifyContent: "center", borderRadius: "6px", background: "var(--c-divider-2)", color: "var(--c-text-4)", fontSize: "0.75rem", fontWeight: 900, flexShrink: 0 }}>✗</span>
+              )}
+              <span style={{ fontSize: "0.8125rem", color: "var(--c-text-3)" }}>Builder self-stake</span>
+              <span style={{ marginLeft: "auto", fontSize: "0.875rem", fontWeight: 700, color: project.builderStaked > 0n ? "var(--c-text)" : "var(--c-text-4)" }}>
+                {project.builderStaked > 0n ? formatTokens(project.builderStaked) : "None"}
+              </span>
             </div>
-            <div style={{ borderRadius: "10px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px" }}>
-              <p style={{ margin: "0 0 2px", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Builder self-stake</p>
-              <p style={{ margin: 0, fontWeight: 700, color: "var(--c-text-2)" }}>{formatTokens(project.builderStaked)} <span style={{ fontSize: "0.75rem", color: "var(--c-text-3)" }}>USDC</span></p>
-            </div>
-            {stake && stake.amount > 0n && !stake.isClaimed && (
-              <div style={{ borderRadius: "10px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "12px" }}>
-                <p style={{ margin: "0 0 2px", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-indigo-text)" }}>Your stake</p>
-                <p style={{ margin: 0, fontWeight: 700, color: "var(--c-indigo-text)" }}>{formatTokens(stake.amount)} <span style={{ fontSize: "0.75rem" }}>USDC</span></p>
-              </div>
-            )}
+
+            {/* Row 3: Your stake */}
+            {(() => {
+              const MAX = 250_000_000;
+              const cur = stake?.amount ?? 0n;
+              const pct = Math.min(100, Number(cur) / MAX * 100);
+              return (
+                <div style={{ borderRadius: "10px", border: cur > 0n ? "1px solid var(--c-indigo-border)" : "1px solid var(--c-divider)", background: cur > 0n ? "var(--c-indigo-light)" : "var(--card-bg-alt)", padding: "12px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: cur > 0n ? "8px" : "0" }}>
+                    <span style={{ fontSize: "0.8125rem", color: cur > 0n ? "var(--c-indigo-text)" : "var(--c-text-3)" }}>Your stake</span>
+                    <span style={{ fontSize: "0.875rem", fontWeight: 700, color: cur > 0n ? "var(--c-indigo-text)" : "var(--c-text-4)" }}>
+                      {cur > 0n ? formatTokens(cur) : "—"} <span style={{ fontSize: "0.7rem", fontWeight: 500, color: "var(--c-text-4)" }}>/ {formatTokens(BigInt(MAX))}</span>
+                    </span>
+                  </div>
+                  {cur > 0n && (
+                    <div className="ui-stake-bar-track">
+                      <div className="ui-stake-bar-fill" style={{ width: `${pct}%` }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* GitHub stats */}
@@ -581,7 +607,7 @@ export default function HackathonPage({
 
   // Derived state — all useMemo calls must be before any early return (Rules of Hooks)
   const status = hackathon
-    ? hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved)
+    ? hackathonStatus(hackathon.irlHackathonDeadlineTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved)
     : ("open" as ReturnType<typeof hackathonStatus>);
 
   const projectNames = useMemo(() => {
@@ -712,7 +738,7 @@ export default function HackathonPage({
             </div>
             <div>
               <p style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Results</p>
-              <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)" }}>{formatDate(hackathon.resultsTimestamp)}</p>
+              <p style={{ margin: "2px 0 0", fontSize: "0.875rem", fontWeight: 500, color: "var(--c-text-2)" }}>{formatDate(hackathon.irlHackathonDeadlineTimestamp)}</p>
               <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-4)" }}>Judge announcement</p>
             </div>
             <div>
@@ -764,7 +790,7 @@ export default function HackathonPage({
                 <>Staking closes in <span style={{ fontWeight: 600, color: "var(--c-amber-text)" }}>{timeUntil(hackathon.cutoffTimestamp)}</span></>
               )}
               {status === "cutoff" && (
-                <>Results in <span style={{ fontWeight: 600, color: "var(--c-sky-text)" }}>{timeUntil(hackathon.resultsTimestamp)}</span></>
+                <>Results in <span style={{ fontWeight: 600, color: "var(--c-sky-text)" }}>{timeUntil(hackathon.irlHackathonDeadlineTimestamp)}</span></>
               )}
             </div>
           )}

@@ -6,21 +6,21 @@
  *   - hackathonPda() to include the `name` argument
  *     (seed: ["hackathon", admin, name])
  *   - initializeHackathon() call to pass all current arguments:
- *     name, results_timestamp, tier_pcts, tier_counts, fee_recipient,
+ *     name, irl_hackathon_deadline_timestamp, tier_pcts, tier_counts, fee_recipient,
  *     protocol_fee_bps, deposit_amount, requires_approval
  *   - register_project() to pass url_hash: sha256(github_url)
  *   - stake() to pass the whitelistEntry PDA
  *   - claim() to remove remaining_accounts (tier_c_totals are now on-chain)
  *
  * Runs: initialize_hackathon → register_project → stake →
- *       (wait for results_timestamp) → resolve → finalize_resolve → claim
+ *       (wait for irl_hackathon_deadline_timestamp) → resolve → finalize_resolve → claim
  *
  * Usage:
  *   npx ts-node scripts/devnet-smoke-test.ts \
  *     --wallet ~/frontier-deployment/deploy-wallet.json
  *
  * The script creates its own mock USDC mint so no external faucet is needed.
- * results_timestamp is set 90 seconds in the future; the script waits for it.
+ * irl_hackathon_deadline_timestamp is set 90 seconds in the future; the script waits for it.
  */
 
 import * as anchor from "@coral-xyz/anchor";
@@ -50,7 +50,7 @@ import * as path from "path";
 const PROGRAM_ID = new PublicKey("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd");
 const RPC_URL    = "https://api.devnet.solana.com";
 
-// Time window: results_timestamp is this many seconds in the future.
+// Time window: irl_hackathon_deadline_timestamp is this many seconds in the future.
 // The script stakes immediately, then waits for the window to pass.
 const RESULTS_DELAY_SECS = 90;
 
@@ -200,7 +200,7 @@ async function main() {
 
   const h = await program.account.hackathonState.fetch(hackathon);
   log(`  HackathonState: ${hackathon.toBase58()}`);
-  log(`  results_timestamp: ${new Date(h.resultsTimestamp.toNumber() * 1000).toISOString()}`);
+  log(`  irl_hackathon_deadline_timestamp: ${new Date(h.irlHackathonDeadlineTimestamp.toNumber() * 1000).toISOString()}`);
   log(`  tier_count: ${h.tierCount}, tier_pcts: [${Array.from(h.tierPcts as Uint8Array).slice(0, h.tierCount).join(", ")}]`);
 
   // ── Step 4: register_project ──────────────────────────────────────────────
@@ -244,17 +244,17 @@ async function main() {
   const pool = (await program.account.hackathonState.fetch(hackathon)).totalPool.toNumber();
   log(`  total_pool: ${pool} (alice: ${STAKE_ALICE}, bob: ${STAKE_BOB})`);
 
-  // ── Step 6: Wait for results_timestamp ───────────────────────────────────
+  // ── Step 6: Wait for irl_hackathon_deadline_timestamp ───────────────────────────────────
   const now = Math.floor(Date.now() / 1000);
   const waitMs = (resultsTs - now + 2) * 1000;
-  log(`\n── Step 6: Waiting ${Math.ceil(waitMs / 1000)}s for results_timestamp…`);
+  log(`\n── Step 6: Waiting ${Math.ceil(waitMs / 1000)}s for irl_hackathon_deadline_timestamp…`);
   const interval = setInterval(() => {
     const remaining = resultsTs - Math.floor(Date.now() / 1000);
     if (remaining > 0) process.stdout.write(`\r  ${remaining}s remaining…   `);
   }, 1000);
   await sleep(waitMs);
   clearInterval(interval);
-  process.stdout.write("\r  ✔ results_timestamp reached\n");
+  process.stdout.write("\r  ✔ irl_hackathon_deadline_timestamp reached\n");
 
   // ── Step 7: resolve ───────────────────────────────────────────────────────
   log("\n── Step 7: resolve");

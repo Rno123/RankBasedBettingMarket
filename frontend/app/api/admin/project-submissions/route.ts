@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
 
     const { data: existingMeta } = await db
       .from("project_metadata")
-      .select("created_at, registered_wallet")
+      .select("created_at, icon_url, registered_wallet")
       .eq("project_pubkey", submission.project_pubkey)
       .maybeSingle();
 

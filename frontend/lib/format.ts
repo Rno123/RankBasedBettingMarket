@@ -46,13 +46,13 @@ export function timeUntil(ts: number): string {
 }
 
 export function hackathonStatus(
-  resultsTimestamp: number,
+  irlHackathonDeadlineTimestamp: number,
   cutoffTimestamp: number,
   isResolved: boolean,
 ): "open" | "cutoff" | "pending" | "resolved" {
   const now = Math.floor(Date.now() / 1000);
   if (isResolved) return "resolved";
-  if (now >= resultsTimestamp) return "pending";
+  if (now >= irlHackathonDeadlineTimestamp) return "pending";
   if (now >= cutoffTimestamp) return "cutoff";
   return "open";
 }

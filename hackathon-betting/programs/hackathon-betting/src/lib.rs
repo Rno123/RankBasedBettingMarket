@@ -5,9 +5,9 @@ declare_id!("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd");
 
 // ── Protocol constants ─────────────────────────────────────────────────────
 
-/// Seconds before results_timestamp after which unstaking is forbidden.
+/// Seconds before irl_hackathon_deadline_timestamp after which unstaking is forbidden.
 pub const SELL_CUTOFF_SECS: i64 = 86_400;
-/// Window after results_timestamp during which approved builders may claim their deposit back;
+/// Window after irl_hackathon_deadline_timestamp during which approved builders may claim their deposit back;
 /// after this window, unclaimed/undeclared deposits become forfeitable by the admin.
 pub const DEPOSIT_CLAIM_WINDOW_SECS: i64 = 14 * 86_400;
 /// Fixed unstake penalty in basis points (3%).
@@ -121,9 +121,9 @@ pub enum BettingError {
     ForfeitTooEarly,
     #[msg("Submission window has closed — builder declarations must happen before results")]
     SubmissionClosed,
-    #[msg("Deposit refund window has not opened yet — results_timestamp not yet reached")]
+    #[msg("Deposit refund window has not opened yet — irl_hackathon_deadline_timestamp not yet reached")]
     DepositClaimTooEarly,
-    #[msg("Deposit refund window has expired — must claim within 14 days of results_timestamp")]
+    #[msg("Deposit refund window has expired — must claim within 14 days of irl_hackathon_deadline_timestamp")]
     DepositClaimExpired,
 }
 
@@ -221,7 +221,7 @@ pub mod hackathon_betting {
     pub fn initialize_hackathon(
         ctx: Context<InitializeHackathon>,
         name: String,
-        results_timestamp: i64,
+        irl_hackathon_deadline_timestamp: i64,
         tier_pcts: Vec<u8>,
         tier_expected_counts: Vec<u8>,
         fee_recipient: Pubkey,
@@ -234,9 +234,9 @@ pub mod hackathon_betting {
         require!(name.len() <= NAME_MAX_LEN, BettingError::NameTooLong);
 
         let now = Clock::get()?.unix_timestamp;
-        // Require results_timestamp far enough in the future that the cutoff window is open.
+        // Require irl_hackathon_deadline_timestamp far enough in the future that the cutoff window is open.
         require!(
-            results_timestamp > now.saturating_add(SELL_CUTOFF_SECS),
+            irl_hackathon_deadline_timestamp > now.saturating_add(SELL_CUTOFF_SECS),
             BettingError::InvalidTimestamp,
         );
 
@@ -263,8 +263,8 @@ pub mod hackathon_betting {
         h.usdc_mint = ctx.accounts.usdc_mint.key();
         h.name = name;
         h.start_timestamp = now;
-        h.results_timestamp = results_timestamp;
-        h.cutoff_timestamp = results_timestamp
+        h.irl_hackathon_deadline_timestamp = irl_hackathon_deadline_timestamp;
+        h.cutoff_timestamp = irl_hackathon_deadline_timestamp
             .checked_sub(SELL_CUTOFF_SECS)
             .ok_or(BettingError::Overflow)?;
         h.total_pool = 0;
@@ -509,7 +509,7 @@ pub mod hackathon_betting {
     // ── 4.5  submit_project ───────────────────────────────────────────────
 
     /// Builder declares on-chain that they have submitted their project.
-    /// Must be called before results_timestamp. Staking still locks at cutoff,
+    /// Must be called before irl_hackathon_deadline_timestamp. Staking still locks at cutoff,
     /// but builders keep the full build window to declare completion.
     /// Sets builder_declared = true and records the timestamp.
     /// This records the builder-side declaration. Deposit refunds still require
@@ -518,7 +518,7 @@ pub mod hackathon_betting {
     pub fn submit_project(ctx: Context<SubmitProject>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         require!(
-            now < ctx.accounts.hackathon.results_timestamp,
+            now < ctx.accounts.hackathon.irl_hackathon_deadline_timestamp,
             BettingError::SubmissionClosed,
         );
         if ctx.accounts.hackathon.deposit_amount > 0 {
@@ -629,7 +629,7 @@ pub mod hackathon_betting {
         )?;
         let now = Clock::get()?.unix_timestamp;
         require!(
-            now >= ctx.accounts.hackathon.results_timestamp,
+            now >= ctx.accounts.hackathon.irl_hackathon_deadline_timestamp,
             BettingError::ResultsNotYet,
         );
         require!(rank >= 1, BettingError::InvalidRank);
@@ -668,7 +668,7 @@ pub mod hackathon_betting {
         )?;
         let now = Clock::get()?.unix_timestamp;
         require!(
-            now >= ctx.accounts.hackathon.results_timestamp,
+            now >= ctx.accounts.hackathon.irl_hackathon_deadline_timestamp,
             BettingError::ResultsNotYet,
         );
 
@@ -1062,11 +1062,11 @@ pub mod hackathon_betting {
         );
         require!(ctx.accounts.project.submitted, BettingError::NotSubmitted);
         require!(
-            now >= ctx.accounts.hackathon.results_timestamp,
+            now >= ctx.accounts.hackathon.irl_hackathon_deadline_timestamp,
             BettingError::DepositClaimTooEarly,
         );
         require!(
-            now <= ctx.accounts.hackathon.results_timestamp
+            now <= ctx.accounts.hackathon.irl_hackathon_deadline_timestamp
                 .saturating_add(DEPOSIT_CLAIM_WINDOW_SECS),
             BettingError::DepositClaimExpired,
         );
@@ -1163,7 +1163,7 @@ pub mod hackathon_betting {
             ctx.remaining_accounts,
         )?;
         let now = Clock::get()?.unix_timestamp;
-        let forfeitable_at = ctx.accounts.hackathon.results_timestamp
+        let forfeitable_at = ctx.accounts.hackathon.irl_hackathon_deadline_timestamp
             .checked_add(DEPOSIT_CLAIM_WINDOW_SECS)
             .ok_or(BettingError::Overflow)?;
         require!(now >= forfeitable_at, BettingError::ForfeitTooEarly);
@@ -1524,7 +1524,7 @@ pub mod hackathon_betting {
             admin: admin_pk,
             usdc_mint,
             name,
-            results_timestamp:   results_ts,
+            irl_hackathon_deadline_timestamp:   results_ts,
             cutoff_timestamp:    cutoff_ts,
             start_timestamp:     0,   // migration default; unknown original start
             total_pool,
@@ -1631,7 +1631,7 @@ pub mod hackathon_betting {
             admin: admin_pk,
             usdc_mint,
             name,
-            results_timestamp:    results_ts,
+            irl_hackathon_deadline_timestamp:    results_ts,
             cutoff_timestamp:     cutoff_ts,
             start_timestamp:      start_ts,
             total_pool,
@@ -1736,7 +1736,7 @@ pub mod hackathon_betting {
             admin: admin_pk,
             usdc_mint,
             name,
-            results_timestamp:    results_ts,
+            irl_hackathon_deadline_timestamp:    results_ts,
             cutoff_timestamp:     cutoff_ts,
             start_timestamp:      start_ts,
             total_pool,
@@ -1773,7 +1773,7 @@ pub struct HackathonState {
     pub admin: Pubkey,                          // 32
     pub usdc_mint: Pubkey,                      // 32
     pub name: String,                           // 4 + NAME_MAX_LEN
-    pub results_timestamp: i64,                 // 8
+    pub irl_hackathon_deadline_timestamp: i64,                 // 8
     pub cutoff_timestamp: i64,                  // 8
     pub start_timestamp: i64,                   // 8
     pub total_pool: u64,                        // 8
@@ -1798,7 +1798,7 @@ impl HackathonState {
         + 32  // admin
         + 32  // usdc_mint
         + 4 + NAME_MAX_LEN  // name (4-byte length prefix + max 50 bytes)
-        + 8   // results_timestamp
+        + 8   // irl_hackathon_deadline_timestamp
         + 8   // cutoff_timestamp
         + 8   // start_timestamp
         + 8   // total_pool

@@ -567,7 +567,6 @@ function SubmitForm({
           iconBase64,
           projectName: projectName.trim(),
           projectPubkey: projectPk.toBase58(),
-          requiresApproval,
           signature,
           telegram: normalizeTelegram(telegram),
           twitterHandle: twitter.replace(/^@/, "").trim() || undefined,
@@ -720,7 +719,7 @@ function DevHackathonCard({
 }) {
   const { publicKey } = useWallet();
   const [submitting, setSubmitting] = useState(false);
-  const status = hackathonStatus(hackathon.resultsTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
+  const status = hackathonStatus(hackathon.irlHackathonDeadlineTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
 
   if (status !== "open") return null;
 
@@ -730,7 +729,7 @@ function DevHackathonCard({
         <div>
           <p style={{ margin: 0, fontWeight: 600, color: "var(--c-text)" }}>{hackathon.name || hackathon.pubkey.toBase58().slice(0, 12) + "…"}</p>
           <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-            Results: {formatDate(hackathon.resultsTimestamp)} · Cutoff in {timeUntil(hackathon.cutoffTimestamp)}
+            Results: {formatDate(hackathon.irlHackathonDeadlineTimestamp)} · Cutoff in {timeUntil(hackathon.cutoffTimestamp)}
           </p>
         </div>
         {!submitting && (
@@ -921,7 +920,7 @@ function BuilderProjectCard({
   }
 
   async function submitProject() {
-    if (hackathon && Math.floor(Date.now() / 1000) >= hackathon.resultsTimestamp) {
+    if (hackathon && Math.floor(Date.now() / 1000) >= hackathon.irlHackathonDeadlineTimestamp) {
       setErr("Submission window closed — builder declarations must happen before results.");
       return;
     }
@@ -1006,7 +1005,7 @@ function BuilderProjectCard({
   const MAX_SELF_STAKE = 250_000_000n;
   const nowSecs = Math.floor(Date.now() / 1000);
   const cutoffPassed = hackathon ? nowSecs >= hackathon.cutoffTimestamp : true;
-  const resultsPassed = hackathon ? nowSecs >= hackathon.resultsTimestamp : true;
+  const resultsPassed = hackathon ? nowSecs >= hackathon.irlHackathonDeadlineTimestamp : true;
   const selfStakeDisabledLabel = cutoffPassed
     ? "Staking closed — cutoff has passed"
     : hasDeposit
@@ -1335,7 +1334,7 @@ export default function DevPortalPage() {
 
   const authEmail = session?.user?.email ?? session?.user?.user_metadata?.user_name ?? "";
   const ongoingHackathons = hackathons.filter((h) => {
-    const s = hackathonStatus(h.resultsTimestamp, h.cutoffTimestamp, h.isResolved);
+    const s = hackathonStatus(h.irlHackathonDeadlineTimestamp, h.cutoffTimestamp, h.isResolved);
     return s === "open";
   });
 

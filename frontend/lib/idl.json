@@ -525,7 +525,7 @@
           "type": "string"
         },
         {
-          "name": "results_timestamp",
+          "name": "irl_hackathon_deadline_timestamp",
           "type": "i64"
         },
         {
@@ -1834,7 +1834,7 @@
             "type": "string"
           },
           {
-            "name": "results_timestamp",
+            "name": "irl_hackathon_deadline_timestamp",
             "type": "i64"
           },
           {

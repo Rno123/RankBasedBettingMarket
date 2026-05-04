@@ -68,8 +68,8 @@ HackathonState {
     usdc_mint: Pubkey,
     name: String,             // max 50 bytes; PDA seed
     start_timestamp: i64,
-    results_timestamp: i64,
-    cutoff_timestamp: i64,    // results_timestamp - 86400
+    irl_hackathon_deadline_timestamp: i64,
+    cutoff_timestamp: i64,    // irl_hackathon_deadline_timestamp - 86400
     total_pool: u64,
     is_resolved: bool,
     tier_count: u8,
@@ -141,7 +141,7 @@ All findings from the Codex audit have been fixed:
 - **C-01**: `tier_c_totals` snapshot at `finalize_resolve`; claim uses stored value
 - **C-02**: `refund` decrements `total_pool`, `total_staked`, `total_shares` (CEI)
 - **H-01**: `claim_deposit_refund` rejects if `deposit_forfeited = true`
-- **M-01**: `initialize_hackathon` requires `results_timestamp > now + SELL_CUTOFF_SECS`
+- **M-01**: `initialize_hackathon` requires `irl_hackathon_deadline_timestamp > now + SELL_CUTOFF_SECS`
 - **M-02**: `protocol_fee_bps` capped at 3000
 
 ## Test Suite

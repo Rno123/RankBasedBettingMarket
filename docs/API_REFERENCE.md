@@ -16,9 +16,9 @@
 |-------|--------|
 | **Auth** | Protocol admin (hardcoded or delegated via ProtocolAdminEntry PDA) |
 | **PDAs created** | `HackathonState` at `[hackathon, admin, name]`, Escrow ATA at `[escrow, hackathon]` |
-| **Params** | `name: String` (≤50 bytes), `results_timestamp: i64`, `tier_pcts: Vec<u8>` (sum=100, len 1–8), `tier_expected_counts: Vec<u8>` (len must match), `fee_recipient: Pubkey`, `protocol_fee_bps: u16` (≤3000), `deposit_amount: u64` (0 = no deposit), `requires_approval: bool`, `open_staking: bool` |
-| **Constraints** | `results_timestamp > now + 86400`, `protocol_fee_bps <= 3000` |
-| **Client** | `program.methods.initializeHackathon(name, resultsTimestamp, tierPcts, tierExpectedCounts, feeRecipient, protocolFeeBps, depositAmount, requiresApproval, openStaking).accounts({ admin, hackathon, escrow, usdcMint, tokenProgram, systemProgram }).remainingAccounts([protocolAdminPda])` |
+| **Params** | `name: String` (≤50 bytes), `irl_hackathon_deadline_timestamp: i64`, `tier_pcts: Vec<u8>` (sum=100, len 1–8), `tier_expected_counts: Vec<u8>` (len must match), `fee_recipient: Pubkey`, `protocol_fee_bps: u16` (≤3000), `deposit_amount: u64` (0 = no deposit), `requires_approval: bool`, `open_staking: bool` |
+| **Constraints** | `irl_hackathon_deadline_timestamp > now + 86400`, `protocol_fee_bps <= 3000` |
+| **Client** | `program.methods.initializeHackathon(name, irlHackathonDeadlineTimestamp, tierPcts, tierExpectedCounts, feeRecipient, protocolFeeBps, depositAmount, requiresApproval, openStaking).accounts({ admin, hackathon, escrow, usdcMint, tokenProgram, systemProgram }).remainingAccounts([protocolAdminPda])` |
 
 ### 4.2 `register_project`
 
@@ -57,7 +57,7 @@
 |-------|--------|
 | **Auth** | Builder (`project.builder_wallet == signer`) |
 | **Effects** | Sets `builder_declared = true`, `declared_at = now` |
-| **Constraints** | `now < results_timestamp`, `!builder_declared` |
+| **Constraints** | `now < irl_hackathon_deadline_timestamp`, `!builder_declared` |
 | **Client** | `program.methods.submitProject().accounts({ builder, hackathon, project })` |
 
 ### 4.6 `unstake`
@@ -76,7 +76,7 @@
 | **Auth** | Hackathon admin or protocol admin |
 | **Effects** | Sets `project.rank = rank`. Increments `hackathon.ranked_count` on first ranking |
 | **Params** | `rank: u8` (≥1) |
-| **Constraints** | `now >= results_timestamp`, `!is_resolved` |
+| **Constraints** | `now >= irl_hackathon_deadline_timestamp`, `!is_resolved` |
 | **Client** | `program.methods.resolve(rank).accounts({ admin, hackathon, project }).remainingAccounts([adminPda])` |
 
 ### 4.8 `finalize_resolve`
@@ -86,7 +86,7 @@
 | **Auth** | Hackathon admin or protocol admin |
 | **Effects** | Computes `effective_tier_pcts` (proportional cascade), snapshots `tier_c_totals`, sets `is_resolved = true` |
 | **Remaining accounts** | All ProjectAccount PDAs for this hackathon (completeness verified against `ranked_count`) |
-| **Constraints** | `now >= results_timestamp`, `!is_resolved`, `ranked_found == ranked_count` |
+| **Constraints** | `now >= irl_hackathon_deadline_timestamp`, `!is_resolved`, `ranked_found == ranked_count` |
 | **Client** | `program.methods.finalizeResolve().accounts({ admin, hackathon }).remainingAccounts(allProjectPdas.map(p => ({ pubkey: p, isWritable: false, isSigner: false })))` |
 
 ### 4.9 `claim`
@@ -140,7 +140,7 @@
 |-------|--------|
 | **Auth** | Builder (`project.builder_wallet == signer`) |
 | **Effects** | Returns full deposit to builder's ATA |
-| **Constraints** | `builder_declared && submitted`, `now >= results_timestamp`, `now <= results_timestamp + 14 days`, `!deposit_forfeited`, `!deposit_refunded` |
+| **Constraints** | `builder_declared && submitted`, `now >= irl_hackathon_deadline_timestamp`, `now <= irl_hackathon_deadline_timestamp + 14 days`, `!deposit_forfeited`, `!deposit_refunded` |
 | **Client** | `program.methods.claimDepositRefund().accounts({ builder, hackathon, project, builderTokenAccount, escrow, tokenProgram, systemProgram })` |
 
 ### 4.15 `forfeit_deposit`
@@ -149,7 +149,7 @@
 |-------|--------|
 | **Auth** | Hackathon admin or protocol admin |
 | **Effects** | Splits deposit: 50% to fee_recipient, 50% added to total_pool. Sets `deposit_forfeited = true`. |
-| **Constraints** | `now >= results_timestamp + 14 days`, `!submitted`, `deposit_amount_paid > 0`, `!deposit_refunded`, `!deposit_forfeited` |
+| **Constraints** | `now >= irl_hackathon_deadline_timestamp + 14 days`, `!submitted`, `deposit_amount_paid > 0`, `!deposit_refunded`, `!deposit_forfeited` |
 | **Client** | `program.methods.forfeitDeposit().accounts({ admin, hackathon, project, feeRecipientTokenAccount, escrow, tokenProgram }).remainingAccounts([adminPda])` |
 
 ### 4.16 `transfer_upgrade_authority`
