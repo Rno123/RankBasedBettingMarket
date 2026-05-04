@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useWallet } from "@solana/wallet-adapter-react";
 import Navbar from "@/components/Navbar";
+import ConnectWalletButton from "@/components/ConnectWalletButton";
 import { useHackathons } from "@/hooks/useHackathons";
 import { useMyStakes } from "@/hooks/useMyStakes";
 import { formatTokens, hackathonStatus, repoName } from "@/lib/format";
@@ -232,8 +233,9 @@ export default function ProfilePage() {
         </div>
 
         {!publicKey ? (
-          <div style={{ borderRadius: "16px", border: "1px dashed var(--c-divider)", padding: "48px", textAlign: "center", color: "var(--c-text-4)" }}>
-            Connect your wallet to view your portfolio.
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 16px", textAlign: "center" }}>
+            <p style={{ margin: "0 0 24px", fontSize: "1rem", color: "var(--c-text-4)" }}>Connect your wallet to view your portfolio.</p>
+            <ConnectWalletButton />
           </div>
         ) : loading ? (
           <>

@@ -81,14 +81,10 @@ export default function Navbar() {
             <Link href="/hackathons" style={navLinkStyle("/hackathons")}>Hackathons</Link>
             <Link href="/devs" style={navLinkStyle("/devs")}>Builders</Link>
             <Link href="/how-to-use" style={navLinkStyle("/how-to-use")}>How it works</Link>
-            {publicKey && (
-              <Link href="/profile" style={navLinkStyle("/profile")}>Portfolio</Link>
-            )}
+            <Link href="/profile" style={navLinkStyle("/profile")}>Portfolio</Link>
+            <Link href="/docs" style={navLinkStyle("/docs")}>Docs</Link>
             {showAdmin && (
               <Link href="/admin" style={navLinkStyle("/admin")}>Admin</Link>
-            )}
-            {showAdmin && (
-              <Link href="/docs" style={navLinkStyle("/docs")}>Docs</Link>
             )}
             {showMaster && (
               <Link
@@ -163,14 +159,10 @@ export default function Navbar() {
             <Link href="/hackathons" style={{ ...navLinkStyle("/hackathons"), padding: "8px 12px", borderRadius: "8px" }}>Hackathons</Link>
             <Link href="/devs" style={{ ...navLinkStyle("/devs"), padding: "8px 12px", borderRadius: "8px" }}>Builders</Link>
             <Link href="/how-to-use" style={{ ...navLinkStyle("/how-to-use"), padding: "8px 12px", borderRadius: "8px" }}>How it works</Link>
-            {publicKey && (
-              <Link href="/profile" style={{ ...navLinkStyle("/profile"), padding: "8px 12px", borderRadius: "8px" }}>Portfolio</Link>
-            )}
+            <Link href="/profile" style={{ ...navLinkStyle("/profile"), padding: "8px 12px", borderRadius: "8px" }}>Portfolio</Link>
+            <Link href="/docs" style={{ ...navLinkStyle("/docs"), padding: "8px 12px", borderRadius: "8px" }}>Docs</Link>
             {showAdmin && (
               <Link href="/admin" style={{ ...navLinkStyle("/admin"), padding: "8px 12px", borderRadius: "8px" }}>Admin</Link>
-            )}
-            {showAdmin && (
-              <Link href="/docs" style={{ ...navLinkStyle("/docs"), padding: "8px 12px", borderRadius: "8px" }}>Docs</Link>
             )}
             {showMaster && (
               <Link href="/master" style={{ fontSize: "0.875rem", fontWeight: 500, textDecoration: "none", color: "var(--c-amber-text)", padding: "8px 12px", borderRadius: "8px" }}>

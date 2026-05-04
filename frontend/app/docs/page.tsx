@@ -319,14 +319,14 @@ function SectionPayout() {
       <h2 style={h2Style}>Payout Formula</h2>
       <p style={pStyle}>
         The payout calculation runs in two stages: first allocate the prize pool across rank tiers,
-        then distribute within each tier using a square-root crowding adjustment.
+        then distribute equally within each tier.
       </p>
 
       <h3 style={h3Style}>Stage 1 — Tier allocation</h3>
       <p style={pStyle}>
         The admin configures up to 8 tiers at hackathon creation, each with a percentage
-        (must sum to 100). For example: <IC>[50, 30, 20]</IC> means rank-1 projects share 50%
-        of the pool, rank-2 projects share 30%, rank-3 share 20%.
+        (must sum to 100). For example: <IC>[12, 88]</IC> means the rank-1 project gets 12%
+        of the pool, and 22 rank-2 projects share 88% equally (4% each).
       </p>
       <p style={pStyle}>
         At <IC>finalize_resolve</IC>, empty tiers (no projects assigned that rank) have their
@@ -334,13 +334,13 @@ function SectionPayout() {
         <IC>effective_tier_pcts</IC> are stored on <IC>HackathonState</IC>.
       </p>
 
-      <h3 style={h3Style}>Stage 2 — Square-root crowding (within tier)</h3>
+      <h3 style={h3Style}>Stage 2 — Equal split (within tier)</h3>
       <p style={pStyle}>
-        Within a tier, projects are weighted by the square root of their total staked amount.
-        This rewards popular projects while preventing a single heavily-backed project from
-        capturing the entire tier allocation.
+        Every ranked project in a tier gets an equal share of that tier&apos;s pool.
+        The number of ranked projects per tier (<IC>N</IC>) is counted and snapshotted
+        at <IC>finalize_resolve</IC>.
       </p>
-      <code style={codeStyle}>{`C_i         = isqrt(project.total_staked)             // integer sqrt
+      <code style={codeStyle}>{`N            = hackathon.tier_c_totals[tier]   // project count, snapshotted
 C_total_t   = hackathon.tier_c_totals[tier]           // snapshotted at finalize_resolve
 
 payout =   user_shares
@@ -667,52 +667,29 @@ export default function DocsPage() {
       },
       { rootMargin: "-20% 0px -70% 0px" },
     );
-    SECTIONS.forEach(({ id }) => {
+    visibleSections.forEach(({ id }) => {
       const el = document.getElementById(id);
       if (el) observerRef.current?.observe(el);
     });
     return () => observerRef.current?.disconnect();
   }, [canView]);
 
-  // ── Unauthorized states ───────────────────────────────────────────────────
-
-  if (!publicKey) {
-    return (
-      <>
-        <Navbar />
-        <main style={{ minHeight: "100vh", background: "var(--page-bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ textAlign: "center", padding: "2rem" }}>
-            <p style={{ ...pStyle, color: "var(--c-text-4)" }}>Connect your wallet to continue.</p>
-          </div>
-        </main>
-      </>
-    );
-  }
+  // ── Loading state ──────────────────────────────────────────────────────────
 
   if (loading) {
     return (
       <>
         <Navbar />
         <main style={{ minHeight: "100vh", background: "var(--page-bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <p style={{ ...pStyle, color: "var(--c-text-4)" }}>Checking access…</p>
+          <p style={{ ...pStyle, color: "var(--c-text-4)" }}>Loading…</p>
         </main>
       </>
     );
   }
 
-  if (!canView) {
-    return (
-      <>
-        <Navbar />
-        <main style={{ minHeight: "100vh", background: "var(--page-bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ textAlign: "center", padding: "2rem" }}>
-            <p style={{ fontWeight: 700, fontSize: "1.125rem", color: "var(--c-text)", margin: "0 0 0.5rem" }}>Access restricted</p>
-            <p style={{ ...pStyle, color: "var(--c-text-4)", margin: 0 }}>Protocol documentation is only visible to admins.</p>
-          </div>
-        </main>
-      </>
-    );
-  }
+  const visibleSections = SECTIONS.filter(
+    (s) => canView || (s.id !== "admin-ops" && s.id !== "audit"),
+  );
 
   // ── Docs layout ───────────────────────────────────────────────────────────
 
@@ -743,7 +720,7 @@ export default function DocsPage() {
             <p style={{ fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--c-text-4)", margin: "0 0 0.75rem 8px" }}>
               Protocol Docs
             </p>
-            {SECTIONS.map(({ id, label }) => (
+            {visibleSections.map(({ id, label }) => (
               <a
                 key={id}
                 href={`#${id}`}
@@ -802,10 +779,14 @@ export default function DocsPage() {
             <SectionClaimArch />
             <div style={{ height: "1px", background: "var(--c-divider-2)", marginBottom: "3.5rem" }} />
             <SectionFees />
-            <div style={{ height: "1px", background: "var(--c-divider-2)", marginBottom: "3.5rem" }} />
-            <SectionAdminOps />
-            <div style={{ height: "1px", background: "var(--c-divider-2)", marginBottom: "3.5rem" }} />
-            <SectionAudit />
+            {canView && (
+              <>
+                <div style={{ height: "1px", background: "var(--c-divider-2)", marginBottom: "3.5rem" }} />
+                <SectionAdminOps />
+                <div style={{ height: "1px", background: "var(--c-divider-2)", marginBottom: "3.5rem" }} />
+                <SectionAudit />
+              </>
+            )}
           </main>
         </div>
       </div>
