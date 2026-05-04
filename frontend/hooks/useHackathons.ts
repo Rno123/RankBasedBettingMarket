@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { getReadonlyProgram } from "@/lib/program";
-import { PROGRAM_ID } from "@/lib/constants";
+import { PROGRAM_ID, HIDDEN_HACKATHONS } from "@/lib/constants";
 
 export interface HackathonInfo {
   pubkey: PublicKey;
@@ -82,13 +82,16 @@ export function useHackathons() {
           }
         });
 
+        // Skip stale/hidden hackathon PDAs.
+        const filtered = list.filter((h) => !HIDDEN_HACKATHONS.has(h.pubkey.toBase58()));
+
         // Sort: unresolved first, then by irlHackathonDeadlineTimestamp asc
-        list.sort((a, b) => {
+        filtered.sort((a, b) => {
           if (a.isResolved !== b.isResolved) return a.isResolved ? 1 : -1;
           return a.irlHackathonDeadlineTimestamp - b.irlHackathonDeadlineTimestamp;
         });
 
-        setHackathons(list);
+        setHackathons(filtered);
       } catch (e: any) {
         if (!cancelled) setError(e.message ?? "Failed to load hackathons");
       } finally {

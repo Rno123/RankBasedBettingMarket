@@ -18,3 +18,9 @@ export const USDC_MINT = new PublicKey(
 // Protocol super-admin + BPF upgrade authority
 export const PROTOCOL_ADMIN = "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD";
 export const DEPLOYER = "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD";
+
+// Stale hackathon PDAs hidden from the frontend (e.g. recreated with wrong config).
+// Each escrow is PDA-derived and isolated — these are safe to leave on-chain.
+export const HIDDEN_HACKATHONS = new Set([
+  "CKgWfqPwSXMWkjuycVYrVaKNMNy2YjMPWfpcBzLn6yTX",
+]);
