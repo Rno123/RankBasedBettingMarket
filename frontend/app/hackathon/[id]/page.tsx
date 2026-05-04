@@ -760,7 +760,7 @@ export default function HackathonPage({
                     key={i}
                     style={{ borderRadius: "6px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "4px 10px", fontSize: "0.75rem", fontWeight: 600, color: "var(--c-indigo-text)" }}
                   >
-                    {count > 1 ? `${count} × ` : ""}{pct}%
+                    {count > 1 ? `${count} × ${(pct / count).toFixed(0)}%` : `${pct}%`}
                   </span>
                 );
               })}
