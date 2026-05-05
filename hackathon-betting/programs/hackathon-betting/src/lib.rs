@@ -621,8 +621,10 @@ pub mod hackathon_betting {
             rank <= ctx.accounts.hackathon.tier_count,
             BettingError::InvalidRank,
         );
-        // Track the count of ranked projects so finalize_resolve can verify
-        // all ranked projects are supplied (completeness check).
+        // ranked_count tracks every project that has been assigned a rank,
+        // regardless of deposit or stake status. finalize_resolve uses this
+        // for a completeness check (all ranked projects must be supplied).
+        // Payout eligibility filtering happens inside finalize_resolve.
         if ctx.accounts.project.rank == 0 {
             ctx.accounts.hackathon.ranked_count = ctx.accounts.hackathon.ranked_count
                 .checked_add(1)
@@ -638,10 +640,11 @@ pub mod hackathon_betting {
     /// stores them as basis points in `effective_tier_pcts`, then sets
     /// `is_resolved = true`.
     ///
-    /// **Cascade rule:** If a tier has no ranked project in remaining_accounts,
-    /// its configured pool percentage is redistributed proportionally among all
-    /// tiers that do have projects.  Zero-staked ranked projects still occupy
-    /// their tier (the cascade is about tier representation, not stake size).
+    /// **Cascade rule:** Only payout-eligible projects (deposit paid when required,
+    /// and nonzero shares) occupy a tier for cascade purposes. Display-only projects
+    /// (no deposit, or refunded to zero shares after ranking) are excluded from tier
+    /// math. If no payout-eligible projects exist, effective_tier_pcts stays zeroed
+    /// and is_resolved is still set — judging is terminal regardless of payouts.
     ///
     /// remaining_accounts: all registered ProjectAccounts for this hackathon.
     pub fn finalize_resolve(ctx: Context<FinalizeResolve>) -> Result<()> {
@@ -666,8 +669,11 @@ pub mod hackathon_betting {
         // tier_c_totals denominators (completeness check).
         let mut tier_has_projects = [false; MAX_TIERS];
         let mut tier_c_totals_new = [0u64; MAX_TIERS];
-        let mut ranked_found: u32 = 0;
+        // ranked_found_all: every rank > 0 project; compared against ranked_count
+        // for completeness (prevents admin from omitting projects).
+        let mut ranked_found_all: u32 = 0;
         let mut seen_projects: Vec<Pubkey> = Vec::new();
+        let deposit_required = ctx.accounts.hackathon.deposit_amount > 0;
         for acc in ctx.remaining_accounts[auth_offset..].iter() {
             if acc.owner != &crate::ID {
                 continue;
@@ -688,22 +694,30 @@ pub mod hackathon_betting {
             if project.rank == 0 {
                 continue;
             }
-            ranked_found = ranked_found.checked_add(1).ok_or(BettingError::Overflow)?;
+            // Every ranked project counts toward the completeness check, regardless
+            // of deposit or stake status (ensures admin cannot omit any ranked project).
+            ranked_found_all = ranked_found_all.checked_add(1).ok_or(BettingError::Overflow)?;
+            // Payout eligibility: must have a deposit (when required) and nonzero
+            // shares. Projects without a deposit or with zero shares are ranked for
+            // display only and must not affect tier denominators or cascade math.
+            // Note: shares can drop to zero via refund() after ranking — those
+            // projects are display-only even though they were once stake-bearing.
+            let deposit_paid = project.deposit_amount_paid > 0;
+            if (deposit_required && !deposit_paid) || project.total_shares == 0 {
+                continue;
+            }
             let tier = rank_to_tier_idx(project.rank, tier_count as u8);
-            // Count ranked projects per tier — equal split, no sqrt weighting.
+            // Count payout-eligible ranked projects per tier — equal split denominator.
             tier_c_totals_new[tier] = tier_c_totals_new[tier]
                 .checked_add(1)
                 .ok_or(BettingError::Overflow)?;
         }
         require!(
-            ranked_found == ctx.accounts.hackathon.ranked_count,
+            ranked_found_all == ctx.accounts.hackathon.ranked_count,
             BettingError::IncompleteProjectList,
         );
 
-        // A tier is only "occupied" if it has ranked projects with non-zero stake.
-        // Tiers where all ranked projects have total_staked = 0 produce a zero
-        // denominator in claim, which would permanently lock funds. Treat those
-        // tiers as empty so their pool percentage cascades to tiers with stake.
+        // A tier is only "occupied" if it has payout-eligible ranked projects.
         for i in 0..tier_count {
             tier_has_projects[i] = tier_c_totals_new[i] > 0;
         }
@@ -717,33 +731,37 @@ pub mod hackathon_betting {
                     .ok_or(BettingError::Overflow)?;
             }
         }
-        require!(total_non_empty_bps > 0, BettingError::AllTiersEmpty);
 
         // Proportional cascade:
         //   effective_bps[j] = floor(tier_pcts[j] * 1_000_000 / total_non_empty_bps)
         // The last occupied tier absorbs rounding dust so the sum is exactly 10_000.
+        // If no payout-eligible projects exist (total_non_empty_bps == 0), all
+        // effective_tier_pcts stay zero and is_resolved is still set to true —
+        // judging is a terminal state independent of whether payouts are computable.
         let mut effective = [0u16; MAX_TIERS];
-        let mut allocated: u32 = 0;
-        let mut last_non_empty: usize = 0;
-        for i in 0..tier_count {
-            if tier_has_projects[i] {
-                last_non_empty = i;
+        if total_non_empty_bps > 0 {
+            let mut allocated: u32 = 0;
+            let mut last_non_empty: usize = 0;
+            for i in 0..tier_count {
+                if tier_has_projects[i] {
+                    last_non_empty = i;
+                }
             }
-        }
-        for i in 0..tier_count {
-            if !tier_has_projects[i] {
-                continue;
-            }
-            if i == last_non_empty {
-                effective[i] = TIER_BPS_TOTAL.saturating_sub(allocated) as u16;
-            } else {
-                let v = (tier_pcts[i] as u32)
-                    .checked_mul(1_000_000)
-                    .ok_or(BettingError::Overflow)?
-                    .checked_div(total_non_empty_bps)
-                    .unwrap_or(0);
-                effective[i] = v as u16;
-                allocated = allocated.checked_add(v).ok_or(BettingError::Overflow)?;
+            for i in 0..tier_count {
+                if !tier_has_projects[i] {
+                    continue;
+                }
+                if i == last_non_empty {
+                    effective[i] = TIER_BPS_TOTAL.saturating_sub(allocated) as u16;
+                } else {
+                    let v = (tier_pcts[i] as u32)
+                        .checked_mul(1_000_000)
+                        .ok_or(BettingError::Overflow)?
+                        .checked_div(total_non_empty_bps)
+                        .unwrap_or(0);
+                    effective[i] = v as u16;
+                    allocated = allocated.checked_add(v).ok_or(BettingError::Overflow)?;
+                }
             }
         }
 
@@ -1763,14 +1781,14 @@ pub struct HackathonState {
     pub tier_pcts: [u8; MAX_TIERS],             // 8  — configured at init, sum=100
     pub tier_expected_counts: [u8; MAX_TIERS],  // 8  — for UI/display only
     pub effective_tier_pcts: [u16; MAX_TIERS],  // 16 — computed at finalize_resolve (bps)
-    pub tier_c_totals: [u64; MAX_TIERS],        // 64 — Σ isqrt(total_staked) per tier, snapshotted at finalize_resolve
+    pub tier_c_totals: [u64; MAX_TIERS],        // 64 — number of payout-eligible ranked projects per tier, snapshotted at finalize_resolve
     pub fee_recipient: Pubkey,                  // 32 — wallet receiving protocol fees
     pub protocol_fee_bps: u16,                  // 2  — fee on claim payouts (e.g. 150 = 1.5%)
     pub deposit_amount: u64,                    // 8  — required builder deposit (0 = no deposit required)
     pub requires_approval: bool,                // 1  — retained for backwards compatibility; deposit refunds now require organizer approval unless refund override is enabled
     pub bump: u8,                               // 1
     pub escrow_bump: u8,                        // 1
-    pub ranked_count: u32,                      // 4  — number of projects given a rank via resolve(); checked by finalize_resolve for completeness
+    pub ranked_count: u32,                      // 4  — total projects assigned a rank via resolve() (all ranked, regardless of deposit/stake); completeness counter for finalize_resolve
     pub open_staking: bool,                     // 1  — when true, whitelist PDA check is skipped; access enforced off-chain
 }
 
