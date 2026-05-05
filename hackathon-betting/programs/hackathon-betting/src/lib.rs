@@ -861,7 +861,6 @@ pub mod hackathon_betting {
         let eff_pcts = ctx.accounts.hackathon.effective_tier_pcts;
         let tier_count = ctx.accounts.hackathon.tier_count;
         let protocol_fee_bps = ctx.accounts.hackathon.protocol_fee_bps;
-        let project_total_staked = ctx.accounts.project.total_staked;
         let project_total_shares = ctx.accounts.project.total_shares;
         let project_rank = ctx.accounts.project.rank;
         let stake_amount = ctx.accounts.user_stake.amount;
@@ -1847,7 +1846,7 @@ pub struct HackathonState {
     pub is_resolved: bool,                      // 1
     pub tier_count: u8,                         // 1
     pub tier_pcts: [u8; MAX_TIERS],             // 8  — configured at init, sum=100
-    pub tier_expected_counts: [u8; MAX_TIERS],  // 8  — for UI/display only
+    pub tier_expected_counts: [u8; MAX_TIERS],  // 8  — expected project count per tier; used in per-project payout math
     pub effective_tier_pcts: [u16; MAX_TIERS],  // 16 — computed at finalize_resolve (bps)
     pub tier_c_totals: [u64; MAX_TIERS],        // 64 — number of payout-eligible ranked projects per tier, snapshotted at finalize_resolve
     pub fee_recipient: Pubkey,                  // 32 — wallet receiving protocol fees
