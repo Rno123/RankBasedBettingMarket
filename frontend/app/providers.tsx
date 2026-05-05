@@ -100,7 +100,7 @@ function PrivyProviders({ children }: { children: React.ReactNode }) {
       config={{
         loginMethods: ["email", "google", "twitter", "wallet"],
         embeddedWallets: {
-          ethereum: { createOnLogin: "users-without-wallets" },
+          ethereum: { createOnLogin: "off" },
           solana: { createOnLogin: "users-without-wallets" },
         },
         appearance: { theme, accentColor: "#FF5B14" },
