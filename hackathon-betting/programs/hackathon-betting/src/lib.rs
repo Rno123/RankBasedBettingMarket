@@ -1233,9 +1233,8 @@ pub mod hackathon_betting {
     // ── 4.14  forfeit_deposit ─────────────────────────────────────────────
 
     /// Admin confiscates the deposit of a builder who registered but did not
-    /// actually submit.  50% of the deposit is added to the prize pool
-    /// (stays in escrow, distributed to backers at claim time).  50% is
-    /// transferred to the fee_recipient as protocol revenue.
+    /// actually submit. The full deposit is transferred to the fee_recipient
+    /// as protocol revenue.
     pub fn forfeit_deposit(ctx: Context<ForfeitDeposit>) -> Result<()> {
         hackathon_admin_auth_offset(
             &ctx.accounts.admin.key(),
@@ -1268,12 +1267,9 @@ pub mod hackathon_betting {
             BettingError::DepositAlreadyForfeited,
         );
 
-        let total = ctx.accounts.project.deposit_amount_paid;
-        // Integer division: treasury_half may be 1 less on odd amounts.
-        let treasury_half = total / 2;
-        let pool_half     = total - treasury_half;
+        let amount = ctx.accounts.project.deposit_amount_paid;
 
-        // Transfer treasury half from escrow to fee_recipient.
+        // Transfer entire forfeited deposit to fee_recipient.
         let admin_key = ctx.accounts.hackathon.admin;
         let hname     = ctx.accounts.hackathon.name.clone();
         let hbump     = ctx.accounts.hackathon.bump;
@@ -1290,13 +1286,8 @@ pub mod hackathon_betting {
                 },
                 &[seeds],
             ),
-            treasury_half,
+            amount,
         )?;
-
-        // Pool half stays in escrow — just increase the tracked pool total.
-        ctx.accounts.hackathon.total_pool = ctx.accounts.hackathon.total_pool
-            .checked_add(pool_half)
-            .ok_or(BettingError::Overflow)?;
 
         ctx.accounts.project.deposit_forfeited = true;
         Ok(())

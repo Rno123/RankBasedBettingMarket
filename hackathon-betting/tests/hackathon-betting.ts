@@ -1775,7 +1775,7 @@ describe("hackathon-betting — Bankrun suite", () => {
   describe("Feature 3: forfeit_deposit (ghost builders)", () => {
     const DEPOSIT = 10_000_000;
 
-    it("50% goes to total_pool, 50% transferred to fee_recipient", async () => {
+    it("full deposit transferred to fee_recipient", async () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "ForfeitTest1", 0, DEPOSIT);
@@ -1793,8 +1793,8 @@ describe("hackathon-betting — Bankrun suite", () => {
       const feeAfter  = Number(await tokenBalance(ctx, fix.feeRecipientAta));
       const p = await program.account.projectAccount.fetch(project);
 
-      assert.equal(poolAfter - poolBefore, DEPOSIT / 2, "half added to total_pool");
-      assert.equal(feeAfter - feeBefore,   DEPOSIT / 2, "half sent to fee_recipient");
+      assert.equal(poolAfter - poolBefore, 0, "nothing added to total_pool");
+      assert.equal(feeAfter - feeBefore,   DEPOSIT, "full deposit sent to fee_recipient");
       assert.ok(p.depositForfeited, "deposit_forfeited flag set");
     });
 
@@ -1902,7 +1902,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       // impossible through normal instruction flow.
     });
 
-    it("forfeited pool half boosts backers proportionally at claim", async () => {
+    it("forfeited deposit goes entirely to protocol, does not boost pool", async () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "ForfeitTest4", 0, DEPOSIT);
@@ -1915,8 +1915,11 @@ describe("hackathon-betting — Bankrun suite", () => {
       await doPayDeposit(program, fix, builder, builderAta, p2);
       const backer = await newWhitelistedUser(ctx, program, fix, 1_000);
       await doStake(program, fix, backer, p1, 1_000);
+      const feeBefore = Number(await tokenBalance(ctx, fix.feeRecipientAta));
       setClock(ctx, FORFEIT_TS);
       await doForfeitDeposit(program, fix, p2);
+      const feeAfter = Number(await tokenBalance(ctx, fix.feeRecipientAta));
+      assert.equal(feeAfter - feeBefore, DEPOSIT, "full deposit to fee_recipient");
 
       await doResolve(program, fix, p1, 1);
       await doFinalizeResolve(program, fix, [p1]);
@@ -1924,7 +1927,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       const before = await tokenBalance(ctx, backer.ata);
       await doClaim(program, fix, backer, p1);
       const received = Number(await tokenBalance(ctx, backer.ata) - before);
-      assert.equal(received, 1_000 + DEPOSIT / 2, "backer receives stake + forfeited pool boost");
+      assert.equal(received, 1_000, "backer receives exactly their stake, no forfeit boost");
     });
   });
 
