@@ -411,11 +411,13 @@ function SubmitForm({
   onDone,
   authEmail,
   onProjectUpdated,
+  onDepositPaid,
 }: {
   hackathon: HackathonInfo;
   onDone: () => void;
   authEmail: string;
   onProjectUpdated: () => void;
+  onDepositPaid?: (projectPubkey: string) => void;
 }) {
   const { publicKey, signMessage, sendTransaction } = useWallet();
   const { connection } = useConnection();
@@ -474,7 +476,12 @@ function SubmitForm({
         },
       });
       onProjectUpdated();
-      setModalState("eligible");
+      if (onDepositPaid) {
+        onDepositPaid(registeredProjectPubkey!);
+        onDone();
+      } else {
+        setModalState("eligible");
+      }
     } catch (e: any) {
       setDepositErr(e.message ?? "Failed to pay deposit");
     } finally {
@@ -713,10 +720,12 @@ function DevHackathonCard({
   hackathon,
   authEmail,
   onProjectUpdated,
+  onDepositPaid,
 }: {
   hackathon: HackathonInfo;
   authEmail: string;
   onProjectUpdated: () => void;
+  onDepositPaid?: (projectPubkey: string) => void;
 }) {
   const { publicKey } = useWallet();
   const [submitting, setSubmitting] = useState(false);
@@ -751,6 +760,7 @@ function DevHackathonCard({
           onDone={() => setSubmitting(false)}
           authEmail={authEmail}
           onProjectUpdated={onProjectUpdated}
+          onDepositPaid={onDepositPaid}
         />
       )}
     </div>
@@ -1242,6 +1252,8 @@ function BuilderProjectsSection({
   usdcMint,
   externalRefreshKey,
   authEmail,
+  scrollToPubkey,
+  onScrollComplete,
 }: {
   publicKey: PublicKey;
   anchorWallet: AnchorWallet;
@@ -1249,6 +1261,8 @@ function BuilderProjectsSection({
   usdcMint: PublicKey;
   externalRefreshKey: number;
   authEmail: string;
+  scrollToPubkey?: string | null;
+  onScrollComplete?: () => void;
 }) {
   const [submissions, setSubmissions] = useState<BuilderSubmission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1269,6 +1283,15 @@ function BuilderProjectsSection({
       });
   }, [publicKey.toBase58(), refreshKey, externalRefreshKey]);
 
+  useEffect(() => {
+    if (!scrollToPubkey || submissions.length === 0) return;
+    if (!submissions.some((s) => s.project_pubkey === scrollToPubkey)) return;
+    requestAnimationFrame(() => {
+      document.getElementById(`project-${scrollToPubkey}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      onScrollComplete?.();
+    });
+  }, [submissions, scrollToPubkey]);
+
   if (loading) return <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />;
   if (submissions.length === 0) return null;
 
@@ -1280,15 +1303,16 @@ function BuilderProjectsSection({
           const hackathon = hackathons.find((h) => h.pubkey.toBase58() === sub.hackathon_pubkey);
           const mint = hackathon?.usdcMint ?? usdcMint;
           return (
-            <BuilderProjectCard
-              key={`${sub.project_pubkey}:${refreshKey}:${externalRefreshKey}`}
-              sub={sub}
-              hackathon={hackathon}
-              publicKey={publicKey}
-              anchorWallet={anchorWallet}
-              usdcMint={mint}
-              onUpdated={() => setRefreshKey((value) => value + 1)}
-            />
+            <div key={`${sub.project_pubkey}:${refreshKey}:${externalRefreshKey}`} id={`project-${sub.project_pubkey}`}>
+              <BuilderProjectCard
+                sub={sub}
+                hackathon={hackathon}
+                publicKey={publicKey}
+                anchorWallet={anchorWallet}
+                usdcMint={mint}
+                onUpdated={() => setRefreshKey((value) => value + 1)}
+              />
+            </div>
           );
         })}
       </div>
@@ -1305,6 +1329,13 @@ export default function DevPortalPage() {
   const [sessionLoading, setSessionLoading] = useState(true);
   const [builderRefreshKey, setBuilderRefreshKey] = useState(0);
   const [devTab, setDevTab] = useState<"submit" | "manage">("submit");
+  const [pendingScrollPubkey, setPendingScrollPubkey] = useState<string | null>(null);
+
+  function handleDepositPaid(projectPubkey: string) {
+    setBuilderRefreshKey((v) => v + 1);
+    setDevTab("manage");
+    setPendingScrollPubkey(projectPubkey);
+  }
   const { hackathons, loading: hLoading } = useHackathons();
 
   useEffect(() => {
@@ -1401,6 +1432,7 @@ export default function DevPortalPage() {
                         hackathon={h}
                         authEmail={authEmail}
                         onProjectUpdated={() => setBuilderRefreshKey((value) => value + 1)}
+                        onDepositPaid={handleDepositPaid}
                       />
                     ))}
                   </div>
@@ -1417,6 +1449,8 @@ export default function DevPortalPage() {
                 usdcMint={usdcMint}
                 externalRefreshKey={builderRefreshKey}
                 authEmail={authEmail}
+                scrollToPubkey={pendingScrollPubkey}
+                onScrollComplete={() => setPendingScrollPubkey(null)}
               />
             )}
           </div>
