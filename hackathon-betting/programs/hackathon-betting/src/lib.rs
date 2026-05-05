@@ -421,11 +421,13 @@ pub mod hackathon_betting {
             BettingError::CutoffPassed,
         );
 
-        // Deposit must be paid before builder can self-stake.
-        require!(
-            ctx.accounts.project.deposit_amount_paid > 0,
-            BettingError::DepositNotPaid,
-        );
+        // Deposit must be paid before builder can self-stake (only when deposit is required).
+        if ctx.accounts.hackathon.deposit_amount > 0 {
+            require!(
+                ctx.accounts.project.deposit_amount_paid > 0,
+                BettingError::DepositNotPaid,
+            );
+        }
 
         // Minimum per-tx: must be at least the deposit amount (e.g. $10).
         require!(
@@ -534,6 +536,7 @@ pub mod hackathon_betting {
             BettingError::CutoffPassed,
         );
 
+        require!(!ctx.accounts.user_stake.is_claimed, BettingError::AlreadyClaimed);
         let stake_amount = ctx.accounts.user_stake.amount;
         let user_shares = ctx.accounts.user_stake.shares;
         require!(stake_amount > 0, BettingError::ZeroAmount);
@@ -772,7 +775,8 @@ pub mod hackathon_betting {
 
         // Rest tiers split whatever pool % remains.
         let remaining = TIER_BPS_TOTAL.saturating_sub(drawn_bps);
-        if rest_total_pct_bps > 0 && remaining > 0 {
+        let has_rest_with_projects = (0..tier_count).any(|i| tier_has_projects[i] && tier_expected[i] == 0);
+        if has_rest_with_projects && remaining > 0 {
             let mut rest_allocated: u32 = 0;
             let mut last_rest: usize = 0;
             for i in 0..tier_count {

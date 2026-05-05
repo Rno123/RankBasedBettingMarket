@@ -93,8 +93,9 @@ function computeEffectivePcts(
   }
 
   const remaining = 10_000 - drawnBps;
+  const hasRestWithProjects = tierExpectedCounts.some((exp, i) => exp === 0 && tierHasProjects[i]);
 
-  if (restTotalPctBps > 0 && remaining > 0) {
+  if (hasRestWithProjects && remaining > 0) {
     // Rest tiers split remaining proportionally
     let restAllocated = 0;
     let lastRest = -1;
