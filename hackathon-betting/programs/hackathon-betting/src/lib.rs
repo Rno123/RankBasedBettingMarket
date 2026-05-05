@@ -659,7 +659,8 @@ pub mod hackathon_betting {
     ///
     /// Display-only projects (no deposit, or zero shares after refund) are
     /// excluded from tier counts entirely. If no payout-eligible projects exist,
-    /// effective_tier_pcts stays zeroed and is_resolved is still set.
+    /// finalization reverts with `AllTiersEmpty` to prevent permanently locking
+    /// the prize pool.
     ///
     /// remaining_accounts: all registered ProjectAccounts for this hackathon.
     pub fn finalize_resolve(ctx: Context<FinalizeResolve>) -> Result<()> {
@@ -840,6 +841,11 @@ pub mod hackathon_betting {
                     .ok_or(BettingError::Overflow)?;
             }
         }
+
+        // If no tier received any allocation, there are zero payout-eligible
+        // projects. Revert rather than lock the pool permanently.
+        let any_allocated = (0..tier_count).any(|i| effective[i] > 0);
+        require!(any_allocated, BettingError::AllTiersEmpty);
 
         let h = &mut ctx.accounts.hackathon;
         h.effective_tier_pcts = effective;

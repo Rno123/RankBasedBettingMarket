@@ -1443,7 +1443,9 @@ describe("hackathon-betting — Bankrun suite", () => {
     it("enable_refund blocked post-resolution", async () => {
       setClock(ctx, T0);
       const fix = await newHackathon(ctx, program);
+      const u   = await newWhitelistedUser(ctx, program, fix, 500);
       const p   = await addProject(ctx, program, fix, "https://github.com/ref/postres-enable");
+      await doStake(program, fix, u, p, 500);
       setClock(ctx, RESULTS_TS);
       await doResolve(program, fix, p, 1);
       await doFinalizeResolve(program, fix, [p]);
