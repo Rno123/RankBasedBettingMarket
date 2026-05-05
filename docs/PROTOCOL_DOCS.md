@@ -25,7 +25,7 @@ The protocol is designed around three principles:
 
 1. **Rank-weighted distribution** — Higher-ranked projects get a larger share of the pool, but not all of it. Everyone who backed a ranked winner earns something.
 
-2. **Crowd conviction via sqrt-crowding** — A project backed by $100,000 doesn't pay out 100x more than one backed by $1,000. The sqrt scaling rewards early conviction in underrated projects.
+2. **Per-project equal allocation** — Within a tier, every ranked project draws the same fixed bps of the pool regardless of how much total capital was staked in it. This rewards early conviction in underrated projects: a project backed by $100 and one backed by $10,000 both draw the same tier allocation, so the $100 project's backer earns far more per dollar.
 
 3. **Time-weighted loyalty** — Staking early earns you more shares per dollar (1.5x multiplier decaying to 1.0x at cutoff). This rewards conviction, not last-minute bandwagoning.
 
@@ -101,14 +101,13 @@ This means:
 
 ### How Payouts Work
 
-Your payout depends on four factors:
+Your payout depends on three factors:
 
-1. **Your shares** — Based on how much you staked and when
-2. **Tier allocation** — What % of the pool goes to the project's rank tier
-3. **Sqrt-crowding** — How much total stake is on this project vs. competing projects in the same tier
-4. **Protocol fee** — 1.5% deducted from your gross payout
+1. **Your shares** — Based on how much you staked and when (earlier = more shares per dollar)
+2. **Tier allocation** — Each project in your tier draws a fixed bps slot; your payout is your share of that slot
+3. **Protocol fee** — 1.5% deducted from your gross payout
 
-![Payout formula diagram breaking down the four components visually with arrows and example numbers.]
+![Payout formula diagram breaking down the three components visually with arrows and example numbers.]
 *Placeholder: Visual breakdown of the payout formula with example calculation*
 
 ### Claiming Winnings
@@ -170,8 +169,8 @@ Once your deposit is paid, you can self-stake up to $250 USDC on your own projec
 You'll need:
 - **Name**: Short identifier (max 50 characters)
 - **Results timestamp**: When judges announce winners
-- **Tier percentages**: How the pool is split across ranks (must sum to 100, up to 8 tiers)
-- **Expected counts per tier**: For display only — doesn't affect the math
+- **Tier percentages**: How the pool is split across tiers (must sum to 100, up to 8 tiers)
+- **Expected counts per tier**: How many projects are expected in each tier. Each project draws `tier_pct / expected` of the pool. Under-filled slots cascade to occupied tiers. Set to 0 for "rest" tiers that absorb any remaining allocation.
 - **Fee recipient**: Wallet receiving protocol fees
 - **Protocol fee**: Up to 30% (3000 bps), typically 1.5%
 - **Deposit amount**: Builder commitment deposit (0 = no deposit required, $10 typical)

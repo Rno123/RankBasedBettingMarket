@@ -58,11 +58,13 @@ If you change your mind before the cutoff, you can unstake with a flat **3% pena
 
 ## The math (in plain English)
 
-**Tiers matter.** The organizer sets prize splits (e.g. 12% to 1st place, 88% split among 22 remaining winners). If a tier has no ranked project, its share gets redistributed to tiers that do.
+**Tiers use per-project slots.** The organizer sets prize splits and an expected project count per tier (e.g. tier 0 = "top 3 projects, 60% of pool" → each slot draws 20%). If fewer projects fill a tier than expected, the unused slots' share cascades to the other occupied tiers.
 
-**Equal split within each tier.** Every ranked project in a tier gets an equal share of that tier's pool — 22 projects sharing 88% means each gets 4%. No project can dominate a tier just because it attracted more stake. Conviction still matters via time-weighted shares (early backers earn more), but within a tier, all winners are treated equally.
+**Equal project allocation within each tier.** Every ranked project in a tier draws the same fixed bps regardless of how much was staked in it. Two projects tied in a tier both get the same slice of that tier's pool. A project backed by $100 earns the same tier allocation as one backed by $10,000 — the pool just spreads thinner among its stakers. This means finding a quality project that others overlooked is more valuable than piling into a consensus pick.
 
-**You earn proportional to your conviction.** Within a project, your payout is your share of the total shares on that project. Stake more, stake earlier → more shares → larger slice.
+**Within a project, shares determine your cut.** Stake more, stake earlier → more shares → larger slice of your project's allocation.
+
+**Worked example.** Tier 1 allocates 30% of a $20,000 pool and expects 2 projects. Each project draws 15% = $3,000. Project B has one backer with $100 staked; Project C has one backer with $10,000 staked. Both backers receive $3,000 pre-fee — the project backing $100 earns 30× return, the one backing $10,000 loses 70%.
 
 ---
 

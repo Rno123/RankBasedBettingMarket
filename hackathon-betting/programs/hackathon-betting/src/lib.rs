@@ -1241,10 +1241,6 @@ pub mod hackathon_betting {
             &ctx.accounts.hackathon.admin,
             ctx.remaining_accounts,
         )?;
-        require!(
-            !ctx.accounts.hackathon.is_resolved,
-            BettingError::AlreadyResolved,
-        );
         let now = Clock::get()?.unix_timestamp;
         let forfeitable_at = ctx.accounts.hackathon.irl_hackathon_deadline_timestamp
             .checked_add(DEPOSIT_CLAIM_WINDOW_SECS)
