@@ -61,27 +61,82 @@ function tierForRank(rank: number, tierCount: number): number {
   return Math.min(rank - 1, tierCount - 1);
 }
 
-function computeEffectivePcts(tierPcts: number[], tierHasProjects: boolean[]): number[] {
+// Option B per-project payout simulation (mirrors on-chain finalize_resolve).
+// For named tiers (expected > 0): per_project_bps = pct_bps / expected,
+// draws per_project * actual. Rest tiers (expected == 0) split what remains.
+// Excess from under-filled named tiers cascades, or goes to rest tiers if any exist.
+function computeEffectivePcts(
+  tierPcts: number[],
+  tierExpectedCounts: number[],
+  tierProjectCounts: number[],
+): number[] {
   const n = tierPcts.length;
-  let totalNonEmptyBps = 0;
-  for (let i = 0; i < n; i++) {
-    if (tierHasProjects[i]) totalNonEmptyBps += tierPcts[i] * 100;
-  }
   const eff = new Array<number>(n).fill(0);
-  if (totalNonEmptyBps === 0) return eff;
-  let allocated = 0;
-  let lastNonEmpty = -1;
-  for (let i = 0; i < n; i++) { if (tierHasProjects[i]) lastNonEmpty = i; }
+  const tierHasProjects = tierProjectCounts.map(c => c > 0);
+
+  let drawnBps = 0;
+  let restTotalPctBps = 0;
+
+  // Named tiers draw per-project shares
   for (let i = 0; i < n; i++) {
     if (!tierHasProjects[i]) continue;
-    if (i === lastNonEmpty) {
-      eff[i] = 10_000 - allocated;
+    const exp = tierExpectedCounts[i];
+    if (exp > 0) {
+      const pctBps = tierPcts[i] * 100;
+      const perProj = Math.floor(pctBps / exp);
+      const draw = perProj * tierProjectCounts[i];
+      eff[i] = draw;
+      drawnBps += draw;
     } else {
-      const v = Math.floor(tierPcts[i] * 1_000_000 / totalNonEmptyBps);
-      eff[i] = v;
-      allocated += v;
+      restTotalPctBps += tierPcts[i] * 100;
     }
   }
+
+  const remaining = 10_000 - drawnBps;
+
+  if (restTotalPctBps > 0 && remaining > 0) {
+    // Rest tiers split remaining proportionally
+    let restAllocated = 0;
+    let lastRest = -1;
+    for (let i = 0; i < n; i++) {
+      if (tierHasProjects[i] && tierExpectedCounts[i] === 0) lastRest = i;
+    }
+    for (let i = 0; i < n; i++) {
+      if (!tierHasProjects[i] || tierExpectedCounts[i] > 0) continue;
+      const weight = tierPcts[i] * 100;
+      if (i === lastRest) {
+        eff[i] = remaining - restAllocated;
+      } else {
+        const share = Math.floor((remaining * weight) / restTotalPctBps);
+        eff[i] = share;
+        restAllocated += share;
+      }
+    }
+  } else if (remaining > 0 && drawnBps > 0) {
+    // No rest tiers: cascade excess to occupied named tiers proportionally
+    let cascadeAllocated = 0;
+    let lastOccupied = -1;
+    let cascadeWeightBps = 0;
+    for (let i = 0; i < n; i++) {
+      if (tierHasProjects[i] && tierExpectedCounts[i] > 0) {
+        lastOccupied = i;
+        cascadeWeightBps += tierPcts[i] * 100;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (!tierHasProjects[i] || tierExpectedCounts[i] === 0) continue;
+      const weight = tierPcts[i] * 100;
+      let additional: number;
+      if (i === lastOccupied) {
+        additional = remaining - cascadeAllocated;
+      } else {
+        additional = Math.floor((remaining * weight) / cascadeWeightBps);
+        cascadeAllocated += additional;
+      }
+      eff[i] += additional;
+    }
+  }
+
   return eff;
 }
 
@@ -878,9 +933,11 @@ describe("hackathon-betting — Bankrun suite", () => {
       const h = await program.account.hackathonState.fetch(fix.hackathon);
       assert.equal(h.isResolved, true);
       // ranks [1, 3, 3] → tiers 0 and 2 occupied, tier 1 empty
-      // tier 1's 30% cascades proportionally to tiers 0 and 2
-      assert.equal(h.effectiveTierPcts[1], 0, "tier-1 had no projects — cascaded away");
-      assert.ok(h.effectiveTierPcts[0] > 5500, "tier-0 received cascade from tier-1");
+      // With per-project math: tier 0 draws exactly 55% (per-project),
+      // tier 1 empty, rest (45%) goes to tier 2.
+      assert.equal(h.effectiveTierPcts[1], 0, "tier-1 had no projects");
+      assert.equal(h.effectiveTierPcts[0], 5500, "tier-0 per-project = 55%");
+      assert.ok(h.effectiveTierPcts[2] > 0, "tier-2 received remaining pool");
     });
 
     it("rejects duplicate ranked project accounts in finalize_resolve", async () => {
@@ -1008,7 +1065,7 @@ describe("hackathon-betting — Bankrun suite", () => {
 
     it("each payout matches the formula", () => {
       const stakes  = RANKS.map(() => STAKE);
-      const effPcts = computeEffectivePcts(FIVE_TIER_PCTS, RANKS.map(() => true));
+      const effPcts = computeEffectivePcts(FIVE_TIER_PCTS, [1, 0, 0, 0, 0], [1, 1, 1, 1, 1]);
       for (let i = 0; i < 5; i++) {
         const tier    = tierForRank(RANKS[i], FIVE_TIER_COUNT);
         const ci      = isqrt(STAKE);
@@ -1116,7 +1173,7 @@ describe("hackathon-betting — Bankrun suite", () => {
 
     it("each sybil payout matches formula", () => {
       const pool    = SYBIL_STAKE * BigInt(SYBIL_N) + WHALE_STAKE;
-      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, false]);
+      const effPcts = computeEffectivePcts(DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, [1, 1, 0]);
       const ciA     = isqrt(SYBIL_STAKE * BigInt(SYBIL_N));
       const shares  = BigInt(computeShares(Number(SYBIL_STAKE), T0, T0, CUTOFF_TS));
       const tShares = shares * BigInt(SYBIL_N);
@@ -1205,7 +1262,7 @@ describe("hackathon-betting — Bankrun suite", () => {
 
       const pool     = BigInt(STAKES.reduce((s, v) => s + v, 0));
       const stakesBN = STAKES.map(BigInt);
-      const effPcts  = computeEffectivePcts(DEFAULT_TIER_PCTS, [true, true, true]);
+      const effPcts  = computeEffectivePcts(DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, [1, 1, 1]);
 
       for (let i = 0; i < 3; i++) {
         const before = await tokenBalance(ctx, users[i].ata);
@@ -1300,7 +1357,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       );
 
       const pool    = 4_000n;
-      const effPcts = computeEffectivePcts([55,30,15], [false, true, true]);
+      const effPcts = computeEffectivePcts([55,30,15], DEFAULT_TIER_COUNTS, [0, 1, 1]);
 
       const subBefore = await tokenBalance(ctx, uSub.ata);
       await doClaim(program, fix, uSub, pSub);

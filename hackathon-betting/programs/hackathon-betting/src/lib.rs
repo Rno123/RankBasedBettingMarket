@@ -636,15 +636,24 @@ pub mod hackathon_betting {
 
     // ── 4.5b  finalize_resolve ────────────────────────────────────────────
 
-    /// Computes effective tier percentages with Option B proportional cascade,
+    /// Computes effective tier percentages with per-project payout math,
     /// stores them as basis points in `effective_tier_pcts`, then sets
     /// `is_resolved = true`.
     ///
-    /// **Cascade rule:** Only payout-eligible projects (deposit paid when required,
-    /// and nonzero shares) occupy a tier for cascade purposes. Display-only projects
-    /// (no deposit, or refunded to zero shares after ranking) are excluded from tier
-    /// math. If no payout-eligible projects exist, effective_tier_pcts stays zeroed
-    /// and is_resolved is still set — judging is terminal regardless of payouts.
+    /// **Per-project math:** For tiers with `tier_expected_counts[t] > 0`, the
+    /// configured `tier_pcts[t]` is divided by the expected count to produce a
+    /// per-project share. The tier draws `per_project × actual_count`. Unused
+    /// allocation from under-filled tiers cascades proportionally to occupied
+    /// tiers. Tiers with expected count 0 are "rest" tiers that split whatever
+    /// pool % remains after all named tiers draw.
+    ///
+    /// **Oversubscription guard:** If a named tier (expected > 0) has more
+    /// payout-eligible projects than its expected count, finalization reverts
+    /// with `InvalidTierConfig`.
+    ///
+    /// Display-only projects (no deposit, or zero shares after refund) are
+    /// excluded from tier counts entirely. If no payout-eligible projects exist,
+    /// effective_tier_pcts stays zeroed and is_resolved is still set.
     ///
     /// remaining_accounts: all registered ProjectAccounts for this hackathon.
     pub fn finalize_resolve(ctx: Context<FinalizeResolve>) -> Result<()> {
@@ -722,46 +731,105 @@ pub mod hackathon_betting {
             tier_has_projects[i] = tier_c_totals_new[i] > 0;
         }
 
-        // Sum basis points in occupied tiers (each tier_pct × 100 gives bps).
-        let mut total_non_empty_bps: u32 = 0;
+        // ── Per-project payout math (Option B) ──────────────────────────────
+        // For named tiers (expected > 0): per-project share = tier_pct / expected.
+        // Tier draws per_project × actual. Excess from under-filled tiers cascades.
+        // For rest tiers (expected == 0): split whatever pool % remains.
+        // Oversubscription (actual > expected) on any named tier reverts.
+        let tier_expected = ctx.accounts.hackathon.tier_expected_counts;
+        let mut effective = [0u16; MAX_TIERS];
+        let mut drawn_bps: u32 = 0;
+        let mut rest_total_pct_bps: u32 = 0;
+
+        // First pass: named tiers draw per-project shares.
         for i in 0..tier_count {
-            if tier_has_projects[i] {
-                total_non_empty_bps = total_non_empty_bps
-                    .checked_add(tier_pcts[i] as u32 * 100)
+            if !tier_has_projects[i] { continue; }
+            let exp = tier_expected[i];
+            if exp > 0 {
+                require!(
+                    tier_c_totals_new[i] <= exp as u64,
+                    BettingError::InvalidTierConfig,
+                );
+                let pct_bps = (tier_pcts[i] as u32)
+                    .checked_mul(100)
+                    .ok_or(BettingError::Overflow)?;
+                let per_proj = pct_bps
+                    .checked_div(exp as u32)
+                    .unwrap_or(0);
+                let draw = per_proj
+                    .checked_mul(tier_c_totals_new[i] as u32)
+                    .ok_or(BettingError::Overflow)?;
+                effective[i] = draw as u16;
+                drawn_bps = drawn_bps
+                    .checked_add(draw)
+                    .ok_or(BettingError::Overflow)?;
+            } else {
+                rest_total_pct_bps = rest_total_pct_bps
+                    .checked_add((tier_pcts[i] as u32).checked_mul(100).ok_or(BettingError::Overflow)?)
                     .ok_or(BettingError::Overflow)?;
             }
         }
 
-        // Proportional cascade:
-        //   effective_bps[j] = floor(tier_pcts[j] * 1_000_000 / total_non_empty_bps)
-        // The last occupied tier absorbs rounding dust so the sum is exactly 10_000.
-        // If no payout-eligible projects exist (total_non_empty_bps == 0), all
-        // effective_tier_pcts stay zero and is_resolved is still set to true —
-        // judging is a terminal state independent of whether payouts are computable.
-        let mut effective = [0u16; MAX_TIERS];
-        if total_non_empty_bps > 0 {
-            let mut allocated: u32 = 0;
-            let mut last_non_empty: usize = 0;
+        // Rest tiers split whatever pool % remains.
+        let remaining = TIER_BPS_TOTAL.saturating_sub(drawn_bps);
+        if rest_total_pct_bps > 0 && remaining > 0 {
+            let mut rest_allocated: u32 = 0;
+            let mut last_rest: usize = 0;
             for i in 0..tier_count {
-                if tier_has_projects[i] {
-                    last_non_empty = i;
+                if tier_has_projects[i] && tier_expected[i] == 0 {
+                    last_rest = i;
                 }
             }
             for i in 0..tier_count {
-                if !tier_has_projects[i] {
-                    continue;
-                }
-                if i == last_non_empty {
-                    effective[i] = TIER_BPS_TOTAL.saturating_sub(allocated) as u16;
+                if !tier_has_projects[i] || tier_expected[i] > 0 { continue; }
+                let weight = (tier_pcts[i] as u32).checked_mul(100).ok_or(BettingError::Overflow)?;
+                if i == last_rest {
+                    effective[i] = remaining.saturating_sub(rest_allocated) as u16;
                 } else {
-                    let v = (tier_pcts[i] as u32)
-                        .checked_mul(1_000_000)
+                    let share = (remaining as u64)
+                        .checked_mul(weight as u64)
                         .ok_or(BettingError::Overflow)?
-                        .checked_div(total_non_empty_bps)
-                        .unwrap_or(0);
-                    effective[i] = v as u16;
-                    allocated = allocated.checked_add(v).ok_or(BettingError::Overflow)?;
+                        .checked_div(rest_total_pct_bps as u64)
+                        .unwrap_or(0) as u16;
+                    effective[i] = share;
+                    rest_allocated = rest_allocated
+                        .checked_add(share as u32)
+                        .ok_or(BettingError::Overflow)?;
                 }
+            }
+        } else if remaining > 0 && drawn_bps > 0 {
+            // No rest tiers with projects: cascade excess to occupied named tiers
+            // proportionally to their configured tier_pcts.
+            let mut cascade_allocated: u32 = 0;
+            let mut last_occupied: usize = 0;
+            let mut cascade_weight_bps: u32 = 0;
+            for i in 0..tier_count {
+                if tier_has_projects[i] && tier_expected[i] > 0 {
+                    last_occupied = i;
+                    cascade_weight_bps = cascade_weight_bps
+                        .checked_add((tier_pcts[i] as u32).checked_mul(100).ok_or(BettingError::Overflow)?)
+                        .ok_or(BettingError::Overflow)?;
+                }
+            }
+            for i in 0..tier_count {
+                if !tier_has_projects[i] || tier_expected[i] == 0 { continue; }
+                let weight = (tier_pcts[i] as u32).checked_mul(100).ok_or(BettingError::Overflow)?;
+                let additional = if i == last_occupied {
+                    remaining.saturating_sub(cascade_allocated)
+                } else {
+                    let v = (remaining as u64)
+                        .checked_mul(weight as u64)
+                        .ok_or(BettingError::Overflow)?
+                        .checked_div(cascade_weight_bps as u64)
+                        .unwrap_or(0) as u32;
+                    cascade_allocated = cascade_allocated
+                        .checked_add(v)
+                        .ok_or(BettingError::Overflow)?;
+                    v
+                };
+                effective[i] = effective[i]
+                    .checked_add(additional as u16)
+                    .ok_or(BettingError::Overflow)?;
             }
         }
 
