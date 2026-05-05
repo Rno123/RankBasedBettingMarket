@@ -799,28 +799,24 @@ pub mod hackathon_betting {
             }
         } else if remaining > 0 && drawn_bps > 0 {
             // No rest tiers with projects: cascade excess to occupied named tiers
-            // proportionally to their configured tier_pcts.
+            // proportionally to what each tier's projects actually drew (per-project).
             let mut cascade_allocated: u32 = 0;
             let mut last_occupied: usize = 0;
-            let mut cascade_weight_bps: u32 = 0;
             for i in 0..tier_count {
                 if tier_has_projects[i] && tier_expected[i] > 0 {
                     last_occupied = i;
-                    cascade_weight_bps = cascade_weight_bps
-                        .checked_add((tier_pcts[i] as u32).checked_mul(100).ok_or(BettingError::Overflow)?)
-                        .ok_or(BettingError::Overflow)?;
                 }
             }
             for i in 0..tier_count {
                 if !tier_has_projects[i] || tier_expected[i] == 0 { continue; }
-                let weight = (tier_pcts[i] as u32).checked_mul(100).ok_or(BettingError::Overflow)?;
+                let weight = effective[i] as u32;
                 let additional = if i == last_occupied {
                     remaining.saturating_sub(cascade_allocated)
                 } else {
                     let v = (remaining as u64)
                         .checked_mul(weight as u64)
                         .ok_or(BettingError::Overflow)?
-                        .checked_div(cascade_weight_bps as u64)
+                        .checked_div(drawn_bps as u64)
                         .unwrap_or(0) as u32;
                     cascade_allocated = cascade_allocated
                         .checked_add(v)

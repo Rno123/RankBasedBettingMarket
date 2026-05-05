@@ -113,24 +113,20 @@ function computeEffectivePcts(
       }
     }
   } else if (remaining > 0 && drawnBps > 0) {
-    // No rest tiers: cascade excess to occupied named tiers proportionally
+    // No rest tiers: cascade excess proportionally to what each tier's projects drew
     let cascadeAllocated = 0;
     let lastOccupied = -1;
-    let cascadeWeightBps = 0;
     for (let i = 0; i < n; i++) {
-      if (tierHasProjects[i] && tierExpectedCounts[i] > 0) {
-        lastOccupied = i;
-        cascadeWeightBps += tierPcts[i] * 100;
-      }
+      if (tierHasProjects[i] && tierExpectedCounts[i] > 0) lastOccupied = i;
     }
     for (let i = 0; i < n; i++) {
       if (!tierHasProjects[i] || tierExpectedCounts[i] === 0) continue;
-      const weight = tierPcts[i] * 100;
+      const weight = eff[i];
       let additional: number;
       if (i === lastOccupied) {
         additional = remaining - cascadeAllocated;
       } else {
-        additional = Math.floor((remaining * weight) / cascadeWeightBps);
+        additional = Math.floor((remaining * weight) / drawnBps);
         cascadeAllocated += additional;
       }
       eff[i] += additional;
