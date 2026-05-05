@@ -83,6 +83,8 @@ function computeEffectivePcts(
     const exp = tierExpectedCounts[i];
     if (exp > 0) {
       const pctBps = tierPcts[i] * 100;
+      // On-chain: require!(pct_bps >= exp, InvalidTierConfig) — per-project must be >= 1 bp
+      if (pctBps < exp) throw new Error(`InvalidTierConfig: tier ${i} pct ${tierPcts[i]}% < expected ${exp}`);
       const perProj = Math.floor(pctBps / exp);
       const draw = perProj * tierProjectCounts[i];
       eff[i] = draw;

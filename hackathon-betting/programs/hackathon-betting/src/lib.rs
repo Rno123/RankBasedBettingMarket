@@ -201,7 +201,10 @@ pub mod hackathon_betting {
     /// Creates a HackathonState PDA and its USDC escrow token account.
     ///
     /// `tier_pcts` defines the pool allocation per winner tier (must sum to 100).
-    /// `tier_expected_counts` is stored for UI/validation only; does not affect math.
+    /// `tier_expected_counts` defines expected project counts per tier. Used in
+    /// payout math — for named tiers (count > 0), each project draws
+    /// tier_pct / expected_count; for rest tiers (count == 0), splits what
+    /// remains after named tiers draw.
     pub fn initialize_hackathon(
         ctx: Context<InitializeHackathon>,
         name: String,
@@ -756,9 +759,14 @@ pub mod hackathon_betting {
                 let pct_bps = (tier_pcts[i] as u32)
                     .checked_mul(100)
                     .ok_or(BettingError::Overflow)?;
+                require!(
+                    pct_bps >= exp as u32,
+                    BettingError::InvalidTierConfig,
+                );
                 let per_proj = pct_bps
                     .checked_div(exp as u32)
                     .unwrap_or(0);
+                // per_proj >= 1 guaranteed by the require above.
                 let draw = per_proj
                     .checked_mul(tier_c_totals_new[i] as u32)
                     .ok_or(BettingError::Overflow)?;
