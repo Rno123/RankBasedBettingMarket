@@ -5,7 +5,6 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { useHackathons } from "@/hooks/useHackathons";
 import { useHackathonMeta } from "@/hooks/useHackathonMeta";
-import { useProjectCounts } from "@/hooks/useProjectCounts";
 import { formatTokens, timeUntil, hackathonStatus } from "@/lib/format";
 import type { HackathonInfo } from "@/hooks/useHackathons";
 
@@ -119,9 +118,8 @@ function HackathonRow({
 }
 
 export default function HackathonsPage() {
-  const { hackathons, loading, error } = useHackathons();
+  const { hackathons, projectCounts, loading, error } = useHackathons();
   const hackathonMeta = useHackathonMeta(hackathons.map((h) => h.pubkey.toBase58()));
-  const projectCounts = useProjectCounts(hackathons.map((h) => h.pubkey.toBase58()));
   const [activeTab, setActiveTab] = useState<TabKey>("ongoing");
 
   const totalProjects = Object.values(projectCounts).reduce((sum, count) => sum + (count ?? 0), 0);

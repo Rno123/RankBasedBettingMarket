@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { getReadonlyProgram } from "@/lib/program";
-import { PROGRAM_ID, HIDDEN_HACKATHONS } from "@/lib/constants";
 
 export interface HackathonInfo {
   pubkey: PublicKey;
@@ -26,8 +24,32 @@ export interface HackathonInfo {
   effectiveTierPcts: number[];
 }
 
+function deserialize(raw: any): HackathonInfo {
+  return {
+    pubkey: new PublicKey(raw.pubkey),
+    admin: new PublicKey(raw.admin),
+    usdcMint: new PublicKey(raw.usdcMint),
+    feeRecipient: new PublicKey(raw.feeRecipient),
+    name: raw.name,
+    irlHackathonDeadlineTimestamp: raw.irlHackathonDeadlineTimestamp,
+    cutoffTimestamp: raw.cutoffTimestamp,
+    startTimestamp: raw.startTimestamp,
+    totalPool: BigInt(raw.totalPool),
+    depositAmount: BigInt(raw.depositAmount),
+    isResolved: raw.isResolved,
+    requiresApproval: raw.requiresApproval,
+    openStaking: raw.openStaking,
+    protocolFeeBps: raw.protocolFeeBps,
+    tierCount: raw.tierCount,
+    tierPcts: raw.tierPcts,
+    tierExpectedCounts: raw.tierExpectedCounts,
+    effectiveTierPcts: raw.effectiveTierPcts,
+  };
+}
+
 export function useHackathons() {
   const [hackathons, setHackathons] = useState<HackathonInfo[]>([]);
+  const [projectCounts, setProjectCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -37,71 +59,12 @@ export function useHackathons() {
 
     async function load() {
       try {
-        const program = getReadonlyProgram();
-        const connection = (program.provider as any).connection;
-
-        // Filter to HackathonState accounts only (discriminator = sha256("account:HackathonState")[:8]).
-        // Falls back to unfiltered if the RPC rejects memcmp filters (e.g. some Chainstack plans).
-        let rawAccounts: any[];
-        try {
-          rawAccounts = await connection.getProgramAccounts(PROGRAM_ID, {
-            filters: [{ memcmp: { offset: 0, bytes: "68mXvqEofeP" } }],
-          });
-          // If the filter silently returns nothing on an RPC that blocks it, retry unfiltered.
-          if (rawAccounts.length === 0) {
-            rawAccounts = await connection.getProgramAccounts(PROGRAM_ID);
-          }
-        } catch {
-          rawAccounts = await connection.getProgramAccounts(PROGRAM_ID);
-        }
-
+        const res = await fetch("/api/hackathons");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { hackathons: raw, projectCounts: counts } = await res.json();
         if (cancelled) return;
-
-        const list: HackathonInfo[] = rawAccounts.flatMap((item: any) => {
-          try {
-            const d = (program.coder.accounts as any).decode(
-              "hackathonState",
-              item.account.data,
-            );
-            // Guard: new struct fields must be present
-            if (d == null || d.tierCount == null || d.tierPcts == null) return [];
-            return [{
-              pubkey: item.pubkey as PublicKey,
-              admin: d.admin as PublicKey,
-              usdcMint: d.usdcMint as PublicKey,
-              feeRecipient: d.feeRecipient as PublicKey,
-              name: (d.name as string) ?? "",
-              irlHackathonDeadlineTimestamp: Number(d.irlHackathonDeadlineTimestamp),
-              cutoffTimestamp: Number(d.cutoffTimestamp),
-              startTimestamp: Number(d.startTimestamp),
-              totalPool: BigInt((d.totalPool ?? 0).toString()),
-              depositAmount: BigInt((d.depositAmount ?? 0).toString()),
-              isResolved: d.isResolved as boolean,
-              requiresApproval: (d.requiresApproval as boolean) ?? false,
-              openStaking: (d.openStaking as boolean) ?? true,
-              protocolFeeBps: (d.protocolFeeBps as number) ?? 150,
-              tierCount: d.tierCount as number,
-              tierPcts: Array.from(d.tierPcts as number[]).slice(0, d.tierCount),
-              tierExpectedCounts: Array.from(d.tierExpectedCounts as number[]).slice(0, d.tierCount),
-              effectiveTierPcts: Array.from(
-                d.effectiveTierPcts as number[],
-              ).slice(0, d.tierCount),
-            }];
-          } catch {
-            return []; // skip accounts that fail to decode (old struct / other types)
-          }
-        });
-
-        // Skip stale/hidden hackathon PDAs.
-        const filtered = list.filter((h) => !HIDDEN_HACKATHONS.has(h.pubkey.toBase58()));
-
-        // Sort: unresolved first, then by irlHackathonDeadlineTimestamp asc
-        filtered.sort((a, b) => {
-          if (a.isResolved !== b.isResolved) return a.isResolved ? 1 : -1;
-          return a.irlHackathonDeadlineTimestamp - b.irlHackathonDeadlineTimestamp;
-        });
-
-        setHackathons(filtered);
+        setHackathons(raw.map(deserialize));
+        setProjectCounts(counts ?? {});
       } catch (e: any) {
         if (!cancelled) setError(e.message ?? "Failed to load hackathons");
       } finally {
@@ -113,5 +76,5 @@ export function useHackathons() {
     return () => { cancelled = true; };
   }, [tick]);
 
-  return { hackathons, loading, error, reload: () => setTick((t) => t + 1) };
+  return { hackathons, projectCounts, loading, error, reload: () => setTick((t) => t + 1) };
 }

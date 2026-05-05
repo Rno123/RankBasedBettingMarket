@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { getReadonlyProgram } from "@/lib/program";
 
 export interface ProjectInfo {
   pubkey: PublicKey;
@@ -21,6 +20,25 @@ export interface ProjectInfo {
   depositRefunded: boolean;
 }
 
+function deserialize(raw: any): ProjectInfo {
+  return {
+    pubkey: new PublicKey(raw.pubkey),
+    hackathon: new PublicKey(raw.hackathon),
+    githubUrl: raw.githubUrl,
+    totalStaked: BigInt(raw.totalStaked),
+    totalShares: BigInt(raw.totalShares),
+    rank: raw.rank,
+    builderWallet: new PublicKey(raw.builderWallet),
+    depositAmountPaid: BigInt(raw.depositAmountPaid),
+    builderStaked: BigInt(raw.builderStaked),
+    builderDeclared: raw.builderDeclared,
+    submitted: raw.submitted,
+    isRefundEnabled: raw.isRefundEnabled,
+    depositForfeited: raw.depositForfeited,
+    depositRefunded: raw.depositRefunded,
+  };
+}
+
 export function useProjects(hackathonPubkey: PublicKey | null) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,46 +53,11 @@ export function useProjects(hackathonPubkey: PublicKey | null) {
       setLoading(true);
       setError(null);
       try {
-        const program = getReadonlyProgram();
-        const accounts = await (program.account as any).projectAccount.all([
-          {
-            memcmp: {
-              offset: 8, // after discriminator
-              bytes: hackathonPubkey!.toBase58(),
-            },
-          },
-        ]);
+        const res = await fetch(`/api/projects/${hackathonPubkey!.toBase58()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const raw = await res.json();
         if (cancelled) return;
-
-        const list: ProjectInfo[] = accounts.map((a: any) => {
-          const d = a.account;
-          return {
-            pubkey: a.publicKey as PublicKey,
-            hackathon: d.hackathon as PublicKey,
-            githubUrl: d.githubUrl as string,
-            totalStaked: BigInt((d.totalStaked ?? 0).toString()),
-            totalShares: BigInt((d.totalShares ?? 0).toString()),
-            rank: d.rank as number,
-            builderWallet: d.builderWallet as PublicKey,
-            depositAmountPaid: BigInt((d.depositAmountPaid ?? 0).toString()),
-            builderStaked: BigInt((d.builderStaked ?? 0).toString()),
-            builderDeclared: (d.builderDeclared as boolean) ?? false,
-            submitted: d.submitted as boolean,
-            isRefundEnabled: d.isRefundEnabled as boolean,
-            depositForfeited: d.depositForfeited as boolean,
-            depositRefunded: d.depositRefunded as boolean,
-          };
-        });
-
-        // Sort: ranked first (ascending), unranked at end
-        list.sort((a, b) => {
-          if (a.rank === 0 && b.rank === 0) return 0;
-          if (a.rank === 0) return 1;
-          if (b.rank === 0) return -1;
-          return a.rank - b.rank;
-        });
-
-        setProjects(list);
+        setProjects(raw.map(deserialize));
       } catch (e: any) {
         if (!cancelled) setError(e.message ?? "Failed to load projects");
       } finally {
