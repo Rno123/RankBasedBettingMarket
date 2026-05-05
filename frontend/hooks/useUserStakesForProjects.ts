@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { getReadonlyProgram } from "@/lib/program";
+import { getConnection } from "@/lib/program";
 import { stakePda } from "@/lib/pda";
-import { fetchUserStakeAccount, type UserStakeInfo } from "@/lib/userStakeAccounts";
+import { decodeUserStakeAccount, type UserStakeInfo } from "@/lib/userStakeAccounts";
 import type { ProjectInfo } from "@/hooks/useProjects";
 
 export function useUserStakesForProjects(
@@ -27,23 +27,19 @@ export function useUserStakesForProjects(
     async function load() {
       setLoading(true);
       try {
-        const program = getReadonlyProgram();
-        const results = await Promise.all(
-          projects.map(async (project) => {
-            const projectKey = project.pubkey.toBase58();
-            try {
-              const pda = stakePda(currentUser, project.pubkey);
-              const account = await fetchUserStakeAccount(program, pda);
-              return [projectKey, account] as const;
-            } catch {
-              return [projectKey, null] as const;
-            }
-          }),
-        );
+        const connection = getConnection();
+        const pdas = projects.map((p) => stakePda(currentUser, p.pubkey));
+        const accountInfos = await connection.getMultipleAccountsInfo(pdas, "confirmed");
 
-        if (!cancelled) {
-          setStakesByProject(Object.fromEntries(results));
-        }
+        if (cancelled) return;
+
+        const entries = projects.map((project, i) => {
+          const info = accountInfos[i];
+          const account = info ? decodeUserStakeAccount(pdas[i], info.data) : null;
+          return [project.pubkey.toBase58(), account] as const;
+        });
+
+        setStakesByProject(Object.fromEntries(entries));
       } finally {
         if (!cancelled) setLoading(false);
       }

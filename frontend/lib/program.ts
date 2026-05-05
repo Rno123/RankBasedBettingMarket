@@ -9,8 +9,11 @@ import { RPC_URL, PROGRAM_ID } from "./constants";
 // different keypair than the currently deployed program.
 const IDL = { ..._IDL, address: PROGRAM_ID.toBase58() };
 
+let _connection: Connection | null = null;
+
 export function getConnection(): Connection {
-  return new Connection(RPC_URL, "confirmed");
+  if (!_connection) _connection = new Connection(RPC_URL, "confirmed");
+  return _connection;
 }
 
 export function getReadonlyProgram(): Program<any> {

@@ -12,7 +12,6 @@ export function useProjectCounts(hackathonPubkeys: string[]): Record<string, num
   const [counts, setCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    if (hackathonPubkeys.length === 0) return;
     let cancelled = false;
 
     async function load() {
@@ -39,7 +38,7 @@ export function useProjectCounts(hackathonPubkeys: string[]): Record<string, num
 
     load();
     return () => { cancelled = true; };
-  }, [hackathonPubkeys.join(",")]);
+  }, []);
 
   return counts;
 }
