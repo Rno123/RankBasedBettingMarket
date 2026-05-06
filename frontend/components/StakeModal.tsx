@@ -5,13 +5,12 @@ import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import { useWallet, useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
-  getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 import { getProgram } from "@/lib/program";
-import { escrowPda, stakePda, whitelistPda } from "@/lib/pda";
-import { parseTokens, formatTokens } from "@/lib/format";
+import { buildStakeAccounts } from "@/lib/transactions";
+import { parseTokens, formatTokens, repoName } from "@/lib/format";
 import { computeShares, estimatePayout, formatRoi } from "@/lib/payout";
 import { MAX_STAKE_PER_WALLET } from "@/lib/constants";
 import { useWhitelistStatus } from "@/hooks/useWhitelistStatus";
@@ -101,9 +100,14 @@ export default function StakeModal({
     setTxError(null);
     try {
       const program = getProgram(anchorWallet);
-      const userAta = getAssociatedTokenAddressSync(hackathon.usdcMint, publicKey);
-      const escrow = escrowPda(hackathon.pubkey);
-      const userStake = stakePda(publicKey, project.pubkey);
+      const { userAta, escrow, userStake, whitelistEntry } = buildStakeAccounts({
+        hackathon: hackathon.pubkey,
+        project: project.pubkey,
+        user: publicKey,
+        usdcMint: hackathon.usdcMint,
+        feeRecipient: hackathon.feeRecipient,
+        openStaking: hackathon.openStaking,
+      });
 
       const stakeBuilder = (program.methods as any)
         .stake(new BN(raw.toString()))
@@ -119,9 +123,7 @@ export default function StakeModal({
         });
 
       // When open_staking is false, pass the whitelist PDA as a remaining account
-      // so the program can verify membership.
-      if (!hackathon.openStaking) {
-        const whitelistEntry = whitelistPda(hackathon.pubkey, publicKey);
+      if (whitelistEntry) {
         stakeBuilder.remainingAccounts([
           { pubkey: whitelistEntry, isWritable: false, isSigner: false },
         ]);
@@ -144,10 +146,14 @@ export default function StakeModal({
     setTxError(null);
     try {
       const program = getProgram(anchorWallet);
-      const userAta = getAssociatedTokenAddressSync(hackathon.usdcMint, publicKey);
-      const feeRecipientAta = getAssociatedTokenAddressSync(hackathon.usdcMint, hackathon.feeRecipient);
-      const escrow = escrowPda(hackathon.pubkey);
-      const userStake = stakePda(publicKey, project.pubkey);
+      const { userAta, feeRecipientAta, escrow, userStake } = buildStakeAccounts({
+        hackathon: hackathon.pubkey,
+        project: project.pubkey,
+        user: publicKey,
+        usdcMint: hackathon.usdcMint,
+        feeRecipient: hackathon.feeRecipient,
+        openStaking: hackathon.openStaking,
+      });
 
       const unstakeIx = await (program.methods as any)
         .unstake()
@@ -186,15 +192,15 @@ export default function StakeModal({
     }
   }
 
-  const repoLabel = project.githubUrl.replace("https://github.com/", "");
+  const repoLabel = repoName(project.githubUrl);
   const hasStake = stake && stake.amount > 0n && !stake.isClaimed;
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", padding: "16px", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
+      className="ui-modal-overlay"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div style={{ width: "100%", maxWidth: "28rem", borderRadius: "16px", border: "1px solid var(--card-border)", background: "var(--modal-bg)", padding: "24px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+      <div className="ui-modal-card">
         <div style={{ marginBottom: "16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
             <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.025em", color: "var(--c-text)" }}>Manage Stake</h2>

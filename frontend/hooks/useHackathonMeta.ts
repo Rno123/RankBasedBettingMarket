@@ -26,7 +26,8 @@ export function useHackathonMeta(pubkeys: string[]) {
         for (const row of data) map[row.hackathon_pubkey] = row as HackathonMeta;
         setMeta(map);
       });
-  }, [pubkeys.join(",")]);
+  // Sort so the dependency string is deterministic across renders.
+  }, [pubkeys.slice().sort().join(",")]);
 
   return meta;
 }

@@ -4,12 +4,12 @@ import { useState } from "react";
 import { SystemProgram, Transaction } from "@solana/web3.js";
 import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import {
-  getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 import { getProgram } from "@/lib/program";
-import { escrowPda, stakePda } from "@/lib/pda";
+import { stakePda } from "@/lib/pda";
+import { buildStakeAccounts } from "@/lib/transactions";
 import { formatTokens } from "@/lib/format";
 import type { HackathonInfo } from "@/hooks/useHackathons";
 import type { ProjectInfo } from "@/hooks/useProjects";
@@ -48,30 +48,35 @@ export default function ClaimSlipButton({
 
     try {
       const program = getProgram(anchorWallet);
-      const userAta = getAssociatedTokenAddressSync(hackathon.usdcMint, publicKey);
-      const feeRecipientAta = getAssociatedTokenAddressSync(
-        hackathon.usdcMint,
-        hackathon.feeRecipient,
-      );
-      const escrow = escrowPda(hackathon.pubkey);
+
+      // Shared accounts (identical across all projects).
+      const { userAta, feeRecipientAta, escrow } = buildStakeAccounts({
+        hackathon: hackathon.pubkey,
+        project: claimableProjects[0].pubkey,
+        user: publicKey,
+        usdcMint: hackathon.usdcMint,
+        feeRecipient: hackathon.feeRecipient,
+        openStaking: hackathon.openStaking,
+      });
 
       const ixs = await Promise.all(
-        claimableProjects.map((project) => (
-          (program.methods as any)
+        claimableProjects.map((project) => {
+          const userStake = stakePda(publicKey, project.pubkey);
+          return (program.methods as any)
             .claim()
             .accounts({
               user: publicKey,
               hackathon: hackathon.pubkey,
               project: project.pubkey,
-              userStake: stakePda(publicKey, project.pubkey),
+              userStake,
               userTokenAccount: userAta,
               feeRecipientTokenAccount: feeRecipientAta,
               escrow,
               tokenProgram: TOKEN_PROGRAM_ID,
               systemProgram: SystemProgram.programId,
             })
-            .instruction()
-        )),
+            .instruction();
+        }),
       );
 
       const tx = new Transaction().add(

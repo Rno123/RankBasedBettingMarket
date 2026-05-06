@@ -1,3 +1,5 @@
+export type SortMode = "stake" | "last_commit";
+
 export interface ProjectMetadata {
   project_pubkey: string;
   hackathon_pubkey: string;

@@ -49,7 +49,7 @@ export function useUserStakesForProjects(
     return () => {
       cancelled = true;
     };
-  }, [userPubkey?.toBase58(), projects.map((project) => project.pubkey.toBase58()).join(","), refreshKey]);
+  }, [userPubkey?.toBase58(), refreshKey, projects.length]);
 
   return { stakesByProject, loading };
 }

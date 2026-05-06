@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 import { BN } from "@coral-xyz/anchor";
 import { SystemProgram, Transaction } from "@solana/web3.js";
 import { useAnchorWallet, useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { getProgram } from "@/lib/program";
-import { escrowPda, stakePda, whitelistPda } from "@/lib/pda";
+import { stakePda } from "@/lib/pda";
+import { buildStakeAccounts } from "@/lib/transactions";
 import { formatTokens, parseTokens, repoName } from "@/lib/format";
 import { computeShares, estimatePayout, formatRoi, splitSlipAmounts } from "@/lib/payout";
 import { useTokenBalance } from "@/hooks/useTokenBalance";
@@ -175,26 +176,31 @@ export default function ParlayModal({
     setTxError(null);
     try {
       const program = getProgram(anchorWallet);
-      const userAta = getAssociatedTokenAddressSync(hackathon.usdcMint, publicKey);
-      const escrow = escrowPda(hackathon.pubkey);
-      const wlEntry = !hackathon.openStaking ? whitelistPda(hackathon.pubkey, publicKey) : null;
 
       const ixs = await Promise.all(
         selectedProjects.map((project, i) => {
+          const { userAta, escrow, userStake, whitelistEntry } = buildStakeAccounts({
+            hackathon: hackathon.pubkey,
+            project: project.pubkey,
+            user: publicKey,
+            usdcMint: hackathon.usdcMint,
+            feeRecipient: hackathon.feeRecipient,
+            openStaking: hackathon.openStaking,
+          });
           const builder = (program.methods as any)
             .stake(new BN((amounts[i] ?? 0n).toString()))
             .accounts({
               user: publicKey,
               hackathon: hackathon.pubkey,
               project: project.pubkey,
-              userStake: stakePda(publicKey, project.pubkey),
+              userStake,
               userTokenAccount: userAta,
               escrow,
               tokenProgram: TOKEN_PROGRAM_ID,
               systemProgram: SystemProgram.programId,
             });
-          if (wlEntry) {
-            builder.remainingAccounts([{ pubkey: wlEntry, isWritable: false, isSigner: false }]);
+          if (whitelistEntry) {
+            builder.remainingAccounts([{ pubkey: whitelistEntry, isWritable: false, isSigner: false }]);
           }
           return builder.instruction();
         }),
@@ -221,7 +227,7 @@ export default function ParlayModal({
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)", padding: "16px", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
+      className="ui-modal-overlay"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div style={{ width: "100%", maxWidth: "480px", maxHeight: "90vh", display: "flex", flexDirection: "column", borderRadius: "16px", border: "1px solid var(--card-border)", background: "var(--modal-bg)", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>

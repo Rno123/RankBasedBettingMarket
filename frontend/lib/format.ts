@@ -1,3 +1,4 @@
+import type React from "react";
 import { TOKEN_DECIMALS } from "./constants";
 
 export function formatTokens(raw: bigint, decimals = TOKEN_DECIMALS): string {
@@ -65,4 +66,36 @@ export function repoName(url: string): string {
   } catch {
     return url;
   }
+}
+
+export function ordinal(n: number): string {
+  if (n === 11 || n === 12 || n === 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+export function fmtTierPct(totalPct: number, count: number): string {
+  const per = count > 0 ? totalPct / count : totalPct;
+  return Number.isInteger(per) ? `${per}%` : `${per.toFixed(1)}%`;
+}
+
+export function daysAgo(isoDate: string | null): string {
+  if (!isoDate) return "unknown";
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
+export function rankBadgeStyle(rank: number): React.CSSProperties {
+  if (rank === 1) return { background: "var(--rank-1-bg)", color: "var(--rank-1-text)" };
+  if (rank === 2) return { background: "var(--rank-2-bg)", color: "var(--rank-2-text)" };
+  if (rank === 3) return { background: "var(--rank-3-bg)", color: "var(--rank-3-text)" };
+  if (rank > 0) return { background: "var(--rank-other-bg)", color: "var(--rank-other-text)" };
+  return { background: "var(--rank-none-bg)", color: "var(--rank-none-text)" };
 }

@@ -4,12 +4,11 @@ import { useState } from "react";
 import { SystemProgram, Transaction } from "@solana/web3.js";
 import { useWallet, useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
-  getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 import { getProgram } from "@/lib/program";
-import { escrowPda, stakePda } from "@/lib/pda";
+import { buildStakeAccounts } from "@/lib/transactions";
 import type { HackathonInfo } from "@/hooks/useHackathons";
 import type { ProjectInfo } from "@/hooks/useProjects";
 
@@ -36,10 +35,14 @@ export default function ClaimButton({
     setErr(null);
     try {
       const program = getProgram(anchorWallet);
-      const userAta = getAssociatedTokenAddressSync(hackathon.usdcMint, publicKey);
-      const feeRecipientAta = getAssociatedTokenAddressSync(hackathon.usdcMint, hackathon.feeRecipient);
-      const escrow = escrowPda(hackathon.pubkey);
-      const userStake = stakePda(publicKey, project.pubkey);
+      const { userAta, feeRecipientAta, escrow, userStake } = buildStakeAccounts({
+        hackathon: hackathon.pubkey,
+        project: project.pubkey,
+        user: publicKey,
+        usdcMint: hackathon.usdcMint,
+        feeRecipient: hackathon.feeRecipient,
+        openStaking: hackathon.openStaking,
+      });
 
       const claimIx = await (program.methods as any)
         .claim()
