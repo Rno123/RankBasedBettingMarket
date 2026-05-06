@@ -15,6 +15,8 @@
 7. [Security](#security)
 8. [Glossary](#glossary)
 
+> **Quick reference:** jump straight to [Worked Examples](#worked-examples) for concrete payout calculations.
+
 ---
 
 ## What is HackBet?
@@ -201,44 +203,176 @@ When `open_staking = false`, only whitelisted wallets can stake. Use the admin p
 
 ### Payout Formula (Full)
 
-The claim payout is computed as a two-stage process:
+The claim payout is computed as a two-stage process, both stages snapshotted at `finalize_resolve`.
 
-**Stage 1 — Tier allocation**:
+**Stage 1 — Per-project tier allocation (named tiers)**:
+
+Each named tier defines `tier_pcts[t]` (percentage) and `tier_expected_counts[t]` (expected project count). At `finalize_resolve`:
+
 ```
-For each tier t with at least one ranked project:
-  total_non_empty_bps += tier_pcts[t] * 100
-
-For each occupied tier t:
-  effective[t] = tier_pcts[t] * 1,000,000 / total_non_empty_bps
-```
-Empty tiers have their configured percentage redistributed proportionally among occupied tiers.
-
-**Stage 2 — Within-tier sqrt crowding**:
-```
-C_i       = isqrt(project.total_staked)
-C_total_t = Σ isqrt(project_j.total_staked) for all projects in tier t
-           (snapshotted at finalize_resolve — cannot be manipulated by claimers)
-
-payout = user_shares × C_i × effective[tier] × total_pool
-         ─────────────────────────────────────────────────
-         project.total_shares × C_total_t × 10,000
+per_project_bps[t] = tier_pcts[t] × 100 / tier_expected_counts[t]
+drawn_bps[t]       = per_project_bps[t] × actual_project_count[t]
+effective[t]       = drawn_bps[t]   (stored as u16 basis points)
 ```
 
-![Formula visualization: a Sankey-like diagram showing total_pool flowing into tier buckets (weighted by effective_tier_pcts), then within each tier flowing into project buckets (weighted by sqrt(total_staked)), then within each project flowing to individual stakers (weighted by shares).]  
+Under-filled tiers draw fewer bps than their configured percentage; the remainder cascades to occupied tiers proportionally to their already-drawn amounts:
+
+```
+remaining = 10,000 − Σ drawn_bps[t]
+
+for each occupied named tier t (last one gets the dust):
+  effective[t] += remaining × drawn_bps[t] / Σ drawn_bps
+```
+
+"Rest" tiers (`tier_expected_counts[t] = 0`) collect whatever bps remain after named tiers draw, split proportionally by their `tier_pcts`.
+
+**Stage 2 — Within-project share split**:
+
+```
+N = tier_c_totals[tier]   (actual project count in tier, snapshotted at finalize_resolve)
+
+payout = user_shares × effective[tier] × total_pool
+         ─────────────────────────────────────────────
+         project.total_shares × N × 10,000
+```
+
+Protocol fee deducted at claim:
+```
+fee          = payout × protocol_fee_bps / 10,000
+user_receives = payout − fee
+```
+
+![Formula visualization: a Sankey-like diagram showing total_pool flowing into tier buckets (weighted by effective_tier_pcts), then within each tier splitting equally among N project buckets, then within each project flowing to individual stakers weighted by shares.]
 *Placeholder: Sankey diagram of the two-stage payout distribution*
 
-### Sqrt-Crowding Intuition
+### Per-Project Equal-Split Intuition
 
-Without sqrt-crowding, a project with $100,000 staked would pay 100x more than one with $1,000 staked — the signal would be purely about crowd size, not conviction.
+Within a tier, every project draws the same fixed bps (`effective[t] / N`). The total capital backing a project does not affect its tier allocation — only the number of projects in the tier (`N`) matters for the project's slot size.
 
-With sqrt-crowding:
-- $100,000 project → C_i = 316
-- $1,000 project → C_i = 31.6
+Consequence: backing a project with fewer total stakers earns a higher per-dollar return, even compared to an equally-ranked project in the same tier.
 
-The ratio is 10:1 instead of 100:1. The crowd still has more weight, but early conviction in underrated projects is rewarded.
+| | Project B | Project C |
+|--|-----------|-----------|
+| Tier | 1 (both N=2) | 1 (both N=2) |
+| Total staked | $100 | $10,000 |
+| Tier allocation | 1,500 bps of pool | 1,500 bps of pool |
+| Payout (same pool) | **same dollars** | **same dollars** |
+| Per-dollar return | **+2,855%** | **−70.5%** |
 
-![Comparison bar chart: "Without sqrt-crowding" shows extreme disparity between whale-backed and lightly-backed projects. "With sqrt-crowding" shows compressed but still differentiated payouts.]
-*Placeholder: Side-by-side bar chart comparing payout distribution with and without sqrt-crowding*
+The equal-split mechanism converts the problem from "pick the winner" to "pick the winner that the crowd underrated."
+
+### Worked Examples
+
+The following examples use `effective_tier_pcts` in basis points (0–10,000), `tier_c_totals` as the project count N, and a 30-day hackathon window. Protocol fee is 1.5%.
+
+---
+
+#### Example 1 — Time-weighted shares: same USDC, same winning project, different returns
+
+**Setup:** winner-take-all (1 tier, 100%, expected=1). Pool = 2,000 USDC.
+
+| Staker | Stake | Day | `mult_bps` | Shares |
+|--------|-------|-----|------------|--------|
+| Alice | 1,000 | 0 | `15,000 − ⌊5,000×0/30⌋ = 15,000` | 1,500 |
+| Bob | 1,000 | 25 | `15,000 − ⌊5,000×25/30⌋ = 10,834` | 1,083 |
+
+`total_shares = 2,583`, `effective[0] = 10,000`, N = 1
+
+```
+Alice: 1,500 × 10,000 × 2,000 / (2,583 × 1 × 10,000) = 1,161 USDC pre-fee → 1,143 net  (+14.3%)
+Bob:   1,083 × 10,000 × 2,000 / (2,583 × 1 × 10,000) =   839 USDC pre-fee →   826 net  (−17.4%)
+```
+
+Both backed the winner. Alice captures 58.1% of the pool on 50% of the capital because she staked 25 days earlier. Bob nets negative on a winning bet — his late entry cost him the early-conviction premium.
+
+---
+
+#### Example 2 — Per-project equal split: lightly-backed project earns the same as heavily-backed
+
+**Setup:** 2 tiers, `tier_pcts=[70, 30]`, `tier_expected_counts=[1, 2]`. All tiers fully filled (no cascade). Pool = 20,000 USDC. All stake Day 0 (1.5× mult).
+
+| Project | Rank → Tier | Staker | Stake | `total_shares` |
+|---------|-------------|--------|-------|----------------|
+| A | 1 → tier 0 (N=1) | Alice | 10,000 | 15,000 |
+| B | 2 → tier 1 (N=2) | Bob | 100 | 150 |
+| C | 3 → tier 1 (N=2) | Carol | 10,000 | 15,000 |
+
+`effective[0] = 7,000`, `effective[1] = 3,000` (= 2 × 1,500 per-slot)
+
+```
+Alice: 15,000 × 7,000 × 20,000 / (15,000 × 1 × 10,000) = 14,000 pre-fee → 13,790 net (+37.9%)
+Bob:      150 × 3,000 × 20,000 / (   150 × 2 × 10,000) =  3,000 pre-fee →  2,955 net (+2,855%)
+Carol:  15,000 × 3,000 × 20,000 / (15,000 × 2 × 10,000) =  3,000 pre-fee →  2,955 net  (−70.5%)
+```
+
+Bob and Carol both backed tier-1 projects with the same rank. Each project draws 1,500 bps (= $3,000) regardless of how much was staked in it. Bob's $100 earns the same dollars as Carol's $10,000 because the per-project allocation is fixed.
+
+---
+
+#### Example 3 — Named tier cascade: one expected slot goes unfilled
+
+**Setup:** 3 tiers, `tier_pcts=[60, 30, 10]`, `tier_expected_counts=[1, 1, 1]`. Rank 3 didn't submit — tier 2 is empty. Pool = 9,000 USDC. All stake Day 0.
+
+**First pass:**
+
+| Tier | per-slot bps | actual | drawn bps |
+|------|-------------|--------|-----------|
+| 0 | 6,000 | 1 | 6,000 |
+| 1 | 3,000 | 1 | 3,000 |
+| 2 | 1,000 | 0 | 0 (skipped) |
+
+`drawn_bps = 9,000`, `remaining = 1,000`
+
+**Cascade** (proportional to drawn: 6,000 vs 3,000):
+```
+Tier 0 additional: ⌊1,000 × 6,000/9,000⌋ = 666 bps
+Tier 1 additional: 1,000 − 666             = 334 bps  (remainder to last)
+→ effective = [6,666, 3,334, 0]
+```
+
+Stakes: Alice 3,000 USDC in Project A (sole staker); Bob 6,000 USDC in Project B (sole staker).
+
+```
+Alice: 6,666/10,000 × 9,000 = 5,999 pre-fee → 5,909 net  (+96.9% on 3,000 staked)
+Bob:   3,334/10,000 × 9,000 = 3,001 pre-fee → 2,956 net  (−50.7% on 6,000 staked)
+```
+
+Without cascade Alice would have received `6,000/10,000 × 9,000 = 5,400` USDC. The missing slot's 1,000 bps (= $900) redistributes 2:1 toward tier 0 — higher-ranked tiers absorb more of the cascade because they drew more bps in the first pass.
+
+---
+
+#### Example 4 — Early unstake: flat 3% penalty reshapes the pool
+
+**Setup:** winner-take-all (100%, expected=1). One project wins. Protocol fee 1.5%.
+
+| Staker | Amount | Day | Action |
+|--------|--------|-----|--------|
+| Alice | 10,000 | 0 | holds |
+| Bob | 5,000 | 0 | **unstakes** before cutoff |
+| Carol | 5,000 | 20 | holds |
+
+**Bob's unstake math:**
+```
+penalty total  = 5,000 × 300/10,000 = 150 USDC
+→ to protocol  = 5,000 × 150/10,000 =  75 USDC  (leaves escrow)
+→ stays in pool= 150 − 75           =  75 USDC
+Bob receives:  5,000 − 150          = 4,850 USDC
+```
+
+Bob's 7,500 shares are removed from the project.
+
+Carol's shares: `mult = 15,000 − ⌊5,000×20/30⌋ = 11,667` → `⌊5,000×11,667/10,000⌋ = 5,833`
+
+**Pool at resolution:** `10,000 + 75 + 5,000 = 15,075 USDC`
+`total_shares = 15,000 (Alice) + 5,833 (Carol) = 20,833`
+
+```
+Alice: 15,000 × 10,000 × 15,075 / (20,833 × 1 × 10,000) = 10,854 pre-fee → 10,691 net  (+6.9%)
+Carol:  5,833 × 10,000 × 15,075 / (20,833 × 1 × 10,000) =  4,221 pre-fee →  4,158 net  (−16.8%)
+Bob:    exited for 4,850 USDC                                                             (−3.0%)
+```
+
+Had Bob stayed and the project still won, he would have received ≈ $3,900 net (−22%). Exiting at −3% was economically rational given his uncertainty — but the 75 USDC penalty that stayed in the pool is a small gift to Alice and Carol, earned proportionally to their shares.
 
 ### Constants Reference
 
@@ -246,15 +380,15 @@ The ratio is 10:1 instead of 100:1. The crowd still has more weight, but early c
 |----------|-------|-------------|
 | MAX_STAKE_PER_WALLET | $250 USDC | Per-wallet cap per project |
 | MAX_SELF_STAKE | $250 USDC | Builder self-stake cap |
-| UNSTAKE_PENALTY_BPS | 300 (3%) | Flat penalty on early unstake |
-| UNSTAKE_PROTOCOL_BPS | 150 (1.5%) | Portion of penalty to fee recipient |
-| EARLY_MULTIPLIER_BPS | 15,000 (1.5x) | Share multiplier at hackathon start |
-| BASE_MULTIPLIER_BPS | 10,000 (1.0x) | Share multiplier at cutoff |
-| SELL_CUTOFF_SECS | 86,400 (24h) | Staking lock before results |
-| DEPOSIT_CLAIM_WINDOW_SECS | 1,209,600 (14d) | Builder refund window |
-| DEFAULT_PROTOCOL_FEE_BPS | 150 (1.5%) | Fee on claim payouts |
+| UNSTAKE_PENALTY_BPS | 300 (3%) | Flat penalty on early unstake (no time decay) |
+| UNSTAKE_PROTOCOL_BPS | 150 (1.5%) | Portion of penalty sent to fee recipient; remainder stays in pool |
+| EARLY_MULTIPLIER_BPS | 15,000 (1.5×) | Share multiplier at hackathon start |
+| BASE_MULTIPLIER_BPS | 10,000 (1.0×) | Share multiplier at cutoff |
+| SELL_CUTOFF_SECS | 86,400 (24 h) | Staking lock before results |
+| DEFAULT_PROTOCOL_FEE_BPS | 150 (1.5%) | Fee deducted from claim payouts |
 | DEFAULT_DEPOSIT_AMOUNT | $10 USDC | Builder commitment deposit |
 | MAX_TIERS | 8 | Maximum winner tiers |
+| TIER_BPS_TOTAL | 10,000 | Total basis points across all tiers (= 100%) |
 
 ---
 
@@ -288,17 +422,19 @@ The protocol has undergone internal adversarial review. Key protections:
 | Term | Definition |
 |------|------------|
 | **Conviction signal** | A stake-backed prediction of project quality, not a financial bet |
-| **Shares** | Time-weighted stake units. Early stakers get more shares per dollar |
-| **Sqrt-crowding** | Using sqrt(total_staked) to compress the influence of whale-backed projects |
-| **Tier** | A rank group with an allocated pool percentage |
-| **Proportional cascade** | Redistribution of empty-tier percentages to occupied tiers |
+| **Shares** | Time-weighted stake units. Early stakers earn more shares per dollar staked |
+| **Tier** | A rank group with a configured pool percentage and expected project count |
+| **Per-project slot** | Each expected project in a named tier draws `tier_pct × 100 / expected` bps of the pool, regardless of how much was staked in it |
+| **Named tier** | A tier with `tier_expected_counts > 0`; each slot draws a fixed per-project bps |
+| **Rest tier** | A tier with `tier_expected_counts = 0`; collects whatever pool % remains after named tiers draw |
+| **Per-project cascade** | When a named tier has fewer ranked projects than expected, the unused slots' bps redistributes to occupied tiers proportionally to their drawn amounts |
+| **effective_tier_pcts** | Final per-tier bps allocation (0–10,000) after cascade, stored at `finalize_resolve` |
+| **tier_c_totals** | Actual project count per tier, snapshotted at `finalize_resolve`; used as N in the claim formula |
 | **Cutoff** | 24 hours before results — all staking/unstaking locks |
-| **Effective tier pct** | Final tier allocation after cascade, computed at `finalize_resolve` |
-| **C_total** | Sum of sqrt(total_staked) for all projects in a tier, used as claim denominator |
 | **Self-stake** | A builder staking on their own project to signal confidence |
 | **Builder deposit** | Commitment deposit paid by builders to prevent spam registrations |
 | **Parlay / Slip** | Multi-project stake in a single transaction |
 
 ---
 
-*Document version: 1.0 — Last updated: May 2026*
+*Document version: 1.1 — Last updated: May 2026*

@@ -1775,6 +1775,22 @@ describe("hackathon-betting — Bankrun suite", () => {
   describe("Feature 3: forfeit_deposit (ghost builders)", () => {
     const DEPOSIT = 10_000_000;
 
+    // Helper: create a staked dummy project so AllTiersEmpty won't fire at finalize.
+    async function setupDummy(fix: Fix, builder: Keypair, builderAta: PublicKey, caller?: Keypair) {
+      await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
+      const dummy = await addProject(ctx, program, fix, "https://github.com/dummy", builder, caller ?? builder);
+      await doPayDeposit(program, fix, builder, builderAta, dummy);
+      const backer = await newWhitelistedUser(ctx, program, fix, 500);
+      await doStake(program, fix, backer, dummy, 500);
+      return dummy;
+    }
+
+    // Helper: resolve and finalize with the given projects.
+    async function forfeitFinalize(fix: Fix, ghostProject: PublicKey, dummyProject: PublicKey) {
+      await doResolve(program, fix, dummyProject, 1);
+      await doFinalizeResolve(program, fix, [ghostProject, dummyProject]);
+    }
+
     it("full deposit transferred to fee_recipient", async () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
@@ -1784,10 +1800,12 @@ describe("hackathon-betting — Bankrun suite", () => {
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/ghost/proj1");
       await doPayDeposit(program, fix, builder, builderAta, project);
+      const dummy = await setupDummy(fix, builder, builderAta);
 
       const poolBefore = (await program.account.hackathonState.fetch(fix.hackathon)).totalPool.toNumber();
       const feeBefore  = Number(await tokenBalance(ctx, fix.feeRecipientAta));
       setClock(ctx, FORFEIT_TS);
+      await forfeitFinalize(fix, project, dummy);
       await doForfeitDeposit(program, fix, project);
       const poolAfter = (await program.account.hackathonState.fetch(fix.hackathon)).totalPool.toNumber();
       const feeAfter  = Number(await tokenBalance(ctx, fix.feeRecipientAta));
@@ -1807,7 +1825,9 @@ describe("hackathon-betting — Bankrun suite", () => {
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/ghost/proj1b");
       await doPayDeposit(program, fix, builder, builderAta, project);
+      const dummy = await setupDummy(fix, builder, builderAta);
       setClock(ctx, RESULTS_TS);
+      await forfeitFinalize(fix, project, dummy);
       try {
         await doForfeitDeposit(program, fix, project);
         assert.fail("forfeit before grace period should be rejected");
@@ -1829,7 +1849,9 @@ describe("hackathon-betting — Bankrun suite", () => {
       await doPayDeposit(program, fix, builder, builderAta, project);
       await doSubmitProject(program, fix, builder, project);
       await doApproveSubmissions(program, fix, [project]);
+      const dummy = await setupDummy(fix, builder, builderAta);
       setClock(ctx, FORFEIT_TS);
+      await forfeitFinalize(fix, project, dummy);
       try {
         await doForfeitDeposit(program, fix, project);
         assert.fail("should reject forfeit on approved project");
@@ -1850,7 +1872,9 @@ describe("hackathon-betting — Bankrun suite", () => {
       const project = await addProject(ctx, program, fix, "https://github.com/ghost/proj2b", ctx.payer, fix.admin);
       await doPayDeposit(program, fix, builder, builderAta, project);
       await doSubmitProject(program, fix, builder, project);
+      const dummy = await setupDummy(fix, builder, builderAta, fix.admin);
       setClock(ctx, FORFEIT_TS);
+      await forfeitFinalize(fix, project, dummy);
       // On-chain declaration alone does not protect the deposit —
       // only organizer approval (submitted=true) gates forfeiture.
       await doForfeitDeposit(program, fix, project);
@@ -1867,7 +1891,9 @@ describe("hackathon-betting — Bankrun suite", () => {
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/ghost/proj3");
       await doPayDeposit(program, fix, builder, builderAta, project);
+      const dummy = await setupDummy(fix, builder, builderAta);
       setClock(ctx, FORFEIT_TS);
+      await forfeitFinalize(fix, project, dummy);
       await doForfeitDeposit(program, fix, project);
       try {
         await doForfeitDeposit(program, fix, project);
@@ -1891,15 +1917,12 @@ describe("hackathon-betting — Bankrun suite", () => {
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT * 2);
       const project = await addProject(ctx, program, fix, "https://github.com/ghost/h01");
       await doPayDeposit(program, fix, builder, builderAta, project);
+      const dummy = await setupDummy(fix, builder, builderAta);
       setClock(ctx, FORFEIT_TS);
+      await forfeitFinalize(fix, project, dummy);
       await doForfeitDeposit(program, fix, project);
       const p = await program.account.projectAccount.fetch(project);
       assert.ok(p.depositForfeited, "deposit_forfeited flag set");
-      // H-01 guard: claim_deposit_refund checks !deposit_forfeited after submitted
-      // and timing gates. The guard exists in lib.rs at line ~1073.
-      // Full end-to-end is unreachable because forfeit itself requires !submitted,
-      // while claim_deposit_refund requires submitted — making the H-01 scenario
-      // impossible through normal instruction flow.
     });
 
     it("forfeited deposit goes entirely to protocol, does not boost pool", async () => {
@@ -1917,12 +1940,12 @@ describe("hackathon-betting — Bankrun suite", () => {
       await doStake(program, fix, backer, p1, 1_000);
       const feeBefore = Number(await tokenBalance(ctx, fix.feeRecipientAta));
       setClock(ctx, FORFEIT_TS);
+      // p2 is unranked (rank 0) — skipped in finalize, but included in the list.
+      await doResolve(program, fix, p1, 1);
+      await doFinalizeResolve(program, fix, [p1, p2]);
       await doForfeitDeposit(program, fix, p2);
       const feeAfter = Number(await tokenBalance(ctx, fix.feeRecipientAta));
       assert.equal(feeAfter - feeBefore, DEPOSIT, "full deposit to fee_recipient");
-
-      await doResolve(program, fix, p1, 1);
-      await doFinalizeResolve(program, fix, [p1]);
 
       const before = await tokenBalance(ctx, backer.ata);
       await doClaim(program, fix, backer, p1);
@@ -2294,7 +2317,15 @@ describe("hackathon-betting — Bankrun suite", () => {
       const project = await addProject(ctx, program, fix, "https://github.com/builder/sub7");
       await doPayDeposit(program, fix, builder, builderAta, project);
       await doSubmitProject(program, fix, builder, project);
+      // Create a staked dummy project so AllTiersEmpty won't fire at finalize.
+      await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
+      const dummyProj = await addProject(ctx, program, fix, "https://github.com/dummy");
+      await doPayDeposit(program, fix, builder, builderAta, dummyProj);
+      const backer = await newWhitelistedUser(ctx, program, fix, 500);
+      await doStake(program, fix, backer, dummyProj, 500);
       setClock(ctx, FORFEIT_TS);
+      await doResolve(program, fix, dummyProj, 1);
+      await doFinalizeResolve(program, fix, [project, dummyProj]);
       // on-chain declaration alone does not protect the deposit;
       // only organizer approval (submitted=true) gates forfeiture
       await doForfeitDeposit(program, fix, project);
