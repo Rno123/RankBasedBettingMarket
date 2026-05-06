@@ -340,15 +340,13 @@ function SectionPayout() {
         The number of ranked projects per tier (<IC>N</IC>) is counted and snapshotted
         at <IC>finalize_resolve</IC>.
       </p>
-      <code style={codeStyle}>{`N            = hackathon.tier_c_totals[tier]   // project count, snapshotted
-C_total_t   = hackathon.tier_c_totals[tier]           // snapshotted at finalize_resolve
+      <code style={codeStyle}>{`N = hackathon.tier_c_totals[tier]   // project count, snapshotted
 
-payout =   user_shares
-         × C_i
-         × effective_tier_pcts[tier]
-         × total_pool
-         ──────────────────────────────────────────
-         project.total_shares × C_total_t × 10_000`}</code>
+	payout =   user_shares
+	         × effective_tier_pcts[tier]
+	         × total_pool
+	         ──────────────────────────────────────────
+	         project.total_shares × N × 10_000`}</code>
       <p style={pStyle}>
         The protocol fee is then deducted from <IC>payout</IC> at claim time:
       </p>
@@ -357,20 +355,22 @@ staker_receives  = payout − fee`}</code>
 
       <h3 style={h3Style}>Worked example</h3>
       <p style={{ ...pStyle, marginBottom: "0.5rem" }}>
-        Three projects in a single-rank hackathon. Total pool = 10,000 USDC. Fee = 1.5%.
+        Config: 1st = 12%, 2nd = 88% (22 expected). Pool = $1,000. Fee = 1.5%.
+        Alice stakes $200 on Project A (1st), Bob stakes $200 on Project B (2nd).
+        Both stake Day 0 (1.5× multiplier = 300 shares each).
       </p>
       <Table
-        head={["Project", "Total Staked", "√ (C_i)", "User Shares / Total Shares", "Gross Payout", "Net (−1.5%)"]}
+        head={["Project", "Rank", "Per-project", "User Shares / Total", "Gross Payout", "Net (−1.5%)"]}
         rows={[
-          ["Alpha", "4,000 USDC", "63.24", "500 / 1,000", "≈ 2,558 USDC", "≈ 2,520 USDC"],
-          ["Beta",  "1,000 USDC", "31.62", "200 / 500",   "≈ 2,558 USDC", "≈ 2,520 USDC"],
-          ["Gamma", "9,000 USDC", "94.87", "300 / 600",   "≈ 4,883 USDC", "≈ 4,810 USDC"],
+          ["A", "1st", "60% ($600)", "300 / 300", "$600", "$591"],
+          ["B", "2nd", "20% ($200)", "300 / 300", "$200", "$197"],
         ]}
       />
       <div style={calloutStyle("info")}>
-        Notice that <strong>Alpha</strong> and <strong>Beta</strong> yield the same gross payout despite Beta
-        being staked 4× less — because Beta's proportional share within the project is larger. The sqrt
-        crowding adjustment brings heavily-backed projects closer to less-backed ones.
+        Tier 1 draws 12% × 1 project = 1,200 bps. Tier 2 draws 4% × 1 project = 400 bps.
+        The unused 8,400 bps cascades 3:1 to the occupied tiers — 1st draws 3× more
+        per project (12%) than 2nd (4%), so it gets 3× more cascade. Final: 60% vs 20%.
+        Higher rank always earns more per project.
       </div>
     </section>
   );
@@ -427,7 +427,7 @@ function SectionAccounts() {
   tier_count: u8,
   tier_pcts: [u8; 8],             // raw percentages, must sum to 100
   effective_tier_pcts: [u16; 8],  // redistributed — set at finalize_resolve
-  tier_c_totals: [u64; 8],        // sqrt C totals per tier — set at finalize_resolve
+  tier_c_totals: [u64; 8],        // number of payout-eligible projects per tier — set at finalize_resolve
   fee_recipient: Pubkey,
   protocol_fee_bps: u16,          // capped at 3000
   deposit_amount: u64,
@@ -518,16 +518,17 @@ function SectionClaimArch() {
 
       <h3 style={h3Style}>The fix (C-01)</h3>
       <p style={pStyle}>
-        <IC>finalize_resolve</IC> now iterates all projects and snapshots the per-tier square-root
-        totals into <IC>hackathon.tier_c_totals[t]</IC>. The <IC>claim</IC> instruction reads this
-        value directly from <IC>HackathonState</IC> — no <IC>remaining_accounts</IC> needed.
+        <IC>finalize_resolve</IC> now iterates all projects and snapshots the per-tier project
+        count into <IC>hackathon.tier_c_totals[t]</IC> (equal split — no sqrt weighting).
+        The <IC>claim</IC> instruction reads this value directly from
+        <IC>HackathonState</IC> — no <IC>remaining_accounts</IC> needed.
       </p>
       <code style={codeStyle}>{`// finalize_resolve — runs once, O(N):
 for each project p in tier t:
-    tier_c_totals[t] += isqrt(p.total_staked)
+        tier_c_totals[t] += 1   // count projects per tier (equal split)
 
 // claim — O(1), caller-manipulation-proof:
-let c_total = hackathon.tier_c_totals[project.rank − 1]`}</code>
+let N = hackathon.tier_c_totals[project.rank − 1]`}</code>
 
       <h3 style={h3Style}>CU benchmark (Bankrun, post-fix)</h3>
       <Table
