@@ -66,7 +66,7 @@
 |-------|--------|
 | **Auth** | Staker (UserStake PDA verifies ownership) |
 | **Effects** | Returns 97% of stake to user, 1.5% to fee_recipient, 1.5% stays in pool. Zeroes `amount` and `shares`. |
-| **Constraints** | `now < cutoff_timestamp`, `!is_resolved`, `stake_amount > 0`, valid `fee_recipient_token_account` |
+| **Constraints** | `now < cutoff_timestamp`, `!is_resolved`, `!is_claimed`, `stake_amount > 0`, valid `fee_recipient_token_account` |
 | **Client** | `program.methods.unstake().accounts({ user, hackathon, project, userStake, userTokenAccount, feeRecipientTokenAccount, escrow, tokenProgram, systemProgram })` |
 
 ### 4.7 `resolve`
@@ -84,7 +84,7 @@
 | Field | Detail |
 |-------|--------|
 | **Auth** | Hackathon admin or protocol admin |
-| **Effects** | Computes `effective_tier_pcts` (proportional cascade), snapshots `tier_c_totals`, sets `is_resolved = true` |
+| **Effects** | Computes `effective_tier_pcts` via per-project draw + cascade, snapshots `tier_c_totals`, sets `is_resolved = true`. Reverts on oversubscription or zero eligible projects. |
 | **Remaining accounts** | All ProjectAccount PDAs for this hackathon (completeness verified against `ranked_count`) |
 | **Constraints** | `now >= irl_hackathon_deadline_timestamp`, `!is_resolved`, `ranked_found == ranked_count` |
 | **Client** | `program.methods.finalizeResolve().accounts({ admin, hackathon }).remainingAccounts(allProjectPdas.map(p => ({ pubkey: p, isWritable: false, isSigner: false })))` |
@@ -148,8 +148,8 @@
 | Field | Detail |
 |-------|--------|
 | **Auth** | Hackathon admin or protocol admin |
-| **Effects** | Splits deposit: 50% to fee_recipient, 50% added to total_pool. Sets `deposit_forfeited = true`. |
-| **Constraints** | `now >= irl_hackathon_deadline_timestamp + 14 days`, `!submitted`, `deposit_amount_paid > 0`, `!deposit_refunded`, `!deposit_forfeited` |
+| **Effects** | Transfers full deposit to fee_recipient. Sets `deposit_forfeited = true`. |
+| **Constraints** | `is_resolved`, `now >= irl_hackathon_deadline_timestamp + 14 days`, `!submitted`, `deposit_amount_paid > 0`, `!deposit_refunded`, `!deposit_forfeited` |
 | **Client** | `program.methods.forfeitDeposit().accounts({ admin, hackathon, project, feeRecipientTokenAccount, escrow, tokenProgram }).remainingAccounts([adminPda])` |
 
 ### 4.16 `transfer_upgrade_authority`
