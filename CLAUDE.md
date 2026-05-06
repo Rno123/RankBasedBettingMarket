@@ -45,10 +45,13 @@ mult_bps = 15_000 - floor(5_000 × elapsed / window)   // 15000→10000
 shares   = floor(amount × mult_bps / 10_000)
 ```
 
-### Payout formula (two-stage)
+### Payout formula (Option B — per-project math)
 ```
-// Stage 1: tier allocation (set at finalize_resolve)
-effective_tier_pcts[t]  // proportional cascade — empty tiers redistribute to occupied ones
+// Stage 1: per-project tier allocation (set at finalize_resolve)
+// Named tiers (expected > 0): per_project = tier_pct / expected_count
+//   Tier draws per_project × actual_count. Under-filled bps cascade by drawn amount.
+// Rest tiers (expected == 0): split whatever pool % remains after named tiers draw.
+// Display-only projects (no deposit, zero shares) are excluded from tier math.
 
 // Stage 2: within-tier equal split
 // Every ranked project gets 1/N of the tier pool
@@ -59,6 +62,8 @@ payout = user_shares × effective_tier_pcts[tier] × total_pool
          project.total_shares × N × 10_000
 ```
 Protocol fee is deducted from payout at claim time.
+Oversubscription: if actual > expected for any named tier, finalize_resolve reverts.
+AllTiersEmpty: if zero payout-eligible projects, finalize_resolve reverts to prevent fund lock.
 
 ## Account Structs (current — post-audit)
 
@@ -141,7 +146,7 @@ All findings from the Codex audit have been fixed:
 cd hackathon-betting
 anchor build -- --features testing   # testing feature swaps PROTOCOL_ADMIN → local wallet
 yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts
-# 82/82 passing
+# 95/95 passing
 ```
 The `testing` Cargo feature swaps `PROTOCOL_ADMIN` to `Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD` (local `~/.config/solana/id.json`). Tests pre-fund this keypair via `startAnchor` extra accounts.
 
@@ -154,11 +159,12 @@ The `testing` Cargo feature swaps `PROTOCOL_ADMIN` to `Cqrzur6cQ7MjY7jq92WwfqsDF
 - [x] Step 6 — CU audit: 18K CU flat post C-01 fix
 - [x] Step 7 — Devnet deploy: `5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd`
 - [x] Step 8 — Next.js 16 + Tailwind frontend (`frontend/`)
-- [ ] Step 9 — Mainnet deploy
+- [x] Step 9 — Mainnet deploy
 
 ## Rules
 - No `f64` in on-chain math — fixed-point integer only
-- Unstake penalty is FLAT 3% (not linear decay — CLAUDE.md history is stale)
-- `MAX_STAKE_PER_WALLET = 2_000_000_000` (not 1B)
+- Unstake penalty is FLAT 3% (not linear decay)
+- `MAX_STAKE_PER_WALLET = 250_000_000` ($250 USDC)
 - ProjectAccount PDA seeds use `sha256(github_url)` — not the raw URL
 - For mainnet: update `PROGRAM_ID`, `USDC_MINT`, and `RPC_URL` in `frontend/lib/constants.ts`
+- `forfeit_deposit` requires `is_resolved = true`; full deposit goes to protocol (not split)

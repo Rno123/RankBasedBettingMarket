@@ -94,7 +94,7 @@
 | Field | Detail |
 |-------|--------|
 | **Auth** | Staker (UserStake PDA verifies ownership) |
-| **Effects** | Computes tier-weighted sqrt-crowding payout, deducts protocol fee, transfers to user |
+| **Effects** | Computes per-project tier payout (shares × effective_tier_pcts[tier] × pool / (total_shares × N × 10_000)), deducts protocol fee, transfers to user |
 | **Constraints** | `is_resolved`, `project_rank > 0`, `!is_claimed`, `stake_amount > 0` |
 | **Client** | `program.methods.claim().accounts({ user, hackathon, project, userStake, userTokenAccount, feeRecipientTokenAccount, escrow, tokenProgram, systemProgram })` |
 

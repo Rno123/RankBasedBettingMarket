@@ -157,7 +157,7 @@ Once your deposit is paid, you can self-stake up to $250 USDC on your own projec
 1. **Before results**: Click "I've submitted!" to declare on-chain that you completed your project
 2. **After results**: The organizer approves submissions off-chain
 3. **Within 14 days of results**: Claim your deposit back via `claim_deposit_refund`
-4. **If you don't submit**: Your deposit may be forfeited (50% to prize pool, 50% to protocol)
+4. **If you don't submit**: Your deposit may be forfeited after resolution (100% to protocol)
 
 ---
 

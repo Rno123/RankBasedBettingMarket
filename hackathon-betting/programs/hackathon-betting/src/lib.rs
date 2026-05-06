@@ -96,7 +96,7 @@ pub enum BettingError {
     DepositAlreadyForfeited,
     #[msg("Self-stake amount is below the required minimum (hackathon deposit_amount)")]
     SelfStakeBelowMinimum,
-    #[msg("Self-stake would exceed the $2 000 maximum")]
+    #[msg("Self-stake would exceed the $250 maximum")]
     SelfStakeExceedsMaximum,
     #[msg("Caller is not the protocol admin")]
     Unauthorized,
@@ -411,7 +411,7 @@ pub mod hackathon_betting {
 
     /// Builder places their own funds behind their project.
     /// Minimum: hackathon.deposit_amount (e.g. $10).
-    /// Maximum cumulative: MAX_SELF_STAKE ($2 000) — prevents whale builders
+    /// Maximum cumulative: MAX_SELF_STAKE ($250) — prevents whale builders
     /// from drowning out the crowd signal with their own stake.
     /// Uses the same UserStake PDA and escrow as regular stake so the builder
     /// participates in payout claims identically to any backer.
@@ -888,18 +888,17 @@ pub mod hackathon_betting {
 
         // Equal split within tier: every ranked project gets 1/N of the tier pool.
         // N is stored in tier_c_totals (snapshotted at finalize_resolve).
-        let c_total_t = ctx.accounts.hackathon.tier_c_totals[tier];
-        require!(c_total_t > 0, BettingError::Overflow);
+        let n_projects = ctx.accounts.hackathon.tier_c_totals[tier];
+        require!(n_projects > 0, BettingError::Overflow);
 
-        // payout = shares × P_t × pool / (total_shares × c_total_t × 10_000)
-        // c_total_t = number of ranked projects in this tier (equal split, no sqrt).
+        // payout = shares × P_t × pool / (total_shares × N × 10_000)
         let payout: u64 = {
             let num = (user_shares as u128)
                 .checked_mul(p_t)
                 .and_then(|n| n.checked_mul(total_pool as u128))
                 .ok_or(BettingError::Overflow)?;
             let den = (project_total_shares as u128)
-                .checked_mul(c_total_t as u128)
+                .checked_mul(n_projects as u128)
                 .and_then(|d| d.checked_mul(10_000u128))
                 .ok_or(BettingError::Overflow)?;
             require!(den > 0, BettingError::Overflow);
