@@ -46,24 +46,40 @@ shares   = floor(amount × mult_bps / 10_000)
 ```
 
 ### Payout formula (Option B — per-project math)
-```
-// Stage 1: per-project tier allocation (set at finalize_resolve)
-// Named tiers (expected > 0): per_project = tier_pct / expected_count
-//   Tier draws per_project × actual_count. Under-filled bps cascade by drawn amount.
-// Rest tiers (expected == 0): split whatever pool % remains after named tiers draw.
-// Display-only projects (no deposit, zero shares) are excluded from tier math.
 
-// Stage 2: within-tier equal split
-// Every ranked project gets 1/N of the tier pool
-// N = tier_c_totals[tier] (project count, snapshotted at finalize_resolve)
+Your payout depends on four things:
+1. **Your project's rank** → which tier it lands in (higher tier = larger % of pool)
+2. **How many projects share that tier** → pool split equally among all N projects
+3. **Your share of that project** → proportional to your stake × time multiplier
+4. **Protocol fee** → 1.5% deducted
+
+### Stage 1 — Tier allocation (set at finalize_resolve)
+```
+Named tiers (expected > 0):
+  per_project_bps[t]  = tier_pcts[t] × 100 / tier_expected_counts[t]
+  drawn_bps[t]        = per_project_bps[t] × actual_count[t]
+  Unused bps cascade to occupied tiers weighted by drawn amounts.
+
+Rest tiers (expected == 0):
+  Split whatever pool % remains after named tiers draw.
+  Proportional to their tier_pcts weights.
+
+Display-only projects (no deposit, or zero shares after refund) are excluded.
+Oversubscription (actual > expected for named tier) → revert.
+Zero eligible projects → revert (AllTiersEmpty).
+```
+
+### Stage 2 — Your payout
+```
+N = tier_c_totals[tier]   (project count, snapshotted at finalize_resolve)
 
 payout = user_shares × effective_tier_pcts[tier] × total_pool
          ──────────────────────────────────────────────────
          project.total_shares × N × 10_000
+
+fee = payout × protocol_fee_bps / 10_000
+net = payout − fee
 ```
-Protocol fee is deducted from payout at claim time.
-Oversubscription: if actual > expected for any named tier, finalize_resolve reverts.
-AllTiersEmpty: if zero payout-eligible projects, finalize_resolve reverts to prevent fund lock.
 
 ## Account Structs (current — post-audit)
 
