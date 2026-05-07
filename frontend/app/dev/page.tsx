@@ -296,6 +296,7 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
     if (!supabase) { setErr("Auth not configured (missing Supabase env vars)"); return; }
     if (!email.trim()) { setErr("Enter an email address"); return; }
     setBusy(true); setErr(null);
+    sessionStorage.setItem("authReturnTo", "/dev");
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: { emailRedirectTo: authRedirectUrl() },
@@ -309,6 +310,7 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
     if (!supabase) { setErr("Auth not configured"); return; }
     setBusy(true);
     setErr(null);
+    sessionStorage.setItem("authReturnTo", "/dev");
 
     const providers: Provider[] = provider === "x" ? ["x", "twitter"] : [provider];
     let lastError: string | null = null;
@@ -1359,10 +1361,28 @@ function DevPortalPage() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setSessionLoading(false);
+      if (session) {
+        const returnTo = sessionStorage.getItem("authReturnTo");
+        if (returnTo) {
+          sessionStorage.removeItem("authReturnTo");
+          if (window.location.pathname !== returnTo) {
+            window.location.href = returnTo;
+          }
+        }
+      }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setSession(session);
       setSessionLoading(false);
+      if (session) {
+        const returnTo = sessionStorage.getItem("authReturnTo");
+        if (returnTo) {
+          sessionStorage.removeItem("authReturnTo");
+          if (window.location.pathname !== returnTo) {
+            window.location.href = returnTo;
+          }
+        }
+      }
     });
     return () => subscription.unsubscribe();
   }, [isPreview]);
