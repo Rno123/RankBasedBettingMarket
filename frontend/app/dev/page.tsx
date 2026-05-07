@@ -598,6 +598,7 @@ function SubmitForm({
       setRegisteredProjectPubkey(projectPk.toBase58());
       setModalState("depositPrompt");
     } else {
+      setRegisteredProjectPubkey(projectPk.toBase58());
       setModalState("eligible");
     }
     setBusy(false);
@@ -706,7 +707,9 @@ function SubmitForm({
         }}
         onClose={() => {
           setDepositErr(null);
+          const wasEligible = modalState === "eligible";
           setModalState(null);
+          if (wasEligible && registeredProjectPubkey) onDepositPaid?.(registeredProjectPubkey);
           onDone();
         }}
       />
@@ -1021,7 +1024,7 @@ function BuilderProjectCard({
     ? "Staking closed — cutoff has passed"
     : hasDeposit
       ? "Disabled until deposit is paid"
-      : "Disabled for no-deposit FYI entries";
+      : "Staking not enabled";
   const selfStakeCapReached = (project?.builderStaked ?? 0n) >= MAX_SELF_STAKE;
   const canClaimDepositRefund =
     !!project &&
