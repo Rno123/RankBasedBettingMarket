@@ -1339,6 +1339,7 @@ function DevPortalPage() {
 
   const searchParams = useSearchParams();
   const deepLinkHackathon = searchParams?.get("hackathon");
+  const isPreview = searchParams?.get("preview") !== null;
 
   function handleDepositPaid(projectPubkey: string) {
     setBuilderRefreshKey((v) => v + 1);
@@ -1346,14 +1347,13 @@ function DevPortalPage() {
     setPendingScrollPubkey(projectPubkey);
   }
   const { hackathons, loading: hLoading } = useHackathons();
-  const deepLinkedHackathon = deepLinkHackathon
-    ? hackathons.find((h) => h.pubkey.toBase58() === deepLinkHackathon)
-    : null;
-  const depositLabel = deepLinkedHackathon?.depositAmount
-    ? `${formatTokens(deepLinkedHackathon.depositAmount)} USDC`
-    : null;
 
   useEffect(() => {
+    if (isPreview) {
+      setSession({ user: { email: "preview@local.dev" } } as Session);
+      setSessionLoading(false);
+      return;
+    }
     const supabase = getSupabase();
     if (!supabase) { setSessionLoading(false); return; }
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1365,7 +1365,7 @@ function DevPortalPage() {
       setSessionLoading(false);
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [isPreview]);
 
   async function signOut() {
     const supabase = getSupabase();
@@ -1393,9 +1393,9 @@ function DevPortalPage() {
 
         {sessionLoading ? (
           <div className="ui-skeleton" style={{ height: "192px", borderRadius: "16px" }} />
-        ) : (
-          <StepIndicator current={!session ? 1 : !publicKey ? 2 : 3} />
-        )}
+        ) : !session ? (
+          <StepIndicator current={1} />
+        ) : null}
 
         {sessionLoading ? null : !session ? (
           <AuthSection onSession={setSession} />
@@ -1436,9 +1436,9 @@ function DevPortalPage() {
                   <h3 style={{ margin: "0 0 16px", fontSize: "1rem", fontWeight: 700, color: "var(--c-text)" }}>How it works</h3>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px" }}>
                     {[
-                      { step: "1", title: "Fill in the details", desc: "Project name, GitHub URL, and social links. This is what backers will see on the hackathon page." },
-                      { step: "2", title: "Pay a refundable deposit", desc: depositLabel ? `Pay a ${depositLabel} deposit to show you're serious. You get it back after the hackathon — as long as you don't forfeit.` : `A small USDC deposit shows you're serious. You get it back after the hackathon — as long as you don't forfeit.` },
-                      { step: "3", title: "Self-stake to win", desc: "Back your own project with USDC. The more conviction you show, the more the crowd pays attention — and you earn a share of the pool if you rank." },
+                      { step: "1", title: "Fill in the details", desc: "Project name and GitHub URL. Optional social links. You can choose to keep your repo private, but this is what backers will see." },
+                      { step: "2", title: "Pay a deposit", desc: "A small USDC deposit shows you're serious. You get it back after the hackathon — as long as you don't ghost." },
+                      { step: "3", title: "Stake to win", desc: "Back your own project (or others) with USDC. The more conviction you show, the more the crowd pays attention — and you earn a share of the pool if you rank." },
                     ].map(({ step, title, desc }) => (
                       <div key={step} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
                         <div style={{ display: "flex", height: "32px", width: "32px", flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: "9999px", background: "var(--c-indigo)", color: "#fff", fontSize: "0.875rem", fontWeight: 800 }}>
