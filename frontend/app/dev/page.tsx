@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import { useWallet, useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
@@ -724,14 +725,16 @@ function DevHackathonCard({
   authEmail,
   onProjectUpdated,
   onDepositPaid,
+  autoExpand,
 }: {
   hackathon: HackathonInfo;
   authEmail: string;
   onProjectUpdated: () => void;
   onDepositPaid?: (projectPubkey: string) => void;
+  autoExpand?: boolean;
 }) {
   const { publicKey } = useWallet();
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState(autoExpand ?? false);
   const status = hackathonStatus(hackathon.irlHackathonDeadlineTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
 
   if (status !== "open") return null;
@@ -1325,7 +1328,7 @@ function BuilderProjectsSection({
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
-export default function DevPortalPage() {
+function DevPortalPage() {
   const { publicKey } = useWallet();
   const anchorWallet = useAnchorWallet();
   const [session, setSession] = useState<Session | null>(null);
@@ -1334,12 +1337,21 @@ export default function DevPortalPage() {
   const [devTab, setDevTab] = useState<"submit" | "manage">("submit");
   const [pendingScrollPubkey, setPendingScrollPubkey] = useState<string | null>(null);
 
+  const searchParams = useSearchParams();
+  const deepLinkHackathon = searchParams?.get("hackathon");
+
   function handleDepositPaid(projectPubkey: string) {
     setBuilderRefreshKey((v) => v + 1);
     setDevTab("manage");
     setPendingScrollPubkey(projectPubkey);
   }
   const { hackathons, loading: hLoading } = useHackathons();
+  const deepLinkedHackathon = deepLinkHackathon
+    ? hackathons.find((h) => h.pubkey.toBase58() === deepLinkHackathon)
+    : null;
+  const depositLabel = deepLinkedHackathon?.depositAmount
+    ? `${formatTokens(deepLinkedHackathon.depositAmount)} USDC`
+    : null;
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -1419,6 +1431,28 @@ export default function DevPortalPage() {
             {/* Hackathon list */}
             {publicKey && devTab === "submit" && (
               <div>
+                {/* 3-step ELI5 */}
+                <div style={{ marginBottom: "24px", borderRadius: "16px", border: "1px solid var(--c-divider)", background: "var(--card-bg)", padding: "clamp(16px, 4vw, 24px)" }}>
+                  <h3 style={{ margin: "0 0 16px", fontSize: "1rem", fontWeight: 700, color: "var(--c-text)" }}>How it works</h3>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px" }}>
+                    {[
+                      { step: "1", title: "Fill in the details", desc: "Project name, GitHub URL, and social links. This is what backers will see on the hackathon page." },
+                      { step: "2", title: "Pay a refundable deposit", desc: depositLabel ? `Pay a ${depositLabel} deposit to show you're serious. You get it back after the hackathon — as long as you don't forfeit.` : `A small USDC deposit shows you're serious. You get it back after the hackathon — as long as you don't forfeit.` },
+                      { step: "3", title: "Self-stake to win", desc: "Back your own project with USDC. The more conviction you show, the more the crowd pays attention — and you earn a share of the pool if you rank." },
+                    ].map(({ step, title, desc }) => (
+                      <div key={step} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                        <div style={{ display: "flex", height: "32px", width: "32px", flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: "9999px", background: "var(--c-indigo)", color: "#fff", fontSize: "0.875rem", fontWeight: 800 }}>
+                          {step}
+                        </div>
+                        <div>
+                          <p style={{ margin: "0 0 2px", fontSize: "0.875rem", fontWeight: 700, color: "var(--c-text)" }}>{title}</p>
+                          <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--c-text-3)", lineHeight: 1.5 }}>{desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <h2 style={{ margin: "0 0 4px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Submit projects</h2>
                 <p style={{ margin: "0 0 12px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>Ongoing hackathons that are currently accepting builder submissions.</p>
                 {hLoading ? (
@@ -1436,6 +1470,7 @@ export default function DevPortalPage() {
                         authEmail={authEmail}
                         onProjectUpdated={() => setBuilderRefreshKey((value) => value + 1)}
                         onDepositPaid={handleDepositPaid}
+                        autoExpand={deepLinkHackathon === h.pubkey.toBase58()}
                       />
                     ))}
                   </div>
@@ -1460,5 +1495,13 @@ export default function DevPortalPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function DevPortalPageWrapper() {
+  return (
+    <Suspense fallback={<div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px", margin: "40px auto", maxWidth: "672px" }} />}>
+      <DevPortalPage />
+    </Suspense>
   );
 }

@@ -450,6 +450,22 @@ export default function HackathonPage({
           </div>
         )}
 
+        {/* Dev CTA — only when hackathon is still open for submissions */}
+        {status === "open" && (
+          <div style={{ marginTop: "24px", borderRadius: "16px", border: "1px solid var(--c-indigo-border)", background: "var(--c-indigo-light)", padding: "clamp(20px, 5vw, 28px)", textAlign: "center" }}>
+            <p style={{ margin: 0, fontSize: "1rem", fontWeight: 600, color: "var(--c-indigo-text)" }}>
+              Don&apos;t see your project here? List it.
+            </p>
+            <Link
+              href={`/dev?hackathon=${id}`}
+              className="ui-btn ui-btn-indigo"
+              style={{ marginTop: "12px", display: "inline-flex", fontWeight: 800 }}
+            >
+              Submit project
+            </Link>
+          </div>
+        )}
+
         {status === "resolved" && sortedProjects.length > 0 && (
           <CrowdVsJudges projects={sortedProjects} />
         )}
