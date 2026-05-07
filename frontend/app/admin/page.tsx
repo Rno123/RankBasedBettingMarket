@@ -782,7 +782,8 @@ function CreateHackathonPanel({
     setErr(null);
     const trimmedName = hackathonName.trim();
     if (!trimmedName) { setErr("Hackathon name is required"); return; }
-    if (new TextEncoder().encode(trimmedName).length > 50) { setErr("Name exceeds 50 bytes"); return; }
+    if (new TextEncoder().encode(trimmedName).length > 32) { setErr("Name exceeds 32 bytes"); return; }
+    if (!/^[\x20-\x7E]+$/.test(trimmedName)) { setErr("Name must contain only ASCII characters"); return; }
     if (!resultsDatePart) { setErr("Results date is required"); return; }
     const parsedResults = parseResultsDateInput(`${resultsDatePart}T${resultsTimePart}`);
     if (parsedResults.error !== undefined) { setErr(parsedResults.error); return; }
@@ -892,7 +893,7 @@ function CreateHackathonPanel({
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
             <label style={labelStyle}>Name</label>
-            <input className="ui-input" placeholder="e.g. Frontier S1" value={hackathonName} onChange={(e) => setHackathonName(e.target.value)} />
+            <input className="ui-input" placeholder="e.g. Frontier S1" maxLength={32} value={hackathonName} onChange={(e) => { if (/^[\x20-\x7E]*$/.test(e.target.value)) setHackathonName(e.target.value); }} />
           </div>
           <div>
             <label style={labelStyle}>Hackathon Deadline</label>
