@@ -1436,7 +1436,7 @@ function DevPortalPage() {
                   <h3 style={{ margin: "0 0 16px", fontSize: "1rem", fontWeight: 700, color: "var(--c-text)" }}>How it works</h3>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px" }}>
                     {[
-                      { step: "1", title: "Fill in the details", desc: "Project name and GitHub URL. Optional social links. You can choose to keep your repo private, but this is what backers will see." },
+                      { step: "1", title: "Fill in the details", desc: "Project name and GitHub URL. Social links are optional. You can choose to keep your repo private, but this is what backers will see." },
                       { step: "2", title: "Pay a deposit", desc: "A small USDC deposit shows you're serious. You get it back after the hackathon — as long as you don't ghost." },
                       { step: "3", title: "Stake to win", desc: "Back your own project (or others) with USDC. The more conviction you show, the more the crowd pays attention — and you earn a share of the pool if you rank." },
                     ].map(({ step, title, desc }) => (
