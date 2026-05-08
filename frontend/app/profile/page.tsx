@@ -305,7 +305,7 @@ export default function ProfilePage() {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
-                          padding: "12px 16px",
+                          padding: "14px 16px",
                           borderRadius: isExpanded ? "12px 12px 0 0" : "12px",
                           background: "var(--card-bg)",
                           border: "1px solid var(--card-border)",
@@ -315,13 +315,21 @@ export default function ProfilePage() {
                           textAlign: "left",
                         }}
                       >
-                        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                          <span style={{ fontWeight: 700, color: "var(--c-text)", fontSize: "0.9375rem" }}>{hackathonName}</span>
-                          <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-                            {projectCount} project{projectCount !== 1 ? "s" : ""} · {formatTokens(groupTotal)} USDC staked
-                          </span>
+                        <span style={{ fontWeight: 700, color: "var(--c-text)", fontSize: "0.9375rem" }}>{hackathonName}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0", flexShrink: 0 }}>
+                          <div style={{ textAlign: "right", paddingRight: "14px" }}>
+                            <p style={{ margin: 0, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Staked</p>
+                            <p style={{ margin: "2px 0 0", fontSize: "1.125rem", fontWeight: 800, color: "var(--c-amber-text)", lineHeight: 1 }}>
+                              {formatTokens(groupTotal)} <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--c-text-3)" }}>USDC</span>
+                            </p>
+                          </div>
+                          <div style={{ width: "1px", height: "32px", background: "var(--c-divider)", flexShrink: 0 }} />
+                          <div style={{ textAlign: "right", paddingLeft: "14px", paddingRight: "4px" }}>
+                            <p style={{ margin: 0, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>Projects</p>
+                            <p style={{ margin: "2px 0 0", fontSize: "1.125rem", fontWeight: 800, color: "var(--c-amber-text)", lineHeight: 1 }}>{projectCount}</p>
+                          </div>
+                          <span style={{ marginLeft: "12px", color: "var(--c-text-4)", fontSize: "0.875rem", display: "inline-block", transform: isExpanded ? "none" : "rotate(-90deg)", transition: "transform 0.15s" }}>▾</span>
                         </div>
-                        <span style={{ color: "var(--c-text-4)", fontSize: "0.875rem", display: "inline-block", transform: isExpanded ? "none" : "rotate(-90deg)", transition: "transform 0.15s" }}>▾</span>
                       </button>
                       {isExpanded && (
                         <div style={{
