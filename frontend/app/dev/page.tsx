@@ -1212,14 +1212,16 @@ function BuilderProjectCard({
               <span className="ui-tooltip-wrap mobile-fill">
                 <button
                   onClick={submitProject}
-                  disabled={busy === "submit" || resultsPassed}
+                  disabled={busy === "submit" || resultsPassed || (hasDeposit && !project.depositAmountPaid)}
                   className="ui-btn ui-btn-amber ui-btn-sm mobile-fill"
                 >
                   {busy === "submit" ? "…" : "Mark submitted"}
                 </button>
-                {resultsPassed && (
+                {resultsPassed ? (
                   <span className="ui-tooltip">Results timestamp has passed — submission window is closed</span>
-                )}
+                ) : hasDeposit && !project.depositAmountPaid ? (
+                  <span className="ui-tooltip">Pay the deposit first to declare submission</span>
+                ) : null}
               </span>
             )}
           </div>
@@ -1451,14 +1453,13 @@ function DevPortalPage() {
             {/* Hackathon list */}
             {publicKey && devTab === "submit" && (
               <div>
-                {/* 3-step ELI5 */}
+                {/* 2-step ELI5 */}
                 <div style={{ marginBottom: "24px", borderRadius: "16px", border: "1px solid var(--c-divider)", background: "var(--card-bg)", padding: "clamp(16px, 4vw, 24px)" }}>
                   <h3 style={{ margin: "0 0 16px", fontSize: "1rem", fontWeight: 700, color: "var(--c-text)" }}>How it works</h3>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
                     {[
-                      { step: "1", title: "Fill in the details", desc: "Project name and GitHub URL. Social links are optional. You can choose to keep your repo private, but this is what backers will see." },
-                      { step: "2", title: "Pay a deposit", desc: "A small USDC deposit shows you're serious. You get it back after the hackathon — as long as you don't ghost." },
-                      { step: "3", title: "Stake to win", desc: "Back your own project (or others) with USDC. The more conviction you show, the more the crowd pays attention — and you earn a share of the pool if you rank." },
+                      { step: "1", title: "Fill in the details", desc: "Project name and GitHub URL. Social links are optional. Can keep your repo private, but backers will notice." },
+                      { step: "2", title: "Stake to win", desc: "Back your own project (or others) with USDC. The stake signals your conviction. Earn if you rank, lose if you don't." },
                     ].map(({ step, title, desc }) => (
                       <div key={step} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
                         <div style={{ display: "flex", height: "32px", width: "32px", flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: "9999px", background: "var(--c-indigo)", color: "#fff", fontSize: "0.875rem", fontWeight: 800 }}>

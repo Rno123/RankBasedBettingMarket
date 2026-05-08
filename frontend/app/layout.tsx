@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Archivo_Black, Inter, JetBrains_Mono } from "next/font/google";
 import Providers from "./providers";
+import AuthRedirectHandler from "./AuthRedirectHandler";
 import "./globals.css";
 
 const archivoBlack = Archivo_Black({ subsets: ["latin"], weight: "400", variable: "--font-display-archivo" });
@@ -25,7 +26,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: `(function(){var t=localStorage.getItem('theme')||'dark';if(t==='dark')document.documentElement.classList.add('dark');})();` }} />
       </head>
       <body style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-        <Providers>{children}</Providers>
+        <Providers><AuthRedirectHandler>{children}</AuthRedirectHandler></Providers>
         <footer style={{ marginTop: "auto", borderTop: "1px solid var(--c-divider)", background: "var(--card-bg)", padding: "20px 16px", textAlign: "center" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "24px", flexWrap: "wrap" }}>
             <a
