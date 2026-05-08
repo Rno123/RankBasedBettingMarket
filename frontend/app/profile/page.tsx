@@ -287,6 +287,8 @@ export default function ProfilePage() {
                 {hackathonGroups.map(({ key, hackathon, entries }) => {
                   const isExpanded = !collapsedGroups.has(key);
                   const hackathonName = hackathon?.name || (key !== "unknown" ? key.slice(0, 8) + "…" : "Unknown hackathon");
+                  const groupTotal = entries.reduce((sum, { entry }) => sum + entry.stake.amount, 0n);
+                  const projectCount = entries.length;
                   return (
                     <div key={key}>
                       <button
@@ -303,7 +305,7 @@ export default function ProfilePage() {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
-                          padding: "10px 16px",
+                          padding: "12px 16px",
                           borderRadius: isExpanded ? "12px 12px 0 0" : "12px",
                           background: "var(--card-bg)",
                           border: "1px solid var(--card-border)",
@@ -313,10 +315,10 @@ export default function ProfilePage() {
                           textAlign: "left",
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                           <span style={{ fontWeight: 700, color: "var(--c-text)", fontSize: "0.9375rem" }}>{hackathonName}</span>
                           <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-                            {entries.length} position{entries.length !== 1 ? "s" : ""}
+                            {projectCount} project{projectCount !== 1 ? "s" : ""} · {formatTokens(groupTotal)} USDC staked
                           </span>
                         </div>
                         <span style={{ color: "var(--c-text-4)", fontSize: "0.875rem", display: "inline-block", transform: isExpanded ? "none" : "rotate(-90deg)", transition: "transform 0.15s" }}>▾</span>

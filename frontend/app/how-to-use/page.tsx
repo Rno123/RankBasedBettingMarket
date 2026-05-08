@@ -207,50 +207,6 @@ export default function HowToUsePage() {
         <section className="ui-card" style={{ marginBottom: "28px", padding: "28px" }}>
           <SectionEyebrow>The ecosystem</SectionEyebrow>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "18px" }}>
-            {ROLE_GUIDES.map((guide) => (
-              <div
-                key={guide.id}
-                style={{
-                  borderRadius: "24px",
-                  border: `1px solid ${guide.accentBorder}`,
-                  background: guide.accentBg,
-                  padding: "22px 22px 20px",
-                }}
-              >
-                <p
-                  style={{
-                    margin: "0 0 10px",
-                    fontSize: "1.15rem",
-                    fontWeight: 800,
-                    textTransform: "uppercase",
-                    letterSpacing: "-0.03em",
-                    color: guide.accentText,
-                  }}
-                >
-                  {guide.label}s
-                </p>
-                <p style={{ margin: 0, fontSize: "0.95rem", lineHeight: 1.7, color: "var(--c-text-2)" }}>
-                  {guide.ecosystemBody}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="ui-card" style={{ padding: "28px" }}>
-          <SectionEyebrow>Guide</SectionEyebrow>
-
-          <div
-            style={{
-              display: "inline-flex",
-              gap: "4px",
-              borderRadius: "14px",
-              border: "1px solid var(--card-border)",
-              background: "var(--card-bg)",
-              padding: "4px",
-              marginBottom: "24px",
-            }}
-          >
             {ROLE_GUIDES.map((guide) => {
               const isActive = guide.id === activeRole;
               return (
@@ -258,23 +214,41 @@ export default function HowToUsePage() {
                   key={guide.id}
                   onClick={() => setActiveRole(guide.id)}
                   style={{
-                    border: "none",
-                    borderRadius: "10px",
-                    padding: "10px 18px",
+                    borderRadius: "24px",
+                    border: `2px solid ${isActive ? guide.accentText : guide.accentBorder}`,
+                    background: guide.accentBg,
+                    padding: "22px 22px 20px",
+                    textAlign: "left",
                     cursor: "pointer",
                     fontFamily: "inherit",
-                    fontSize: "0.9rem",
-                    fontWeight: 700,
-                    background: isActive ? guide.accentBg : "transparent",
-                    color: isActive ? guide.accentText : "var(--c-text-3)",
-                    boxShadow: isActive ? `inset 0 0 0 1px ${guide.accentBorder}` : "none",
+                    outline: "none",
+                    boxShadow: isActive ? `0 0 0 3px ${guide.accentBorder}` : "none",
+                    transition: "box-shadow 0.15s, border-color 0.15s",
                   }}
                 >
-                  {guide.label}
+                  <p
+                    style={{
+                      margin: "0 0 10px",
+                      fontSize: "1.15rem",
+                      fontWeight: 800,
+                      textTransform: "uppercase",
+                      letterSpacing: "-0.03em",
+                      color: guide.accentText,
+                    }}
+                  >
+                    {guide.label}s
+                  </p>
+                  <p style={{ margin: 0, fontSize: "0.95rem", lineHeight: 1.7, color: "var(--c-text-2)" }}>
+                    {guide.ecosystemBody}
+                  </p>
                 </button>
               );
             })}
           </div>
+        </section>
+
+        <section className="ui-card" style={{ padding: "28px" }}>
+          <SectionEyebrow>Guide</SectionEyebrow>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
             <div
