@@ -183,6 +183,7 @@ export default function ProfilePage() {
   const { publicKey } = useWallet();
   const { hackathons, loading: hackathonsLoading } = useHackathons();
   const [refreshKey, setRefreshKey] = useState(0);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const { entries, loading: stakesLoading } = useMyStakes(publicKey ?? null, refreshKey);
 
   const hackathonMap = new Map(hackathons.map(h => [h.pubkey.toBase58(), h]));
@@ -218,6 +219,16 @@ export default function ProfilePage() {
     if (statusDiff !== 0) return statusDiff;
     return b.entry.stake.stakeTimestamp - a.entry.stake.stakeTimestamp;
   });
+
+  const groupedByHackathon = new Map<string, { hackathon: HackathonInfo | null; entries: typeof sortedEntries }>();
+  for (const item of sortedEntries) {
+    const key = item.hackathon?.pubkey.toBase58() ?? "unknown";
+    if (!groupedByHackathon.has(key)) {
+      groupedByHackathon.set(key, { hackathon: item.hackathon, entries: [] });
+    }
+    groupedByHackathon.get(key)!.entries.push(item);
+  }
+  const hackathonGroups = [...groupedByHackathon.entries()].map(([key, val]) => ({ key, ...val }));
 
   const loading = hackathonsLoading || stakesLoading;
 
@@ -272,15 +283,65 @@ export default function ProfilePage() {
                 <Link href="/hackathons" className="ui-text-link">Browse hackathons →</Link>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                {sortedEntries.map(({ entry, hackathon }) => {
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                {hackathonGroups.map(({ key, hackathon, entries }) => {
+                  const isExpanded = !collapsedGroups.has(key);
+                  const hackathonName = hackathon?.name || (key !== "unknown" ? key.slice(0, 8) + "…" : "Unknown hackathon");
                   return (
-                    <StakeCard
-                      key={entry.stake.pubkey.toBase58()}
-                      entry={entry}
-                      hackathon={hackathon}
-                      onRefresh={() => setRefreshKey(k => k + 1)}
-                    />
+                    <div key={key}>
+                      <button
+                        onClick={() => {
+                          setCollapsedGroups(prev => {
+                            const next = new Set(prev);
+                            if (next.has(key)) next.delete(key);
+                            else next.add(key);
+                            return next;
+                          });
+                        }}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "10px 16px",
+                          borderRadius: isExpanded ? "12px 12px 0 0" : "12px",
+                          background: "var(--card-bg)",
+                          border: "1px solid var(--card-border)",
+                          borderBottom: isExpanded ? "1px solid var(--c-divider)" : "1px solid var(--card-border)",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          textAlign: "left",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <span style={{ fontWeight: 700, color: "var(--c-text)", fontSize: "0.9375rem" }}>{hackathonName}</span>
+                          <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                            {entries.length} position{entries.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        <span style={{ color: "var(--c-text-4)", fontSize: "0.875rem", display: "inline-block", transform: isExpanded ? "none" : "rotate(-90deg)", transition: "transform 0.15s" }}>▾</span>
+                      </button>
+                      {isExpanded && (
+                        <div style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "12px",
+                          padding: "12px",
+                          border: "1px solid var(--card-border)",
+                          borderTop: "none",
+                          borderRadius: "0 0 12px 12px",
+                        }}>
+                          {entries.map(({ entry, hackathon: h }) => (
+                            <StakeCard
+                              key={entry.stake.pubkey.toBase58()}
+                              entry={entry}
+                              hackathon={h}
+                              onRefresh={() => setRefreshKey(k => k + 1)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>

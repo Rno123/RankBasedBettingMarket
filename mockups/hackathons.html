@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HackBet — Hackathons</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }
+
+:root {
+  --page-bg: #0A0A0A;
+  --card-bg: rgba(255,255,255,0.03);
+  --modal-bg: #141414;
+  --card-bg-alt: rgba(255,255,255,0.05);
+  --card-border: rgba(255,255,255,0.08);
+  --nav-bg: rgba(10,10,10,0.85);
+  --nav-border: rgba(255,91,20,0.15);
+  --c-text: #F4F1EA;
+  --c-text-2: #CFCBC0;
+  --c-text-3: #8A8A82;
+  --c-text-4: #5A5A55;
+  --c-text-5: #3A3A37;
+  --c-divider: rgba(255,255,255,0.08);
+  --c-divider-2: rgba(255,255,255,0.05);
+  --c-indigo: #FF5B14;
+  --c-indigo-hover: #FF7A3D;
+  --c-indigo-light: rgba(255,91,20,0.10);
+  --c-indigo-border: rgba(255,91,20,0.25);
+  --c-indigo-text: #FF7A3D;
+  --c-amber: #f59e0b;
+  --c-amber-text: #fbbf24;
+  --c-sky-text: #38bdf8;
+  --c-red: #dc2626;
+  --c-red-text: #f87171;
+  --c-orange-text: #fb923c;
+  --c-orange-border: rgba(249,115,22,0.2);
+  --c-orange-light: rgba(249,115,22,0.1);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  background: var(--page-bg);
+  min-height: 100vh;
+  color: var(--c-text);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Nav */
+.ui-nav {
+  position: sticky; top: 0; z-index: 50;
+  border-bottom: 1px solid var(--nav-border);
+  background: var(--nav-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.nav-inner {
+  margin: 0 auto; display: flex; max-width: 1280px;
+  align-items: center; justify-content: space-between;
+  gap: 10px; padding: 12px 16px;
+}
+.nav-logo { font-size: 1.25rem; font-weight: 900; letter-spacing: -0.025em; text-decoration: none; color: var(--c-text); }
+.nav-logo span { color: var(--c-indigo-text); }
+.nav-links { display: flex; align-items: center; gap: 16px; }
+.nav-link { font-size: 0.875rem; font-weight: 500; text-decoration: none; color: var(--c-text-3); transition: color 0.15s; }
+.nav-link.active { color: var(--c-indigo-text); }
+.nav-right { display: flex; align-items: center; gap: 8px; }
+.wallet-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px; padding: 8px 16px; height: 36px;
+  font-size: 0.8rem; font-weight: 700; cursor: pointer;
+  background: #FF5B14; color: #0A0A0A; border: none;
+  white-space: nowrap;
+}
+.theme-btn {
+  display: flex; height: 36px; width: 36px; align-items: center; justify-content: center;
+  border-radius: 8px; background: transparent; border: none; cursor: pointer;
+  color: var(--c-text-3);
+}
+
+/* Ambient glow */
+.ambient-glow { pointer-events: none; position: fixed; inset: 0; z-index: -10; overflow: hidden; }
+.glow-1 { position: absolute; top: -160px; right: 25%; height: 700px; width: 700px; border-radius: 9999px; background: rgba(255,91,20,0.12); filter: blur(140px); }
+.glow-2 { position: absolute; bottom: 0; left: 0; height: 500px; width: 500px; border-radius: 9999px; background: rgba(255,91,20,0.07); filter: blur(120px); }
+
+/* Cards */
+.ui-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; }
+
+/* Stats grid */
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+/* Tabs */
+.tab-wrap { display: flex; gap: 4px; border-radius: 12px; border: 1px solid var(--card-border); background: var(--card-bg); padding: 4px; width: fit-content; }
+.tab {
+  border-radius: 8px; padding: 8px 16px; min-height: 36px;
+  font-size: 0.75rem; font-weight: 600; border: none; cursor: pointer;
+  transition: background 0.15s, color 0.15s; font-family: inherit;
+}
+.tab-active { background: var(--c-indigo); color: #fff; }
+.tab-inactive { background: transparent; color: var(--c-text-3); }
+
+/* Hackathon row */
+.hack-row {
+  border-radius: 16px; border: 1px solid; padding: 20px 22px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+}
+.hack-icon {
+  display: flex; height: 44px; width: 44px; flex-shrink: 0;
+  align-items: center; justify-content: center; overflow: hidden;
+  border-radius: 12px; font-size: 1rem; font-weight: 900;
+}
+.hack-info { display: flex; min-width: 0; gap: 14px; align-items: center; flex: 1; }
+.hack-name { margin: 0; font-size: 1rem; font-weight: 800; color: var(--c-text); }
+.hack-sub { margin: 6px 0 0; font-size: 0.875rem; color: var(--c-text-3); }
+.hack-sub span { font-weight: 600; color: var(--c-text-2); }
+.hack-meta { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
+.meta-block { padding: 0 14px; text-align: right; }
+.meta-block:first-child { padding-left: 0; }
+.meta-label { margin: 0; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--c-text-4); }
+.meta-value { margin: 3px 0 0; font-size: 1.1rem; font-weight: 800; color: var(--c-text); line-height: 1; }
+.meta-value small { font-size: 0.7rem; font-weight: 600; color: var(--c-text-3); }
+.meta-div { width: 1px; height: 32px; background: var(--c-divider); flex-shrink: 0; }
+.view-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px; padding: 6px 12px; height: 32px;
+  font-size: 0.75rem; font-weight: 800; cursor: pointer;
+  background: #FF5B14; color: #0A0A0A; border: none; white-space: nowrap;
+  text-decoration: none;
+}
+
+/* Badge */
+.status-badge {
+  display: inline-flex; align-items: center; border-radius: 9999px;
+  padding: 2px 10px; font-size: 0.7rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+
+main { margin: 0 auto; max-width: 1280px; padding: 32px 16px 56px; }
+.page-label { margin: 0 0 10px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--c-indigo-text); }
+.page-title { margin: 0; font-size: clamp(2rem, 6vw, 3.25rem); font-weight: 900; letter-spacing: -0.03em; color: var(--c-text); }
+.section-gap { display: flex; flex-direction: column; gap: 12px; }
+.mb-24 { margin-bottom: 24px; }
+.mb-16 { margin-bottom: 16px; }
+.mb-28 { margin-bottom: 28px; }
+.pt-12 { padding-top: 12px; }
+.text-center { text-align: center; }
+
+/* Monospace for numbers */
+.mono { font-family: "JetBrains Mono", "SF Mono", ui-monospace, monospace; }
+</style>
+</head>
+<body>
+
+<div class="ambient-glow">
+  <div class="glow-1"></div>
+  <div class="glow-2"></div>
+</div>
+
+<nav class="ui-nav">
+  <div class="nav-inner">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <a href="#" class="nav-logo">HACK<span>BET</span></a>
+      <div class="nav-links">
+        <a href="#" class="nav-link active">Hackathons</a>
+        <a href="#" class="nav-link">Builders</a>
+        <a href="#" class="nav-link">How it works</a>
+        <a href="#" class="nav-link">Portfolio</a>
+        <a href="#" class="nav-link">Docs</a>
+      </div>
+    </div>
+    <div class="nav-right">
+      <button class="theme-btn" aria-label="Toggle theme">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      <button class="wallet-btn">Connect Wallet</button>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <div class="pt-12 mb-28">
+    <p class="page-label">Browse markets</p>
+    <h1 class="page-title">Hackathons</h1>
+  </div>
+
+  <!-- Stats bar -->
+  <div class="ui-card stats-grid mb-24" style="padding:16px;">
+    <div class="text-center">
+      <div class="mono" style="font-size:1.5rem;font-weight:900;color:var(--c-text);">7</div>
+      <div style="margin-top:4px;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--c-text-3);">Active hackathons</div>
+    </div>
+    <div class="text-center">
+      <div class="mono" style="font-size:1.5rem;font-weight:900;color:var(--c-text);">1,247</div>
+      <div style="margin-top:4px;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--c-text-3);">Projects submitted</div>
+    </div>
+    <div class="text-center">
+      <div class="mono" style="font-size:1.5rem;font-weight:900;color:var(--c-indigo-text);">1,083,420</div>
+      <div style="margin-top:4px;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--c-text-3);">Cumulative USDC staked</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-wrap mb-16" id="tabs">
+    <button class="tab tab-active" onclick="showTab('ongoing', this)">Ongoing</button>
+    <button class="tab tab-inactive" onclick="showTab('cutoff', this)">Cutoff</button>
+    <button class="tab tab-inactive" onclick="showTab('resolved', this)">Resolved</button>
+  </div>
+
+  <!-- Hackathon lists -->
+  <div id="tab-ongoing" class="section-gap"></div>
+  <div id="tab-cutoff" class="section-gap" style="display:none;"></div>
+  <div id="tab-resolved" class="section-gap" style="display:none;"></div>
+</main>
+
+<script>
+const hackathons = {
+  ongoing: [
+    { name: "Solana Frontier 2026", pool: "245,830", projects: 247, sub: "Closes in", time: "18 days", emoji: "🚀", color: "#FF5B14" },
+    { name: "Colosseum Renaissance S2", pool: "182,400", projects: 183, sub: "Closes in", time: "24 days", emoji: "🏛️", color: "#a855f7" },
+    { name: "Breakpoint Hacks 2026", pool: "87,500", projects: 94, sub: "Closes in", time: "31 days", emoji: "⚡", color: "#3b82f6" },
+    { name: "Radar × Superteam", pool: "54,200", projects: 61, sub: "Closes in", time: "9 days", emoji: "📡", color: "#10b981" },
+    { name: "Solana Mobile Wave", pool: "38,750", projects: 42, sub: "Closes in", time: "14 days", emoji: "📱", color: "#f59e0b" },
+    { name: "DePIN Frontier", pool: "29,100", projects: 33, sub: "Closes in", time: "22 days", emoji: "🌐", color: "#06b6d4" },
+  ],
+  cutoff: [
+    { name: "Solana Grizzlython", pool: "134,750", projects: 156, sub: "Results in", time: "6 days", emoji: "🐻", color: "#8b5cf6" },
+    { name: "Colosseum Accelerator", pool: "68,000", projects: 78, sub: "Results in", time: "2 days", emoji: "🚀", color: "#FF5B14" },
+    { name: "Superteam India Hack", pool: "38,900", projects: 43, sub: "Awaiting resolution", time: null, emoji: "🇮🇳", color: "#f59e0b" },
+  ],
+  resolved: [
+    { name: "Colosseum Olympus", pool: "187,400", projects: 201, sub: "Resolved", time: null, emoji: "🏆", color: "#f59e0b", winner: "FluxBridge Protocol" },
+    { name: "Solana Sandstorm 2025", pool: "98,650", projects: 112, sub: "Resolved", time: null, emoji: "🌪️", color: "#FF5B14", winner: "NeonDEX" },
+    { name: "Breakpoint Hacks 2025", pool: "76,200", projects: 89, sub: "Resolved", time: null, emoji: "⚡", color: "#3b82f6", winner: "SolStream" },
+    { name: "Superteam SEA Hack", pool: "42,000", projects: 51, sub: "Resolved", time: null, emoji: "🌏", color: "#10b981", winner: "TrustLayer" },
+    { name: "Solana AI Hackathon", pool: "31,500", projects: 38, sub: "Resolved", time: null, emoji: "🤖", color: "#a855f7", winner: "AgentMesh" },
+  ]
+};
+
+function formatColor(hex) {
+  return hex;
+}
+
+function renderHackathon(h, type) {
+  const borderColor = `${h.color}30`;
+  const bgColor = `${h.color}08`;
+  const iconBg = `${h.color}18`;
+  const subHtml = h.time
+    ? `${h.sub} <span style="font-weight:600;color:var(--c-text-2);">${h.time}</span>`
+    : `<span>${h.sub}</span>`;
+
+  const winnerHtml = h.winner
+    ? `<span style="margin-left:8px;font-size:0.7rem;font-weight:600;color:var(--c-amber-text);background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.2);border-radius:6px;padding:2px 8px;">🏆 ${h.winner}</span>`
+    : '';
+
+  return `
+    <div class="hack-row" style="border-color:${borderColor};background:${bgColor};">
+      <div class="hack-info">
+        <div class="hack-icon" style="background:${iconBg};border:1px solid ${borderColor};">${h.emoji}</div>
+        <div style="min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <p class="hack-name">${h.name}</p>
+            ${winnerHtml}
+          </div>
+          <p class="hack-sub">${subHtml}</p>
+        </div>
+      </div>
+      <div class="hack-meta">
+        <div class="meta-block">
+          <p class="meta-label">Total pool</p>
+          <p class="meta-value mono">${h.pool} <small>USDC</small></p>
+        </div>
+        <div class="meta-div"></div>
+        <div class="meta-block">
+          <p class="meta-label">Projects</p>
+          <p class="meta-value mono">${h.projects}</p>
+        </div>
+        <div class="meta-div"></div>
+        <div style="padding-left:14px;">
+          <a href="hackathon-detail.html" class="view-btn">View</a>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAll(type) {
+  const container = document.getElementById(`tab-${type}`);
+  container.innerHTML = hackathons[type].map(h => renderHackathon(h, type)).join('');
+}
+
+renderAll('ongoing');
+renderAll('cutoff');
+renderAll('resolved');
+
+function showTab(tab, btn) {
+  ['ongoing','cutoff','resolved'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display = 'none';
+  });
+  document.querySelectorAll('.tab').forEach(b => {
+    b.className = 'tab tab-inactive';
+  });
+  document.getElementById(`tab-${tab}`).style.display = 'flex';
+  document.getElementById(`tab-${tab}`).style.flexDirection = 'column';
+  document.getElementById(`tab-${tab}`).style.gap = '12px';
+  btn.className = 'tab tab-active';
+}
+</script>
+</body>
+</html>

@@ -407,6 +407,22 @@ function normalizeTelegram(v: string): string | undefined {
   return `t.me/${handle}`;
 }
 
+async function resizeIcon(file: File): Promise<string | null> {
+  try {
+    const bmp = await createImageBitmap(file, { resizeWidth: 256, resizeHeight: 256 });
+    const canvas = document.createElement("canvas");
+    canvas.width = bmp.width;
+    canvas.height = bmp.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bmp, 0, 0);
+    bmp.close();
+    return canvas.toDataURL("image/png", 0.7);
+  } catch {
+    return null;
+  }
+}
+
 // ── Submission form for one hackathon ─────────────────────────────────────────
 
 function SubmitForm({
@@ -489,22 +505,6 @@ function SubmitForm({
       setDepositErr(e.message ?? "Failed to pay deposit");
     } finally {
       setDepositBusy(false);
-    }
-  }
-
-  async function resizeIcon(file: File): Promise<string | null> {
-    try {
-      const bmp = await createImageBitmap(file, { resizeWidth: 256, resizeHeight: 256 });
-      const canvas = document.createElement("canvas");
-      canvas.width = bmp.width;
-      canvas.height = bmp.height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
-      ctx.drawImage(bmp, 0, 0);
-      bmp.close();
-      return canvas.toDataURL("image/png", 0.7);
-    } catch {
-      return null;
     }
   }
 
@@ -793,6 +793,9 @@ interface BuilderSubmission {
   github_url: string;
   icon_url?: string | null;
   project_name?: string | null;
+  twitter_handle?: string | null;
+  telegram?: string | null;
+  discord?: string | null;
   status: string;
 }
 
@@ -802,6 +805,7 @@ function BuilderProjectCard({
   publicKey,
   anchorWallet,
   usdcMint,
+  authEmail,
   onUpdated,
 }: {
   sub: BuilderSubmission;
@@ -809,10 +813,11 @@ function BuilderProjectCard({
   publicKey: PublicKey;
   anchorWallet: AnchorWallet;
   usdcMint: PublicKey;
+  authEmail: string;
   onUpdated: () => void;
 }) {
   const { connection } = useConnection();
-  const { sendTransaction } = useWallet();
+  const { sendTransaction, signMessage } = useWallet();
   const [project, setProject] = useState<OnChainProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -821,6 +826,14 @@ function BuilderProjectCard({
   const [selfStakeAmt, setSelfStakeAmt] = useState("");
   const [tick, setTick] = useState(0);
   const walletBalance = useTokenBalance(publicKey, usdcMint, tick);
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [metaName, setMetaName] = useState(sub.project_name?.trim() ?? "");
+  const [metaTwitter, setMetaTwitter] = useState(sub.twitter_handle ?? "");
+  const [metaTelegram, setMetaTelegram] = useState(sub.telegram ?? "");
+  const [metaDiscord, setMetaDiscord] = useState(sub.discord ?? "");
+  const [metaIconFile, setMetaIconFile] = useState<File | null>(null);
+  const [metaBusy, setMetaBusy] = useState(false);
+  const [metaErr, setMetaErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -849,6 +862,44 @@ function BuilderProjectCard({
       .catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [sub.project_pubkey, tick]);
+
+  async function saveMetadata() {
+    if (!signMessage) { setMetaErr("Wallet must support message signing"); return; }
+    if (!metaName.trim()) { setMetaErr("Project name is required"); return; }
+    setMetaBusy(true); setMetaErr(null);
+    try {
+      const signature = signatureToBase64(
+        await signMessage(new TextEncoder().encode(buildProjectRegistrationMessage(sub.project_pubkey)))
+      );
+      const iconBase64 = metaIconFile ? await resizeIcon(metaIconFile) : null;
+      const resp = await fetch("/api/project-submission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          authEmail: authEmail || null,
+          discord: metaDiscord.trim() || undefined,
+          githubUrl: sub.github_url,
+          hackathonPubkey: sub.hackathon_pubkey,
+          iconBase64,
+          projectName: metaName.trim(),
+          projectPubkey: sub.project_pubkey,
+          signature,
+          telegram: normalizeTelegram(metaTelegram),
+          twitterHandle: metaTwitter.replace(/^@/, "").trim() || undefined,
+          walletAddress: publicKey.toBase58(),
+        }),
+      });
+      const payload = await resp.json();
+      if (!resp.ok) throw new Error(payload.error ?? "Failed to update metadata");
+      setOk("Metadata updated!");
+      setEditingMeta(false);
+      onUpdated();
+    } catch (e: any) {
+      setMetaErr(e.message ?? "Failed to update metadata");
+    } finally {
+      setMetaBusy(false);
+    }
+  }
 
   async function payDeposit() {
     if (!hackathon) { setErr("Hackathon not found — try refreshing, or re-submit your project to the current hackathon."); return; }
@@ -939,8 +990,8 @@ function BuilderProjectCard({
   }
 
   async function submitProject() {
-    if (hackathon && Math.floor(Date.now() / 1000) >= hackathon.irlHackathonDeadlineTimestamp) {
-      setErr("Submission window closed — builder declarations must happen before results.");
+    if (hackathon && hackathon.isResolved) {
+      setErr("Submission window closed — builder declarations must happen before the hackathon is resolved.");
       return;
     }
     setBusy("submit"); setErr(null); setOk(null);
@@ -1041,6 +1092,7 @@ function BuilderProjectCard({
   const rowStyle: React.CSSProperties = { gap: "12px", padding: "10px 0", borderBottom: "1px solid var(--c-divider-2)" };
   const labelStyle: React.CSSProperties = { fontSize: "0.875rem", color: "var(--c-text-3)" };
   const checkStyle: React.CSSProperties = { fontSize: "0.875rem", fontWeight: 600, color: "var(--c-emerald-text)" };
+  const subLabelStyle: React.CSSProperties = { display: "block", marginBottom: "4px", fontSize: "0.75rem", fontWeight: 500, color: "var(--c-text-3)" };
 
   // Step states for the progress indicator
   const step2State = sub.status === "rejected" ? "error" : sub.status === "approved" ? "done" : "active";
@@ -1247,6 +1299,80 @@ function BuilderProjectCard({
         </div>
       ) : null}
 
+      {/* Metadata */}
+      <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid var(--c-divider-2)" }}>
+        {!editingMeta ? (
+          <div className="mobile-stack-between">
+            <span style={labelStyle}>Profile metadata</span>
+            <button onClick={() => setEditingMeta(true)} className="ui-btn ui-btn-outline ui-btn-sm mobile-fill">
+              Edit
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <p style={{ margin: 0, fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text)" }}>Edit profile metadata</p>
+
+            <div>
+              <label style={subLabelStyle}>Project icon</label>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                {metaIconFile ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ height: "40px", width: "40px", borderRadius: "10px", overflow: "hidden", border: "1px solid var(--c-divider)", flexShrink: 0 }}>
+                      <img src={URL.createObjectURL(metaIconFile)} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
+                    </div>
+                    <button onClick={() => setMetaIconFile(null)} className="ui-btn ui-btn-outline-red ui-btn-xs" style={{ fontSize: "0.75rem" }}>Remove</button>
+                  </div>
+                ) : sub.icon_url ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ height: "40px", width: "40px", borderRadius: "10px", overflow: "hidden", border: "1px solid var(--c-divider)", flexShrink: 0 }}>
+                      <img src={sub.icon_url} alt="" style={{ height: "100%", width: "100%", objectFit: "cover" }} />
+                    </div>
+                    <label style={{ cursor: "pointer", fontSize: "0.75rem", color: "var(--c-indigo-text)", fontFamily: "inherit" }}>
+                      Change
+                      <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(e) => setMetaIconFile(e.target.files?.[0] ?? null)} style={{ display: "none" }} />
+                    </label>
+                  </div>
+                ) : (
+                  <label style={{ display: "flex", height: "40px", width: "40px", alignItems: "center", justifyContent: "center", borderRadius: "10px", border: "1px dashed var(--c-divider)", cursor: "pointer", color: "var(--c-text-4)", fontSize: "1.25rem", flexShrink: 0 }}>
+                    +
+                    <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(e) => setMetaIconFile(e.target.files?.[0] ?? null)} style={{ display: "none" }} />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label style={subLabelStyle}>Project name <span style={{ color: "var(--c-red-text)" }}>*</span></label>
+              <input className="ui-input" value={metaName} onChange={(e) => setMetaName(e.target.value)} />
+            </div>
+
+            <div className="grid-auto-2" style={{ gap: "8px" }}>
+              <div>
+                <label style={subLabelStyle}>Twitter / X</label>
+                <input className="ui-input" placeholder="@handle" value={metaTwitter} onChange={(e) => setMetaTwitter(e.target.value)} />
+              </div>
+              <div>
+                <label style={subLabelStyle}>Telegram</label>
+                <input className="ui-input" placeholder="@username or t.me/…" value={metaTelegram} onChange={(e) => setMetaTelegram(e.target.value)} />
+              </div>
+              <div>
+                <label style={subLabelStyle}>Discord</label>
+                <input className="ui-input" placeholder="username or discord.gg/…" value={metaDiscord} onChange={(e) => setMetaDiscord(e.target.value)} />
+              </div>
+            </div>
+
+            {metaErr && <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--c-red-text)" }}>{metaErr}</p>}
+
+            <div className="mobile-actions-row">
+              <button onClick={saveMetadata} disabled={metaBusy || !signMessage} className="ui-btn ui-btn-indigo ui-btn-sm mobile-fill">
+                {metaBusy ? "Saving…" : "Save changes"}
+              </button>
+              <button onClick={() => { setEditingMeta(false); setMetaErr(null); }} className="ui-btn ui-btn-outline ui-btn-sm mobile-fill">Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {err && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
       {ok && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
     </div>
@@ -1284,7 +1410,7 @@ function BuilderProjectsSection({
 
     supabase
       .from("project_submissions_public")
-      .select("project_pubkey, hackathon_pubkey, github_url, icon_url, project_name, status")
+      .select("project_pubkey, hackathon_pubkey, github_url, icon_url, project_name, twitter_handle, telegram, discord, status")
       .eq("wallet_address", publicKey.toBase58())
       .order("created_at", { ascending: false })
       .then(({ data }) => {
@@ -1320,6 +1446,7 @@ function BuilderProjectsSection({
                 publicKey={publicKey}
                 anchorWallet={anchorWallet}
                 usdcMint={mint}
+                authEmail={authEmail}
                 onUpdated={() => setRefreshKey((value) => value + 1)}
               />
             </div>

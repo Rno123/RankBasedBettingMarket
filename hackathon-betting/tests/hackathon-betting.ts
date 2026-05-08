@@ -2222,7 +2222,7 @@ describe("hackathon-betting — Bankrun suite", () => {
       assert.ok(p.builderDeclared, "builder_declared should still be true after cutoff");
     });
 
-    it("submit_project rejected after results (SubmissionClosed)", async () => {
+    it("submit_project rejected after resolution (SubmissionClosed)", async () => {
       setClock(ctx, T0);
       const fix     = await newHackathon(ctx, program, RESULTS_TS,
         DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, "SubmitTest3b", 0, DEPOSIT);
@@ -2231,18 +2231,22 @@ describe("hackathon-betting — Bankrun suite", () => {
       await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
       const project = await addProject(ctx, program, fix, "https://github.com/builder/sub3b");
       await doPayDeposit(program, fix, builder, builderAta, project);
+      // Self-stake so the project has shares > 0 for finalize_resolve.
+      await mintTokens(ctx, fix.mint, builderAta, DEPOSIT);
+      await doSelfStake(program, fix, builder, builderAta, project, DEPOSIT);
+      // Advance past the deadline, resolve, and finalize — declaration window closes at resolution.
       setClock(ctx, RESULTS_TS + 1);
+      await doResolve(program, fix, project, 1);
+      await doFinalizeResolve(program, fix, [project]);
       try {
         await doSubmitProject(program, fix, builder, project);
-        assert.fail("submit_project after results should be rejected");
+        assert.fail("submit_project after resolution should be rejected");
       } catch (e: any) {
         const txt = [e.message, ...(e.logs ?? [])].join(" ");
         assert.ok(
           txt.includes("SubmissionClosed") ||
-          txt.includes("Submission window has closed") ||
-          txt.includes("already been processed") ||
-          txt.includes("already processed"),
-          `Expected SubmissionClosed or duplicate-tx, got: ${e.message}`,
+          txt.includes("Submission window has closed"),
+          `Expected SubmissionClosed, got: ${e.message}`,
         );
       }
     });

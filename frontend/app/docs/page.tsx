@@ -598,7 +598,7 @@ function SectionAdminOps() {
           [<IC>whitelist_wallet</IC>, "Protocol Admin", "Creates WhitelistedWallet PDA for a staker. Only needed when requires_approval = true."],
           [<IC>register_project</IC>, "Builder", "Creates ProjectAccount. Duplicate GitHub URLs revert via PDA collision."],
           [<IC>pay_deposit</IC>, "Builder", "Transfers deposit_amount from builder to escrow."],
-          [<IC>declare_builder</IC>, "Builder", "Sets builder_declared = true, enabling self-staking."],
+          [<IC>declare_builder</IC>, "Builder", "Sets builder_declared = true before resolution (is_resolved). Enables self-staking and deposit refund eligibility."],
           [<IC>stake</IC>, "Staker / Builder", "Deposits USDC, mints shares, updates total_pool."],
           [<IC>unstake</IC>, "Staker", "Withdraws with 3% penalty before cutoff. Disabled at cutoff."],
           [<IC>resolve_project</IC>, "Protocol Admin", "Sets project.rank. Reversible until finalize_resolve."],

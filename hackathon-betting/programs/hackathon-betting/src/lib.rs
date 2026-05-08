@@ -116,7 +116,7 @@ pub enum BettingError {
     DuplicateProjectAccount,
     #[msg("Builder deposits can only be forfeited after the post-results grace period")]
     ForfeitTooEarly,
-    #[msg("Submission window has closed — builder declarations must happen before results")]
+    #[msg("Submission window has closed — builder declarations must happen before the hackathon is resolved")]
     SubmissionClosed,
     #[msg("Deposit refund window has not opened yet — irl_hackathon_deadline_timestamp not yet reached")]
     DepositClaimTooEarly,
@@ -498,8 +498,8 @@ pub mod hackathon_betting {
     // ── 4.5  submit_project ───────────────────────────────────────────────
 
     /// Builder declares on-chain that they have submitted their project.
-    /// Must be called before irl_hackathon_deadline_timestamp. Staking still locks at cutoff,
-    /// but builders keep the full build window to declare completion.
+    /// Must be called before the hackathon is resolved (is_resolved == false).
+    /// Staking still locks at cutoff, but builders can declare up until resolution.
     /// Sets builder_declared = true and records the timestamp.
     /// This records the builder-side declaration. Deposit refunds still require
     /// organizer approval via approve_submissions unless an explicit refund
@@ -507,7 +507,7 @@ pub mod hackathon_betting {
     pub fn submit_project(ctx: Context<SubmitProject>) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         require!(
-            now < ctx.accounts.hackathon.irl_hackathon_deadline_timestamp,
+            !ctx.accounts.hackathon.is_resolved,
             BettingError::SubmissionClosed,
         );
         if ctx.accounts.hackathon.deposit_amount > 0 {

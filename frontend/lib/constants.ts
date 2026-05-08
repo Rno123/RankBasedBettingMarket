@@ -10,9 +10,9 @@ export const TOKEN_DECIMALS = 6; // USDC has 6 decimals
 
 export const MAX_STAKE_PER_WALLET = 250_000_000; // protocol cap, $250 USDC in smallest units
 
-// Mainnet USDC mint
+// USDC mint — set per environment
 export const USDC_MINT = new PublicKey(
-  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  process.env.NEXT_PUBLIC_USDC_MINT ?? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 );
 
 // Protocol super-admin + BPF upgrade authority

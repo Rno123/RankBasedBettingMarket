@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HackBet — Solana Frontier 2026</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }
+
+:root {
+  --page-bg: #0A0A0A;
+  --card-bg: rgba(255,255,255,0.03);
+  --card-bg-alt: rgba(255,255,255,0.05);
+  --card-border: rgba(255,255,255,0.08);
+  --nav-bg: rgba(10,10,10,0.85);
+  --nav-border: rgba(255,91,20,0.15);
+  --c-text: #F4F1EA;
+  --c-text-2: #CFCBC0;
+  --c-text-3: #8A8A82;
+  --c-text-4: #5A5A55;
+  --c-divider: rgba(255,255,255,0.08);
+  --c-divider-2: rgba(255,255,255,0.05);
+  --c-indigo: #FF5B14;
+  --c-indigo-hover: #FF7A3D;
+  --c-indigo-light: rgba(255,91,20,0.10);
+  --c-indigo-border: rgba(255,91,20,0.25);
+  --c-indigo-text: #FF7A3D;
+  --c-amber: #f59e0b;
+  --c-amber-text: #fbbf24;
+  --c-amber-light: rgba(245,158,11,0.1);
+  --c-amber-border: rgba(245,158,11,0.2);
+  --c-sky-text: #38bdf8;
+  --c-sky-light: rgba(14,165,233,0.1);
+  --c-sky-border: rgba(14,165,233,0.2);
+  --c-red-text: #f87171;
+  --c-emerald-light: rgba(255,91,20,0.10);
+  --c-emerald-text: #FF7A3D;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  background: var(--page-bg);
+  min-height: 100vh;
+  color: var(--c-text);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Nav */
+.ui-nav {
+  position: sticky; top: 0; z-index: 50;
+  border-bottom: 1px solid var(--nav-border);
+  background: var(--nav-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.nav-inner {
+  margin: 0 auto; display: flex; max-width: 896px;
+  align-items: center; justify-content: space-between;
+  gap: 10px; padding: 12px 16px;
+}
+.nav-logo { font-size: 1.25rem; font-weight: 900; letter-spacing: -0.025em; text-decoration: none; color: var(--c-text); }
+.nav-logo span { color: var(--c-indigo-text); }
+.nav-links { display: flex; align-items: center; gap: 16px; }
+.nav-link { font-size: 0.875rem; font-weight: 500; text-decoration: none; color: var(--c-text-3); }
+.nav-link.active { color: var(--c-indigo-text); }
+.wallet-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px; padding: 8px 16px; height: 36px;
+  font-size: 0.8rem; font-weight: 700; cursor: pointer;
+  background: #FF5B14; color: #0A0A0A; border: none; white-space: nowrap;
+}
+.theme-btn {
+  display: flex; height: 36px; width: 36px; align-items: center; justify-content: center;
+  border-radius: 8px; background: transparent; border: none; cursor: pointer; color: var(--c-text-3);
+}
+
+/* Ambient glow */
+.ambient-glow { pointer-events: none; position: fixed; inset: 0; z-index: -10; overflow: hidden; }
+.glow-1 { position: absolute; top: -80px; right: 20%; height: 600px; width: 600px; border-radius: 9999px; background: rgba(255,91,20,0.09); filter: blur(140px); }
+.glow-2 { position: absolute; bottom: 100px; left: -100px; height: 400px; width: 400px; border-radius: 9999px; background: rgba(255,91,20,0.05); filter: blur(120px); }
+
+/* Card */
+.ui-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; }
+
+/* Project row */
+.proj-row {
+  border-radius: 12px; border: 1px solid var(--card-border); background: var(--card-bg);
+  padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.proj-row:hover { border-color: var(--c-indigo-border); background: var(--card-bg-alt); }
+
+/* Rank badge */
+.rank-badge {
+  display: flex; height: 36px; width: 36px; flex-shrink: 0;
+  align-items: center; justify-content: center;
+  border-radius: 8px; font-size: 0.875rem; font-weight: 900;
+}
+.rank-1 { background: #FF5B14; color: #0A0A0A; }
+.rank-2 { background: rgba(255,255,255,0.08); color: #CFCBC0; }
+.rank-3 { background: rgba(255,91,20,0.15); color: #FF7A3D; }
+.rank-other { background: rgba(255,255,255,0.04); color: #8A8A82; }
+.rank-none { background: rgba(255,255,255,0.03); color: #5A5A55; font-size: 1rem; }
+
+/* Stats grid */
+.proj-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px 20px; }
+.stat-label { margin: 0; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--c-text-4); }
+.stat-value { margin: 0; font-weight: 700; color: var(--c-text); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.9rem; }
+.stat-value small { font-size: 0.7rem; font-weight: 600; color: var(--c-text-3); font-family: inherit; }
+
+/* Stake bar */
+.bar-track { height: 3px; border-radius: 9999px; background: var(--c-divider); overflow: hidden; margin-top: 4px; }
+.bar-fill { height: 100%; border-radius: 9999px; background: var(--c-indigo); }
+
+/* Buttons */
+.btn-view {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px; padding: 6px 14px; height: 32px;
+  font-size: 0.75rem; font-weight: 700; cursor: pointer;
+  background: var(--c-amber); color: #fff; border: none; white-space: nowrap; font-family: inherit;
+}
+.btn-stake {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px; padding: 6px 14px; height: 32px;
+  font-size: 0.75rem; font-weight: 700; cursor: pointer;
+  background: #FF5B14; color: #0A0A0A; border: none; white-space: nowrap; font-family: inherit;
+}
+.btn-claimed {
+  border-radius: 9999px; background: var(--c-emerald-light);
+  padding: 4px 12px; font-size: 0.75rem; font-weight: 600; color: var(--c-emerald-text);
+  border: none; font-family: inherit;
+}
+
+/* Sort tabs */
+.sort-wrap { display: flex; gap: 4px; border-radius: 12px; border: 1px solid var(--card-border); background: var(--card-bg); padding: 4px; width: fit-content; }
+.sort-tab {
+  border-radius: 8px; padding: 7px 14px; min-height: 36px;
+  font-size: 0.75rem; font-weight: 600; border: none; cursor: pointer;
+  transition: background 0.15s, color 0.15s; font-family: inherit;
+}
+.sort-active { background: var(--c-indigo); color: #fff; }
+.sort-inactive { background: transparent; color: var(--c-text-3); }
+
+/* Tier chip */
+.tier-chip {
+  border-radius: 6px; border: 1px solid var(--c-indigo-border);
+  background: var(--c-indigo-light); padding: 4px 10px;
+  font-size: 0.75rem; font-weight: 600; color: var(--c-indigo-text); white-space: nowrap;
+}
+
+/* Link */
+.official-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  border-radius: 6px; border: 1px solid var(--c-divider); background: var(--card-bg-alt);
+  padding: 2px 8px; font-size: 0.75rem; font-weight: 500; color: var(--c-text-3);
+  text-decoration: none;
+}
+
+/* Parlay card */
+.parlay-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+.parlay-inner { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+
+/* Back link */
+.back-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.875rem; color: var(--c-text-4); text-decoration: none; margin-bottom: 24px;
+}
+
+/* Grid */
+.meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 16px; margin-top: 16px; }
+
+/* Pagination */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 24px; }
+.page-btn {
+  display: flex; align-items: center; justify-content: center;
+  height: 36px; min-width: 36px; border-radius: 8px; border: 1px solid var(--card-border);
+  background: var(--card-bg); color: var(--c-text-3); font-size: 0.8rem; font-weight: 600;
+  cursor: pointer; font-family: inherit; padding: 0 10px;
+}
+.page-btn.active { background: #FF5B14; color: #0A0A0A; border-color: #FF5B14; }
+.page-btn:hover:not(.active) { background: var(--card-bg-alt); }
+
+/* Search + filter bar */
+.filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.search-input {
+  flex: 1; min-width: 200px; border-radius: 10px; border: 1px solid var(--card-border);
+  background: var(--card-bg); padding: 8px 14px; font-size: 0.875rem;
+  color: var(--c-text); outline: none; font-family: inherit;
+}
+.search-input::placeholder { color: var(--c-text-4); }
+.search-input:focus { border-color: #FF5B14; }
+.filter-chip {
+  border-radius: 8px; padding: 7px 14px; height: 36px;
+  font-size: 0.75rem; font-weight: 600; border: 1px solid var(--card-border);
+  background: var(--card-bg); color: var(--c-text-3); cursor: pointer; font-family: inherit;
+}
+.filter-chip.on { border-color: var(--c-indigo-border); background: var(--c-indigo-light); color: var(--c-indigo-text); }
+
+.mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+main { margin: 0 auto; max-width: 896px; padding: 40px 16px 56px; }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.section-title { margin: 0; font-size: 1.125rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: var(--c-text); }
+.proj-list { display: flex; flex-direction: column; gap: 12px; }
+.mb-24 { margin-bottom: 24px; }
+</style>
+</head>
+<body>
+
+<div class="ambient-glow">
+  <div class="glow-1"></div>
+  <div class="glow-2"></div>
+</div>
+
+<nav class="ui-nav">
+  <div class="nav-inner" style="max-width:896px;">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <a href="#" class="nav-logo">HACK<span>BET</span></a>
+      <div class="nav-links">
+        <a href="hackathons.html" class="nav-link active">Hackathons</a>
+        <a href="#" class="nav-link">Builders</a>
+        <a href="#" class="nav-link">How it works</a>
+        <a href="#" class="nav-link">Portfolio</a>
+        <a href="#" class="nav-link">Docs</a>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="theme-btn">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      <button class="wallet-btn">5mxH…cMfP</button>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <a href="hackathons.html" class="back-link">← All hackathons</a>
+
+  <!-- Header card -->
+  <div class="ui-card mb-24" style="padding:clamp(18px,5vw,24px);">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+      <div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;">
+          <div style="display:flex;height:40px;width:40px;flex-shrink:0;overflow:hidden;border-radius:12px;border:1px solid var(--c-divider);background:rgba(255,91,20,0.15);align-items:center;justify-content:center;font-size:1.1rem;">🚀</div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+            <h1 style="margin:0;font-size:clamp(1.25rem,3vw,1.5rem);font-weight:900;text-transform:uppercase;letter-spacing:-0.025em;color:var(--c-text);">SOLANA FRONTIER 2026</h1>
+            <span style="border-radius:9999px;background:rgba(255,91,20,0.12);border:1px solid rgba(255,91,20,0.25);padding:2px 10px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#FF7A3D;">Open</span>
+          </div>
+        </div>
+        <div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+          <a href="#" class="official-link">
+            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            Official site
+          </a>
+          <span style="font-size:0.75rem;color:var(--c-text-4);">Organized by Solana Foundation</span>
+        </div>
+      </div>
+      <div style="min-width:0;">
+        <p style="margin:0;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--c-text-4);">Total pool</p>
+        <p style="margin:0;font-size:1.5rem;font-weight:900;" class="mono">245,830 <span style="font-size:0.875rem;font-weight:600;color:var(--c-text-3);">USDC</span></p>
+      </div>
+    </div>
+
+    <div class="meta-grid">
+      <div>
+        <p style="margin:0;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--c-text-4);">Cutoff</p>
+        <p style="margin:2px 0 0;font-size:0.875rem;font-weight:500;color:var(--c-text-2);">May 24, 2026</p>
+        <p style="margin:0;font-size:0.75rem;color:var(--c-text-4);">Staking closes</p>
+      </div>
+      <div>
+        <p style="margin:0;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--c-text-4);">Deadline</p>
+        <p style="margin:2px 0 0;font-size:0.875rem;font-weight:500;color:var(--c-text-2);">May 25, 2026</p>
+        <p style="margin:0;font-size:0.75rem;color:var(--c-text-4);">Submissions close</p>
+      </div>
+      <div>
+        <p style="margin:0;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--c-text-4);">Projects</p>
+        <p style="margin:2px 0 0;font-size:0.875rem;font-weight:700;color:var(--c-text-2);" class="mono">247</p>
+      </div>
+    </div>
+
+    <!-- Prize tiers -->
+    <div style="margin-top:16px;border-top:1px solid var(--c-divider);padding-top:12px;">
+      <p style="margin:0 0 6px;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--c-text-4);">Prize tiers</p>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
+        <span class="tier-chip">1st: 1 × 30%</span>
+        <span style="color:var(--c-text-4);font-size:0.75rem;">|</span>
+        <span class="tier-chip">2nd: 3 × 20%</span>
+        <span style="color:var(--c-text-4);font-size:0.75rem;">|</span>
+        <span class="tier-chip">3rd: 5 × 15%</span>
+        <span style="color:var(--c-text-4);font-size:0.75rem;">|</span>
+        <span class="tier-chip">Top 10: 10 × 20%</span>
+        <span style="color:var(--c-text-4);font-size:0.75rem;">|</span>
+        <span class="tier-chip">Rest: 15%</span>
+      </div>
+    </div>
+
+    <div style="margin-top:16px;font-size:0.875rem;color:var(--c-text-3);">
+      Staking closes in <span style="font-weight:600;color:var(--c-amber-text);">18 days</span>
+    </div>
+  </div>
+
+  <!-- Parlay card -->
+  <div class="parlay-card">
+    <div class="parlay-inner">
+      <div>
+        <h2 style="margin:0 0 4px;font-size:1rem;font-weight:900;color:var(--c-text);">Parlay Bet</h2>
+        <p style="margin:0;font-size:0.875rem;color:var(--c-text-3);">Pick 3 projects you think will win — one wallet prompt, one bet.</p>
+      </div>
+      <button class="btn-stake" style="border-radius:12px;padding:10px 20px;height:44px;font-size:0.875rem;">Bet</button>
+    </div>
+  </div>
+
+  <!-- Search + filters -->
+  <div class="filter-bar">
+    <input class="search-input" type="text" placeholder="Search projects…" oninput="filterProjects(this.value)" />
+    <button class="filter-chip on" onclick="toggleFilter(this,'staked')">Staked only</button>
+    <button class="filter-chip" onclick="toggleFilter(this,'builder')">Builder staked</button>
+    <button class="filter-chip" onclick="toggleFilter(this,'new')">New (24h)</button>
+  </div>
+
+  <!-- Sort + header -->
+  <div class="row-between">
+    <h2 class="section-title">Projects <span style="color:var(--c-text-4);font-size:0.875rem;font-weight:600;" id="count-label">(247)</span></h2>
+    <div class="sort-wrap">
+      <button class="sort-tab sort-active" onclick="sortBy('stake',this)">By stake</button>
+      <button class="sort-tab sort-inactive" onclick="sortBy('commit',this)">By last commit</button>
+      <button class="sort-tab sort-inactive" onclick="sortBy('new',this)">Newest</button>
+    </div>
+  </div>
+
+  <div class="proj-list" id="project-list"></div>
+
+  <!-- Pagination -->
+  <div class="pagination" id="pagination"></div>
+</main>
+
+<script>
+// ── Data generation ────────────────────────────────────────────────────────────
+const adjectives = ["Flux","Neon","Arc","Drift","Pulse","Forge","Echo","Vault","Beam","Apex","Nova","Helix","Grid","Prism","Wave","Spark","Mesh","Core","Edge","Peak","Orbit","Nexus","Bolt","Trace","Forge","Sync","Deep","Rapid","Clear","Open"];
+const nouns = ["Bridge","DEX","Protocol","DAO","Finance","Pay","Stake","Base","Layer","Network","Connect","Chain","Vault","Market","Swap","Bot","Agent","Stream","Track","Lens","Drop","Farm","Score","Rank","Proof","Sign","Gate","Relay","Fund","Mint"];
+const tags = ["DeFi","NFT","DePIN","AI","Gaming","Social","Infrastructure","Payments","DAO","Analytics","Identity","Storage","Messaging","Staking","Oracle","Bridge","ZK","Wallet","Marketplace","Tooling"];
+const orgs = ["solana-labs","coral-xyz","metaplex","tensor-trade","jupiter-exchange","drift-protocol","orca-so","marginfi","solend","mango-markets","phantom-wallet","backpack","helius-labs","triton-one","jito-labs","pyth-network","switchboard","dialect","realms","serum-dex","raydium-io","saber-hq","aldrin-exchange","saros-finance","step-finance","tulip-protocol","sunny-garden","quarry-me","mercurial-finance","port-finance"];
+
+const commits = ["2h ago","4h ago","6h ago","8h ago","12h ago","1d ago","1d ago","1d ago","2d ago","2d ago","3d ago","5d ago","1w ago","2w ago"];
+const liveIndicators = [true, false, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false];
+
+function generateProjects(count) {
+  const projects = [];
+  const totalPool = 245830;
+
+  // Top projects with big stakes
+  const topProjects = [
+    { name: "FluxBridge Protocol", repo: "flux-labs/flux-bridge", staked: 18450, builder: 10000, tag: "Bridge" },
+    { name: "NeonDEX", repo: "neondex/neon-exchange", staked: 15230, builder: 10000, tag: "DeFi" },
+    { name: "ArcStake", repo: "arc-finance/arc-stake", staked: 13800, builder: 10000, tag: "Staking" },
+    { name: "DriftSync", repo: "drift-protocol/drift-sync-v2", staked: 12100, builder: 5000, tag: "DeFi" },
+    { name: "PulseAgent", repo: "pulse-ai/pulse-agent", staked: 10900, builder: 10000, tag: "AI" },
+    { name: "ForgeDAO", repo: "forge-collective/forge-dao", staked: 9750, builder: 10000, tag: "DAO" },
+    { name: "EchoMarket", repo: "echo-labs/echo-market", staked: 8600, builder: 10000, tag: "Marketplace" },
+    { name: "VaultLayer", repo: "vault-protocol/vault-layer", staked: 7900, builder: 10000, tag: "DeFi" },
+    { name: "BeamPay", repo: "beam-network/beam-pay", staked: 7200, builder: 10000, tag: "Payments" },
+    { name: "ApexZK", repo: "apex-labs/apex-zk", staked: 6800, builder: 5000, tag: "ZK" },
+    { name: "NovaOracle", repo: "nova-network/nova-oracle", staked: 6100, builder: 10000, tag: "Oracle" },
+    { name: "HelixDEX", repo: "helix-finance/helix-dex", staked: 5600, builder: 10000, tag: "DeFi" },
+    { name: "GridProtocol", repo: "grid-io/grid-protocol", staked: 5200, builder: 10000, tag: "Infrastructure" },
+    { name: "PrismIdentity", repo: "prism-labs/prism-identity", staked: 4800, builder: 10000, tag: "Identity" },
+    { name: "WaveStorage", repo: "wave-network/wave-storage", staked: 4400, builder: 5000, tag: "Storage" },
+  ];
+
+  // Assign ranks to top projects
+  topProjects.forEach((p, i) => {
+    let rank = 0;
+    if (i === 0) rank = 1;
+    else if (i <= 3) rank = 2;
+    else if (i <= 8) rank = 3;
+    else if (i <= 14) rank = 4;
+    projects.push({ ...p, rank, idx: i });
+  });
+
+  // Generate remaining projects
+  const usedNames = new Set(topProjects.map(p => p.name));
+  let idx = topProjects.length;
+  while (projects.length < count) {
+    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const noun = nouns[Math.floor(Math.random() * nouns.length)];
+    const name = adj + noun;
+    if (usedNames.has(name)) continue;
+    usedNames.add(name);
+    const org = orgs[Math.floor(Math.random() * orgs.length)];
+    const repoSlug = name.toLowerCase().replace(/([a-z])([A-Z])/g,'$1-$2').toLowerCase();
+    const staked = Math.floor(Math.random() * 3500) + 50;
+    const builder = Math.random() > 0.4 ? 10000 : (Math.random() > 0.5 ? 5000 : 0);
+    const tag = tags[Math.floor(Math.random() * tags.length)];
+    projects.push({ name, repo: `${org}/${repoSlug}`, staked, builder, tag, rank: 0, idx });
+    idx++;
+  }
+
+  return projects.map((p, i) => ({
+    ...p,
+    share: ((p.staked / totalPool) * 100).toFixed(1),
+    commit: commits[Math.floor(Math.random() * commits.length)],
+    live: liveIndicators[i % liveIndicators.length],
+    weeklyCommits: Math.floor(Math.random() * 48) + 1,
+    stakers: Math.floor(p.staked / 120) + 1,
+  }));
+}
+
+const ALL_PROJECTS = generateProjects(247);
+let currentPage = 1;
+const PAGE_SIZE = 25;
+let searchQuery = '';
+
+function rankBadgeClass(rank) {
+  if (rank === 1) return 'rank-badge rank-1';
+  if (rank === 2) return 'rank-badge rank-2';
+  if (rank === 3) return 'rank-badge rank-3';
+  if (rank > 3) return 'rank-badge rank-other';
+  return 'rank-badge rank-none';
+}
+
+function rankLabel(rank) {
+  return rank > 0 ? rank : '–';
+}
+
+function tagColor(tag) {
+  const colors = {
+    'DeFi': '#3b82f6', 'NFT': '#a855f7', 'DePIN': '#10b981', 'AI': '#f59e0b',
+    'Gaming': '#ec4899', 'DAO': '#8b5cf6', 'Infrastructure': '#06b6d4',
+    'Payments': '#22c55e', 'Bridge': '#FF5B14', 'ZK': '#6366f1',
+    'Oracle': '#14b8a6', 'Identity': '#f97316', 'Staking': '#84cc16',
+  };
+  return colors[tag] || '#8A8A82';
+}
+
+function renderProject(p, position) {
+  const tc = tagColor(p.tag);
+  const stakeBar = Math.min(100, (p.staked / 18450) * 100);
+
+  return `
+    <div class="proj-row">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <div style="display:flex;min-width:0;align-items:center;gap:12px;flex:1;">
+          <div class="${rankBadgeClass(p.rank)}">${rankLabel(p.rank)}</div>
+          <div style="min-width:0;flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <a href="#" style="font-weight:600;color:var(--c-text);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;display:block;">${p.name}</a>
+              <span style="border-radius:4px;padding:1px 6px;font-size:0.65rem;font-weight:700;background:${tc}18;color:${tc};border:1px solid ${tc}30;white-space:nowrap;">${p.tag}</span>
+              ${p.live ? '<span style="display:inline-flex;align-items:center;gap:3px;font-size:0.65rem;font-weight:700;color:#22c55e;"><span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 1.5s infinite;"></span>LIVE</span>' : ''}
+            </div>
+            <p style="margin:0;font-size:0.75rem;color:var(--c-text-4);">${p.repo} · ${p.commit} · ${p.weeklyCommits} commits/wk</p>
+          </div>
+        </div>
+        <div style="flex-shrink:0;">
+          <button class="btn-view">View</button>
+        </div>
+      </div>
+      <div class="proj-stats">
+        <div>
+          <p class="stat-label">Staked</p>
+          <p class="stat-value">${p.staked.toLocaleString()} <small>USDC</small></p>
+          <div class="bar-track"><div class="bar-fill" style="width:${stakeBar}%"></div></div>
+        </div>
+        <div>
+          <p class="stat-label">Pool share</p>
+          <p class="stat-value">${p.share}%</p>
+        </div>
+        <div>
+          <p class="stat-label">Builder self-stake</p>
+          <p class="stat-value" style="color:var(--c-text-2);">${p.builder > 0 ? p.builder.toLocaleString() : '–'} ${p.builder > 0 ? '<small>USDC</small>' : ''}</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getFilteredProjects() {
+  if (!searchQuery) return ALL_PROJECTS;
+  const q = searchQuery.toLowerCase();
+  return ALL_PROJECTS.filter(p =>
+    p.name.toLowerCase().includes(q) ||
+    p.repo.toLowerCase().includes(q) ||
+    p.tag.toLowerCase().includes(q)
+  );
+}
+
+function renderPage(page) {
+  const filtered = getFilteredProjects();
+  const start = (page - 1) * PAGE_SIZE;
+  const end = start + PAGE_SIZE;
+  const slice = filtered.slice(start, end);
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+
+  document.getElementById('project-list').innerHTML = slice.map((p, i) => renderProject(p, start + i + 1)).join('');
+  document.getElementById('count-label').textContent = `(${filtered.length})`;
+  renderPagination(page, totalPages);
+  currentPage = page;
+}
+
+function renderPagination(current, total) {
+  const el = document.getElementById('pagination');
+  if (total <= 1) { el.innerHTML = ''; return; }
+
+  let html = '';
+  html += `<button class="page-btn" onclick="renderPage(${Math.max(1, current-1)})" ${current===1?'disabled style="opacity:0.4"':''}>←</button>`;
+
+  const pages = [];
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (current > 3) pages.push('…');
+    for (let i = Math.max(2, current-1); i <= Math.min(total-1, current+1); i++) pages.push(i);
+    if (current < total - 2) pages.push('…');
+    pages.push(total);
+  }
+
+  pages.forEach(p => {
+    if (p === '…') {
+      html += `<span style="color:var(--c-text-4);padding:0 4px;">…</span>`;
+    } else {
+      html += `<button class="page-btn ${p === current ? 'active' : ''}" onclick="renderPage(${p})">${p}</button>`;
+    }
+  });
+
+  html += `<button class="page-btn" onclick="renderPage(${Math.min(total, current+1)})" ${current===total?'disabled style="opacity:0.4"':''}>→</button>`;
+  el.innerHTML = html;
+}
+
+function filterProjects(q) {
+  searchQuery = q;
+  renderPage(1);
+}
+
+function sortBy(mode, btn) {
+  document.querySelectorAll('.sort-tab').forEach(b => b.className = 'sort-tab sort-inactive');
+  btn.className = 'sort-tab sort-active';
+  if (mode === 'stake') {
+    ALL_PROJECTS.sort((a, b) => b.staked - a.staked);
+  } else if (mode === 'commit') {
+    const order = {'2h ago':0,'4h ago':1,'6h ago':2,'8h ago':3,'12h ago':4,'1d ago':5,'2d ago':7,'3d ago':9,'5d ago':11,'1w ago':13,'2w ago':15};
+    ALL_PROJECTS.sort((a, b) => (order[a.commit]||99) - (order[b.commit]||99));
+  } else {
+    ALL_PROJECTS.sort((a, b) => b.idx - a.idx);
+  }
+  renderPage(1);
+}
+
+function toggleFilter(btn, type) {
+  btn.classList.toggle('on');
+}
+
+// Pulse animation for live dots
+const style = document.createElement('style');
+style.textContent = '@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }';
+document.head.appendChild(style);
+
+// Initial render
+renderPage(1);
+</script>
+</body>
+</html>
