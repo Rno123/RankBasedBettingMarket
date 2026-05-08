@@ -136,26 +136,40 @@ export default function TopThreeSlipPanel({
 
       const ixs = await Promise.all(
         draft.legs.map((leg) => {
-          const builder = (program.methods as any)
-            .stake(new BN(leg.amountLamports.toString()))
-            .accounts({
-              user: publicKey,
-              hackathon: hackathon.pubkey,
-              project: leg.project.pubkey,
-              userStake: stakePda(publicKey, leg.project.pubkey),
-              userTokenAccount: userAta,
-              escrow,
-              tokenProgram: TOKEN_PROGRAM_ID,
-              systemProgram: SystemProgram.programId,
-            });
+          const isBuilder = leg.project.builderWallet.equals(publicKey);
+          const txBuilder = isBuilder
+            ? (program.methods as any)
+                .selfStake(new BN(leg.amountLamports.toString()))
+                .accounts({
+                  builder: publicKey,
+                  hackathon: hackathon.pubkey,
+                  project: leg.project.pubkey,
+                  userStake: stakePda(publicKey, leg.project.pubkey),
+                  builderTokenAccount: userAta,
+                  escrow,
+                  tokenProgram: TOKEN_PROGRAM_ID,
+                  systemProgram: SystemProgram.programId,
+                })
+            : (program.methods as any)
+                .stake(new BN(leg.amountLamports.toString()))
+                .accounts({
+                  user: publicKey,
+                  hackathon: hackathon.pubkey,
+                  project: leg.project.pubkey,
+                  userStake: stakePda(publicKey, leg.project.pubkey),
+                  userTokenAccount: userAta,
+                  escrow,
+                  tokenProgram: TOKEN_PROGRAM_ID,
+                  systemProgram: SystemProgram.programId,
+                });
 
-          if (whitelistEntry) {
-            builder.remainingAccounts([
+          if (!isBuilder && whitelistEntry) {
+            txBuilder.remainingAccounts([
               { pubkey: whitelistEntry, isWritable: false, isSigner: false },
             ]);
           }
 
-          return builder.instruction();
+          return txBuilder.instruction();
         }),
       );
 

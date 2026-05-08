@@ -187,22 +187,36 @@ export default function ParlayModal({
             feeRecipient: hackathon.feeRecipient,
             openStaking: hackathon.openStaking,
           });
-          const builder = (program.methods as any)
-            .stake(new BN((amounts[i] ?? 0n).toString()))
-            .accounts({
-              user: publicKey,
-              hackathon: hackathon.pubkey,
-              project: project.pubkey,
-              userStake,
-              userTokenAccount: userAta,
-              escrow,
-              tokenProgram: TOKEN_PROGRAM_ID,
-              systemProgram: SystemProgram.programId,
-            });
-          if (whitelistEntry) {
-            builder.remainingAccounts([{ pubkey: whitelistEntry, isWritable: false, isSigner: false }]);
+          const isBuilder = project.builderWallet.equals(publicKey);
+          const txBuilder = isBuilder
+            ? (program.methods as any)
+                .selfStake(new BN((amounts[i] ?? 0n).toString()))
+                .accounts({
+                  builder: publicKey,
+                  hackathon: hackathon.pubkey,
+                  project: project.pubkey,
+                  userStake,
+                  builderTokenAccount: userAta,
+                  escrow,
+                  tokenProgram: TOKEN_PROGRAM_ID,
+                  systemProgram: SystemProgram.programId,
+                })
+            : (program.methods as any)
+                .stake(new BN((amounts[i] ?? 0n).toString()))
+                .accounts({
+                  user: publicKey,
+                  hackathon: hackathon.pubkey,
+                  project: project.pubkey,
+                  userStake,
+                  userTokenAccount: userAta,
+                  escrow,
+                  tokenProgram: TOKEN_PROGRAM_ID,
+                  systemProgram: SystemProgram.programId,
+                });
+          if (!isBuilder && whitelistEntry) {
+            txBuilder.remainingAccounts([{ pubkey: whitelistEntry, isWritable: false, isSigner: false }]);
           }
-          return builder.instruction();
+          return txBuilder.instruction();
         }),
       );
 

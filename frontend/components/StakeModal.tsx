@@ -49,6 +49,7 @@ export default function StakeModal({
   );
 
   const nowSecs = Math.floor(Date.now() / 1000);
+  const isBuilder = !!publicKey && project.builderWallet.equals(publicKey);
   const canUnstake = !!stake && stake.amount > 0n && !stake.isClaimed && nowSecs < hackathon.cutoffTimestamp;
 
   // Live tier-1 payout estimate for the amount being typed
@@ -85,7 +86,7 @@ export default function StakeModal({
     if (!publicKey || !anchorWallet) return;
     const raw = parseTokens(amount);
     if (raw <= 0n) { setTxError("Enter a valid amount"); return; }
-    // Frontend-side cap enforcement — saves the user a failed transaction.
+
     const existingAmount = stake?.amount ?? 0n;
     if (existingAmount + raw > BigInt(MAX_STAKE_PER_WALLET)) {
       setTxError(`Stake would exceed the ${Number(MAX_STAKE_PER_WALLET) / 1_000_000} USDC per-wallet cap`);
@@ -96,11 +97,16 @@ export default function StakeModal({
       return;
     }
 
+    if (isBuilder && hackathon.depositAmount > 0n && raw < hackathon.depositAmount) {
+      setTxError(`Self-stake minimum is ${formatTokens(hackathon.depositAmount)} USDC`);
+      return;
+    }
+
     setBusy(true);
     setTxError(null);
     try {
       const program = getProgram(anchorWallet);
-      const { userAta, escrow, userStake, whitelistEntry } = buildStakeAccounts({
+      const { userAta, escrow, userStake } = buildStakeAccounts({
         hackathon: hackathon.pubkey,
         project: project.pubkey,
         user: publicKey,
@@ -109,27 +115,51 @@ export default function StakeModal({
         openStaking: hackathon.openStaking,
       });
 
-      const stakeBuilder = (program.methods as any)
-        .stake(new BN(raw.toString()))
-        .accounts({
-          user: publicKey,
+      if (isBuilder) {
+        await (program.methods as any)
+          .selfStake(new BN(raw.toString()))
+          .accounts({
+            builder: publicKey,
+            hackathon: hackathon.pubkey,
+            project: project.pubkey,
+            userStake,
+            builderTokenAccount: userAta,
+            escrow,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+      } else {
+        const { whitelistEntry } = buildStakeAccounts({
           hackathon: hackathon.pubkey,
           project: project.pubkey,
-          userStake,
-          userTokenAccount: userAta,
-          escrow,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
+          user: publicKey,
+          usdcMint: hackathon.usdcMint,
+          feeRecipient: hackathon.feeRecipient,
+          openStaking: hackathon.openStaking,
         });
 
-      // When open_staking is false, pass the whitelist PDA as a remaining account
-      if (whitelistEntry) {
-        stakeBuilder.remainingAccounts([
-          { pubkey: whitelistEntry, isWritable: false, isSigner: false },
-        ]);
-      }
+        const stakeBuilder = (program.methods as any)
+          .stake(new BN(raw.toString()))
+          .accounts({
+            user: publicKey,
+            hackathon: hackathon.pubkey,
+            project: project.pubkey,
+            userStake,
+            userTokenAccount: userAta,
+            escrow,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          });
 
-      await stakeBuilder.rpc();
+        if (whitelistEntry) {
+          stakeBuilder.remainingAccounts([
+            { pubkey: whitelistEntry, isWritable: false, isSigner: false },
+          ]);
+        }
+
+        await stakeBuilder.rpc();
+      }
 
       onSuccess();
       onClose();
@@ -339,7 +369,7 @@ export default function StakeModal({
                 className="ui-btn ui-btn-indigo"
                 style={{ flex: 1 }}
               >
-                {busy ? "Sending…" : "Stake"}
+                {busy ? "Sending…" : isBuilder ? "Self-stake" : "Stake"}
               </button>
               {hasStake && (
                 <button
