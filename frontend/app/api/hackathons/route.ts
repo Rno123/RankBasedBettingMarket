@@ -25,7 +25,7 @@ interface MockHackathon {
 
 const MOCK_HACKATHONS: MockHackathon[] = [
   {
-    id: "mock-frontier-001",
+    id: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
     name: "Solana Frontier 2026",
     totalPool: 245_830_000_000,
     projectCount: 247,
@@ -34,7 +34,7 @@ const MOCK_HACKATHONS: MockHackathon[] = [
     tierExpectedCounts: [1, 4, 8, 0, 0],
   },
   {
-    id: "mock-renaissance-001",
+    id: "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bxq",
     name: "Colosseum Renaissance S2",
     totalPool: 182_400_000_000,
     projectCount: 183,
@@ -43,7 +43,7 @@ const MOCK_HACKATHONS: MockHackathon[] = [
     tierExpectedCounts: [1, 3, 6, 0],
   },
   {
-    id: "mock-breakpoint-001",
+    id: "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
     name: "Breakpoint Hacks 2026",
     totalPool: 87_500_000_000,
     projectCount: 94,
@@ -52,7 +52,7 @@ const MOCK_HACKATHONS: MockHackathon[] = [
     tierExpectedCounts: [3, 5, 0],
   },
   {
-    id: "mock-radar-001",
+    id: "So11111111111111111111111111111111111111112",
     name: "Radar × Superteam",
     totalPool: 54_200_000_000,
     projectCount: 61,
@@ -61,7 +61,7 @@ const MOCK_HACKATHONS: MockHackathon[] = [
     tierExpectedCounts: [1, 3],
   },
   {
-    id: "mock-mobile-001",
+    id: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     name: "Solana Mobile Wave",
     totalPool: 38_750_000_000,
     projectCount: 42,
@@ -70,7 +70,7 @@ const MOCK_HACKATHONS: MockHackathon[] = [
     tierExpectedCounts: [1, 3],
   },
   {
-    id: "mock-depin-001",
+    id: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
     name: "DePIN Frontier",
     totalPool: 29_100_000_000,
     projectCount: 33,
