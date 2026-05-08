@@ -66,7 +66,6 @@ async function main() {
   anchor.setProvider(provider);
   const program = new Program(
     require("../lib/hackathon_betting.json"),
-    PROGRAM_ID,
     provider,
   ) as any;
 

@@ -364,14 +364,14 @@ function StepBrowse({ hackathons, projectCounts, meta, loading, error, onPick, e
             const id = h.pubkey.toBase58();
             const m = meta[id];
             const count = projectCounts[id] ?? 0;
-            const status = hackathonStatus(h);
+            const status = hackathonStatus(h.irlHackathonDeadlineTimestamp, h.cutoffTimestamp, h.isResolved);
             return (
               <button key={id} onClick={() => onPick(id)}
                 className="demo-hackathon-card"
                 style={compact ? { padding: "12px 16px" } : undefined}>
                 <div className="demo-hc-left">
                   <span className="demo-hc-name">{m?.name ?? h.name}</span>
-                  <span className="demo-hc-meta">{count} projects · {status === "ongoing" ? timeUntil(h.cutoffTimestamp) : status === "cutoff" ? "Cutoff" : "Resolved"}</span>
+                  <span className="demo-hc-meta">{count} projects · {status === "open" ? timeUntil(h.cutoffTimestamp) : status === "cutoff" ? "Cutoff" : "Resolved"}</span>
                 </div>
                 <div className="demo-hc-right">
                   <span className="demo-hc-pool">{formatTokens(h.totalPool)} USDC</span>
@@ -415,7 +415,7 @@ function StepPick({ hackathon, projects, loading, error, stakesByProject, hackat
   if (error) return <div className="demo-error">{error}</div>;
 
   const m = meta[hackathon.pubkey.toBase58()];
-  const status = hackathonStatus(hackathon);
+  const status = hackathonStatus(hackathon.irlHackathonDeadlineTimestamp, hackathon.cutoffTimestamp, hackathon.isResolved);
   const claimable = projects.filter(p => p.rank > 0 && stakesByProject[p.pubkey.toBase58()] && !stakesByProject[p.pubkey.toBase58()]!.isClaimed);
 
   return (
@@ -424,11 +424,11 @@ function StepPick({ hackathon, projects, loading, error, stakesByProject, hackat
         <div>
           <h4 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 800 }}>{m?.name ?? hackathon.name}</h4>
           <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "var(--c-text-3)" }}>
-            {formatTokens(hackathon.totalPool)} USDC · {projects.length} projects · {status === "ongoing" ? timeUntil(hackathon.cutoffTimestamp) : status}
+            {formatTokens(hackathon.totalPool)} USDC · {projects.length} projects · {status === "open" ? timeUntil(hackathon.cutoffTimestamp) : status}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {status === "ongoing" && <button onClick={onOpenParlay} className="ui-btn ui-btn-indigo ui-btn-sm">Parlay Bet</button>}
+          {status === "open" && <button onClick={onOpenParlay} className="ui-btn ui-btn-indigo ui-btn-sm">Parlay Bet</button>}
         </div>
       </div>
 
@@ -437,9 +437,7 @@ function StepPick({ hackathon, projects, loading, error, stakesByProject, hackat
       ) : (
         <div className="demo-project-list">
           {projects.sort((a, b) => Number(b.totalStaked - a.totalStaked)).map(p => (
-            <ProjectRow key={p.pubkey.toBase58()} hackathon={hackathon} project={p}
-              stake={stakesByProject[p.pubkey.toBase58()] ?? null}
-              onSuccess={refresh} />
+            <ProjectRow key={p.pubkey.toBase58()} hackathon={hackathon} project={p} status={status} isWhitelisted={null} onStakeUpdated={refresh} />
           ))}
         </div>
       )}
@@ -509,6 +507,11 @@ function StepSubmit({ hackathon, publicKey, anchorWallet, signMessage, sendTrans
   if (!hackathon) return <div className="demo-prompt">Pick a hackathon in Step 4 first.</div>;
   if (!publicKey || !signMessage) return <div className="demo-prompt"><ConnectWalletButton /> Connect a wallet that supports message signing.</div>;
 
+  // Capture narrowed values for use inside async closure
+  const _hackathon = hackathon;
+  const _publicKey = publicKey;
+  const _signMessage = signMessage;
+
   async function handleSubmit() {
     if (!name.trim()) { setErr("Project name required"); return; }
     if (name.trim().length > 120) { setErr("Name too long (max 120 chars)"); return; }
@@ -517,23 +520,23 @@ function StepSubmit({ hackathon, publicKey, anchorWallet, signMessage, sendTrans
 
     setErr(null); setBusy(true);
     try {
-      const projectPk = await projectPdaFromUrl(hackathon.pubkey, url);
-      if (!hackathon.requiresApproval && anchorWallet) {
+      const projectPk = await projectPdaFromUrl(_hackathon.pubkey, url);
+      if (!_hackathon.requiresApproval && anchorWallet) {
         const existing = await (getReadonlyProgram().account as any).projectAccount.fetchNullable(projectPk).catch(() => null);
         if (existing) {
           const eb = (existing.builderWallet as PublicKey).toBase58();
-          if (eb !== publicKey.toBase58()) throw new Error("Already registered by a different wallet");
+          if (eb !== _publicKey.toBase58()) throw new Error("Already registered by a different wallet");
         } else {
           const normalized = normalizeGitHubUrl(url);
           const urlHash = Array.from(await hashUrl(url));
           const program = getProgram(anchorWallet);
           await (program.methods as any).registerProject(normalized, urlHash).accounts({
-            caller: publicKey, builder: publicKey, hackathon: hackathon.pubkey,
+            caller: _publicKey, builder: _publicKey, hackathon: _hackathon.pubkey,
             project: projectPk, systemProgram: SystemProgram.programId,
           }).rpc();
         }
       }
-      const sig = signatureToBase64(await signMessage(new TextEncoder().encode(buildProjectRegistrationMessage(projectPk.toBase58()))));
+      const sig = signatureToBase64(await _signMessage(new TextEncoder().encode(buildProjectRegistrationMessage(projectPk.toBase58()))));
       let iconB64: string | null = null;
       if (iconFile) {
         try {
@@ -547,12 +550,12 @@ function StepSubmit({ hackathon, publicKey, anchorWallet, signMessage, sendTrans
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           authEmail: null, discord: discord.trim() || undefined,
-          githubUrl: url, hackathonPubkey: hackathon.pubkey.toBase58(),
+          githubUrl: url, hackathonPubkey: _hackathon.pubkey.toBase58(),
           iconBase64: iconB64, projectName: name.trim(),
           projectPubkey: projectPk.toBase58(), signature: sig,
           telegram: telegram.trim() || undefined,
           twitterHandle: twitter.replace(/^@/, "").trim() || undefined,
-          walletAddress: publicKey.toBase58(),
+          walletAddress: _publicKey.toBase58(),
         }),
       });
       setOk(true);
@@ -683,7 +686,7 @@ function StepSelfStake({ hackathon, publicKey, anchorWallet, sendTransaction, co
   async function stake() {
     const raw = parseTokens(amt || "0");
     if (raw <= 0n) { setErr("Enter an amount"); return; }
-    if (raw + (balance ?? 0n) > balance) { setErr("Insufficient balance"); return; }
+    if (raw > (balance ?? 0n)) { setErr("Insufficient balance"); return; }
     if (!projectId) { setErr("Enter your project public key"); return; }
     setBusy(true); setErr(null);
     try {
@@ -944,7 +947,7 @@ function StepResolve({ isAdmin, hackathons, publicKey, anchorWallet, sendTransac
           admin: publicKey!, hackathon: hackathon.pubkey,
           project: new PublicKey(pk),
         }).remainingAccounts(
-          publicKey.toBase58() !== PROTOCOL_ADMIN ? [{ pubkey: protocolAdminPda(publicKey!), isWritable: false, isSigner: false }] : []
+          publicKey!.toBase58() !== PROTOCOL_ADMIN ? [{ pubkey: protocolAdminPda(publicKey!), isWritable: false, isSigner: false }] : []
         ).transaction();
         await sendTxWithConfirm({ connection, feePayer: publicKey!, sendTransaction, transaction: tx });
       }
