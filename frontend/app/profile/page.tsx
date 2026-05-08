@@ -183,7 +183,7 @@ export default function ProfilePage() {
   const { publicKey } = useWallet();
   const { hackathons, loading: hackathonsLoading } = useHackathons();
   const [refreshKey, setRefreshKey] = useState(0);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const { entries, loading: stakesLoading } = useMyStakes(publicKey ?? null, refreshKey);
 
   const hackathonMap = new Map(hackathons.map(h => [h.pubkey.toBase58(), h]));
@@ -285,7 +285,7 @@ export default function ProfilePage() {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 {hackathonGroups.map(({ key, hackathon, entries }) => {
-                  const isExpanded = !collapsedGroups.has(key);
+                  const isExpanded = expandedGroups.has(key);
                   const hackathonName = hackathon?.name || (key !== "unknown" ? key.slice(0, 8) + "…" : "Unknown hackathon");
                   const groupTotal = entries.reduce((sum, { entry }) => sum + entry.stake.amount, 0n);
                   const projectCount = entries.length;
@@ -293,7 +293,7 @@ export default function ProfilePage() {
                     <div key={key}>
                       <button
                         onClick={() => {
-                          setCollapsedGroups(prev => {
+                          setExpandedGroups(prev => {
                             const next = new Set(prev);
                             if (next.has(key)) next.delete(key);
                             else next.add(key);
