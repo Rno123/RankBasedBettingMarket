@@ -104,20 +104,21 @@ function WalletAdapterBridge({ children }: { children: React.ReactNode }) {
 function PrivyProviders({ children }: { children: React.ReactNode }) {
   const { PrivyProvider } = require("@privy-io/react-auth");
   const { theme } = useTheme();
+  const privyConfig = useMemo(() => ({
+    loginMethods: ["email", "google", "twitter", "wallet"] as const,
+    embeddedWallets: {
+      ethereum: { createOnLogin: "off" as const },
+      solana: { createOnLogin: "users-without-wallets" as const },
+    },
+    externalWallets: {
+      solana: { connectors: getSolanaConnectors() },
+    },
+    appearance: { theme, accentColor: "#FF5B14" },
+  }), [theme]);
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
-      config={{
-        loginMethods: ["email", "google", "twitter", "wallet"],
-        embeddedWallets: {
-          ethereum: { createOnLogin: "off" },
-          solana: { createOnLogin: "users-without-wallets" },
-        },
-        externalWallets: {
-          solana: { connectors: getSolanaConnectors() },
-        },
-        appearance: { theme, accentColor: "#FF5B14" },
-      }}
+      config={privyConfig}
     >
       <WalletAdapterBridge>{children}</WalletAdapterBridge>
     </PrivyProvider>
