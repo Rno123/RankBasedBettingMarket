@@ -27,7 +27,7 @@ let _solanaConnectors: any = null;
 function getSolanaConnectors() {
   if (!_solanaConnectors) {
     const { toSolanaWalletConnectors } = require("@privy-io/react-auth/solana");
-    _solanaConnectors = toSolanaWalletConnectors();
+    _solanaConnectors = toSolanaWalletConnectors({ shouldAutoConnect: true });
   }
   return _solanaConnectors;
 }
