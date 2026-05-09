@@ -5,7 +5,7 @@ if (typeof globalThis !== "undefined" && !(globalThis as any).Buffer) {
   (globalThis as any).Buffer = Buffer;
 }
 
-import { useMemo, useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import {
   ConnectionProvider,
   WalletProvider,
@@ -16,7 +16,6 @@ import {
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
 import { RPC_URL } from "@/lib/constants";
-import { useTheme } from "@/hooks/useTheme";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
@@ -31,6 +30,28 @@ function getSolanaConnectors() {
     _solanaConnectors = toSolanaWalletConnectors();
   }
   return _solanaConnectors;
+}
+
+// Lazy singleton — built once on first render (client-only), never recreated.
+// Privy gets a stable object reference so WalletConnect is never re-initialized.
+// Appearance theme is hardcoded to "dark"; syncing runtime theme through the
+// Privy config was the root cause of repeated WalletConnect inits.
+let _privyConfig: any = null;
+function getPrivyConfig() {
+  if (!_privyConfig) {
+    _privyConfig = {
+      loginMethods: ["email", "google", "twitter", "wallet"],
+      embeddedWallets: {
+        ethereum: { createOnLogin: "off" },
+        solana: { createOnLogin: "users-without-wallets" },
+      },
+      externalWallets: {
+        solana: { connectors: getSolanaConnectors() },
+      },
+      appearance: { theme: "dark", accentColor: "#FF5B14" },
+    };
+  }
+  return _privyConfig;
 }
 
 type LinkedSolanaAccount = {
@@ -103,22 +124,10 @@ function WalletAdapterBridge({ children }: { children: React.ReactNode }) {
 
 function PrivyProviders({ children }: { children: React.ReactNode }) {
   const { PrivyProvider } = require("@privy-io/react-auth");
-  const { theme } = useTheme();
-  const privyConfig = useMemo(() => ({
-    loginMethods: ["email", "google", "twitter", "wallet"] as const,
-    embeddedWallets: {
-      ethereum: { createOnLogin: "off" as const },
-      solana: { createOnLogin: "users-without-wallets" as const },
-    },
-    externalWallets: {
-      solana: { connectors: getSolanaConnectors() },
-    },
-    appearance: { theme, accentColor: "#FF5B14" },
-  }), [theme]);
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
-      config={privyConfig}
+      config={getPrivyConfig()}
     >
       <WalletAdapterBridge>{children}</WalletAdapterBridge>
     </PrivyProvider>
