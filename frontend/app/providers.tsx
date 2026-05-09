@@ -27,7 +27,7 @@ let _solanaConnectors: any = null;
 function getSolanaConnectors() {
   if (!_solanaConnectors) {
     const { toSolanaWalletConnectors } = require("@privy-io/react-auth/solana");
-    _solanaConnectors = toSolanaWalletConnectors({ shouldAutoConnect: true });
+    _solanaConnectors = toSolanaWalletConnectors({ shouldAutoConnect: false });
   }
   return _solanaConnectors;
 }
@@ -112,9 +112,7 @@ function WalletAdapterBridge({ children }: { children: React.ReactNode }) {
     adapterRef.current?.setWallet(selectedPrivyWallet);
   }, [selectedPrivyWallet]);
 
-  // Phantom and Solflare come first so they appear at the top of the wallet modal.
-  // Privy is last — it shows up as an option but is not the default.
-  const wallets = useMemo(() => [...BASE_WALLETS, adapterRef.current!], []);
+  const wallets = useMemo(() => [adapterRef.current!], []);
 
   return (
     <WalletProvider wallets={wallets} autoConnect={true}>
