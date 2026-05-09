@@ -363,7 +363,7 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
   return (
     <div className="ui-card" style={{ margin: "0 auto", maxWidth: "24rem", padding: "clamp(20px, 5vw, 32px)" }}>
       <h2 style={{ margin: "0 0 8px", fontSize: "1.25rem", fontWeight: 700, color: "var(--c-text)" }}>Sign in to submit</h2>
-      <p style={{ margin: "0 0 24px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>Sign in to register your project and put skin in the game.</p>
+      <p style={{ margin: "0 0 24px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>Sign in to register your project on HackBet.</p>
 
       <div style={{ marginBottom: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
         <button onClick={() => signInOAuth("google")} style={oauthBtnStyle} disabled={busy}>
