@@ -93,6 +93,7 @@ function WalletAdapterBridge({ children }: { children: React.ReactNode }) {
 
 function PrivyProviders({ children }: { children: React.ReactNode }) {
   const { PrivyProvider } = require("@privy-io/react-auth");
+  const { toSolanaWalletConnectors } = require("@privy-io/react-auth/solana");
   const { theme } = useTheme();
   return (
     <PrivyProvider
@@ -102,6 +103,9 @@ function PrivyProviders({ children }: { children: React.ReactNode }) {
         embeddedWallets: {
           ethereum: { createOnLogin: "off" },
           solana: { createOnLogin: "users-without-wallets" },
+        },
+        externalWallets: {
+          solana: { connectors: toSolanaWalletConnectors() },
         },
         appearance: { theme, accentColor: "#FF5B14" },
       }}
