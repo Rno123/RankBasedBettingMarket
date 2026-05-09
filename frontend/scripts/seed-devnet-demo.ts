@@ -80,16 +80,19 @@ async function main() {
 
   // ── Step 1: Mock USDC mint ──────────────────────────────────────────────
   console.log("\n── Step 1: Mock USDC mint ──");
-  const mintKeypair = Keypair.generate();
-  const mockUsdc = mintKeypair.publicKey;
 
-  // Check if mint already exists (from a prior run)
-  const existingMint = await connection.getAccountInfo(mockUsdc);
+  // Pass existing mint as second arg to reuse: ts-node seed-devnet-demo.ts [wallet] [mint]
+  const existingMintArg = process.argv[3];
+  let mockUsdc: PublicKey;
+  let mintKeypair: Keypair | null = null;
   let mintCreated = false;
 
-  if (existingMint) {
-    console.log(`Mint ${mockUsdc.toBase58()} already exists, reusing`);
+  if (existingMintArg) {
+    mockUsdc = new PublicKey(existingMintArg);
+    console.log(`Reusing existing mint: ${mockUsdc.toBase58()}`);
   } else {
+    mintKeypair = Keypair.generate();
+    mockUsdc = mintKeypair.publicKey;
     const mintSpace = MINT_SIZE;
     const mintLamports = await connection.getMinimumBalanceForRentExemption(mintSpace);
     const createMintTx = new Transaction().add(
@@ -140,11 +143,6 @@ async function main() {
 
   for (const def of hackathonDefs) {
     const deadline = now + def.deadlineDays * day;
-    const paddedPcts = Array(8).fill(0) as number[];
-    def.tierPcts.forEach((p, i) => paddedPcts[i] = p);
-    const paddedCounts = Array(8).fill(0) as number[];
-    def.tierCounts.forEach((c, i) => paddedCounts[i] = c);
-
     const hackathonPk = hackathonPda(admin, def.name);
     const existing = await connection.getAccountInfo(hackathonPk);
     if (existing) {
@@ -155,9 +153,15 @@ async function main() {
 
     const escrowPk = escrowPda(hackathonPk);
     const tx = await program.methods.initializeHackathon(
-      def.name, new BN(deadline), def.tierPcts.length,
-      paddedPcts, paddedCounts, new BN(def.feeBps),
-      new BN(def.deposit), !def.openReg, def.openStaking,
+      def.name,
+      new BN(deadline),
+      Buffer.from(def.tierPcts),
+      Buffer.from(def.tierCounts),
+      admin,           // fee_recipient
+      def.feeBps,      // u16
+      new BN(def.deposit),
+      !def.openReg,
+      def.openStaking,
     ).accounts({
       admin, hackathon: hackathonPk, escrow: escrowPk,
       usdcMint: mockUsdc, tokenProgram: TOKEN_PROGRAM_ID,
@@ -226,6 +230,29 @@ async function main() {
     }
     console.log(`  ${h.name}: ${urls.length} projects`);
   }
+
+  // ── Step 3.5: Pay builder deposits ─────────────────────────────────────
+  console.log("\n── Step 3.5: Pay builder deposits ──");
+  let deposited = 0;
+  for (const { pubkey: projectPk, hackathon: hackathonPk } of createdProjects) {
+    const projectInfo = await connection.getAccountInfo(projectPk);
+    if (!projectInfo) continue;
+    // Check depositAmountPaid (skip if already paid) — read offset 8+4+url_len+8+8+1+1+32 onward
+    // Simplest: just try and let the on-chain check reject if already paid
+    const escrowPk = escrowPda(hackathonPk);
+    try {
+      const tx = await program.methods.payDeposit().accounts({
+        builder: admin, hackathon: hackathonPk, project: projectPk,
+        builderTokenAccount: adminAta, escrow: escrowPk,
+        tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId,
+      }).transaction();
+      await provider.sendAndConfirm(tx, [], { commitment: "confirmed" });
+      deposited++;
+    } catch (e: any) {
+      // already paid or not required — skip silently
+    }
+  }
+  console.log(`  Paid deposit for ${deposited} projects`);
 
   // ── Step 4: Place some stakes ───────────────────────────────────────────
   console.log("\n── Step 4: Place stakes ──");
