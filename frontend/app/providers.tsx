@@ -5,7 +5,7 @@ if (typeof globalThis !== "undefined" && !(globalThis as any).Buffer) {
   (globalThis as any).Buffer = Buffer;
 }
 
-import { useEffect, useRef, useMemo } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import {
   ConnectionProvider,
   WalletProvider,
@@ -16,43 +16,12 @@ import {
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
 import { RPC_URL } from "@/lib/constants";
+import { useTheme } from "@/hooks/useTheme";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
+const BASE_WALLETS = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
-
-// Initialized once at module load so WalletConnect Core is never created twice.
-let _solanaConnectors: any = null;
-function getSolanaConnectors() {
-  if (!_solanaConnectors) {
-    const { toSolanaWalletConnectors } = require("@privy-io/react-auth/solana");
-    _solanaConnectors = toSolanaWalletConnectors({ shouldAutoConnect: false });
-  }
-  return _solanaConnectors;
-}
-
-// Lazy singleton — built once on first render (client-only), never recreated.
-// Privy gets a stable object reference so WalletConnect is never re-initialized.
-// Appearance theme is hardcoded to "dark"; syncing runtime theme through the
-// Privy config was the root cause of repeated WalletConnect inits.
-let _privyConfig: any = null;
-function getPrivyConfig() {
-  if (!_privyConfig) {
-    _privyConfig = {
-      loginMethods: ["email", "google", "twitter", "wallet"],
-      embeddedWallets: {
-        ethereum: { createOnLogin: "off" },
-        solana: { createOnLogin: "users-without-wallets" },
-      },
-      externalWallets: {
-        walletConnect: { enabled: false },
-        solana: { connectors: getSolanaConnectors() },
-      },
-      appearance: { theme: "dark", accentColor: "#FF5B14" },
-    };
-  }
-  return _privyConfig;
-}
 
 type LinkedSolanaAccount = {
   address?: string;
@@ -111,10 +80,12 @@ function WalletAdapterBridge({ children }: { children: React.ReactNode }) {
     adapterRef.current?.setWallet(selectedPrivyWallet);
   }, [selectedPrivyWallet]);
 
-  const wallets = useMemo(() => [adapterRef.current!], []);
+  // Phantom and Solflare come first so they appear at the top of the wallet modal.
+  // Privy is last — it shows up as an option but is not the default.
+  const wallets = useMemo(() => [...BASE_WALLETS, adapterRef.current!], []);
 
   return (
-    <WalletProvider wallets={wallets} autoConnect={false}>
+    <WalletProvider wallets={wallets} autoConnect={true}>
       <WalletModalProvider>{children}</WalletModalProvider>
     </WalletProvider>
   );
@@ -122,10 +93,18 @@ function WalletAdapterBridge({ children }: { children: React.ReactNode }) {
 
 function PrivyProviders({ children }: { children: React.ReactNode }) {
   const { PrivyProvider } = require("@privy-io/react-auth");
+  const { theme } = useTheme();
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
-      config={getPrivyConfig()}
+      config={{
+        loginMethods: ["email", "google", "twitter", "wallet"],
+        embeddedWallets: {
+          ethereum: { createOnLogin: "off" },
+          solana: { createOnLogin: "users-without-wallets" },
+        },
+        appearance: { theme, accentColor: "#FF5B14" },
+      }}
     >
       <WalletAdapterBridge>{children}</WalletAdapterBridge>
     </PrivyProvider>
@@ -133,12 +112,8 @@ function PrivyProviders({ children }: { children: React.ReactNode }) {
 }
 
 function PlainProviders({ children }: { children: React.ReactNode }) {
-  const wallets = useMemo(
-    () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
-    [],
-  );
   return (
-    <WalletProvider wallets={wallets} autoConnect={true}>
+    <WalletProvider wallets={BASE_WALLETS} autoConnect={true}>
       <WalletModalProvider>{children}</WalletModalProvider>
     </WalletProvider>
   );
