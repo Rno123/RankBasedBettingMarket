@@ -19,7 +19,6 @@ import { RPC_URL } from "@/lib/constants";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
-const BASE_WALLETS = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 
 // Initialized once at module load so WalletConnect Core is never created twice.
@@ -134,8 +133,12 @@ function PrivyProviders({ children }: { children: React.ReactNode }) {
 }
 
 function PlainProviders({ children }: { children: React.ReactNode }) {
+  const wallets = useMemo(
+    () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
+    [],
+  );
   return (
-    <WalletProvider wallets={BASE_WALLETS} autoConnect={true}>
+    <WalletProvider wallets={wallets} autoConnect={true}>
       <WalletModalProvider>{children}</WalletModalProvider>
     </WalletProvider>
   );

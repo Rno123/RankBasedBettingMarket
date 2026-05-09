@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { usePrivy } from "@privy-io/react-auth";
 
 type ConnectWalletButtonProps = {
   fullWidth?: boolean;
@@ -19,6 +20,7 @@ export default function ConnectWalletButton({
 }: ConnectWalletButtonProps) {
   const { publicKey, connected, connecting, disconnect, wallet } = useWallet();
   const { setVisible } = useWalletModal();
+  const { login } = usePrivy();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +51,11 @@ export default function ConnectWalletButton({
     if (connected) {
       setOpen((v) => !v);
     } else {
-      setVisible(true);
+      // Call login() directly here — inside the click handler — so the browser's
+      // user gesture context is intact when Privy opens its Google Auth popup.
+      // Going through setVisible → wallet modal → adapter.connect() loses the
+      // gesture context across async hops, silently blocking the popup on desktop.
+      login();
     }
   }
 
