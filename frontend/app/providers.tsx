@@ -114,7 +114,7 @@ function WalletAdapterBridge({ children }: { children: React.ReactNode }) {
   const wallets = useMemo(() => [adapterRef.current!], []);
 
   return (
-    <WalletProvider wallets={wallets} autoConnect={true}>
+    <WalletProvider wallets={wallets} autoConnect={false}>
       <WalletModalProvider>{children}</WalletModalProvider>
     </WalletProvider>
   );

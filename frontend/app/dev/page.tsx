@@ -286,9 +286,8 @@ function AuthSection({ onSession }: { onSession: (s: Session) => void }) {
   const supabase = getSupabase();
 
   function authRedirectUrl(): string {
-    const base =
-      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
-      (typeof window !== "undefined" ? window.location.origin : "");
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const base = origin || process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "";
     return `${base}/dev`;
   }
 
@@ -1471,6 +1470,7 @@ function DevPortalPage() {
   const searchParams = useSearchParams();
   const deepLinkHackathon = searchParams?.get("hackathon");
   const isPreview = searchParams?.get("preview") !== null;
+  const oauthError = searchParams?.get("error_description") ?? searchParams?.get("error") ?? null;
 
   function handleDepositPaid(projectPubkey: string) {
     setBuilderRefreshKey((v) => v + 1);
@@ -1544,6 +1544,12 @@ function DevPortalPage() {
           <div className="ui-skeleton" style={{ height: "192px", borderRadius: "16px" }} />
         ) : !session ? (
           <StepIndicator current={1} />
+        ) : null}
+
+        {sessionLoading ? null : !session && oauthError ? (
+          <div style={{ marginBottom: "16px", borderRadius: "12px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "14px 16px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>
+            Sign-in failed: {decodeURIComponent(oauthError.replace(/\+/g, " "))}
+          </div>
         ) : null}
 
         {sessionLoading ? null : !session ? (
