@@ -23,6 +23,16 @@ import "@solana/wallet-adapter-react-ui/styles.css";
 const BASE_WALLETS = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 
+// Initialized once at module load so WalletConnect Core is never created twice.
+let _solanaConnectors: any = null;
+function getSolanaConnectors() {
+  if (!_solanaConnectors) {
+    const { toSolanaWalletConnectors } = require("@privy-io/react-auth/solana");
+    _solanaConnectors = toSolanaWalletConnectors();
+  }
+  return _solanaConnectors;
+}
+
 type LinkedSolanaAccount = {
   address?: string;
   chainType?: string;
@@ -93,7 +103,6 @@ function WalletAdapterBridge({ children }: { children: React.ReactNode }) {
 
 function PrivyProviders({ children }: { children: React.ReactNode }) {
   const { PrivyProvider } = require("@privy-io/react-auth");
-  const { toSolanaWalletConnectors } = require("@privy-io/react-auth/solana");
   const { theme } = useTheme();
   return (
     <PrivyProvider
@@ -105,7 +114,7 @@ function PrivyProviders({ children }: { children: React.ReactNode }) {
           solana: { createOnLogin: "users-without-wallets" },
         },
         externalWallets: {
-          solana: { connectors: toSolanaWalletConnectors() },
+          solana: { connectors: getSolanaConnectors() },
         },
         appearance: { theme, accentColor: "#FF5B14" },
       }}
