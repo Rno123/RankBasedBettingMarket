@@ -46,6 +46,7 @@ function getPrivyConfig() {
         solana: { createOnLogin: "users-without-wallets" },
       },
       externalWallets: {
+        walletConnect: { enabled: false },
         solana: { connectors: getSolanaConnectors() },
       },
       appearance: { theme: "dark", accentColor: "#FF5B14" },
