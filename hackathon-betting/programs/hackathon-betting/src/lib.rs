@@ -5,8 +5,6 @@ declare_id!("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd");
 
 // ── Protocol constants ─────────────────────────────────────────────────────
 
-/// Seconds before irl_hackathon_deadline_timestamp after which unstaking is forbidden.
-pub const SELL_CUTOFF_SECS: i64 = 86_400;
 /// Window after irl_hackathon_deadline_timestamp during which approved builders may claim their deposit back;
 /// after this window, unclaimed/undeclared deposits become forfeitable by the admin.
 pub const DEPOSIT_CLAIM_WINDOW_SECS: i64 = 14 * 86_400;
@@ -222,6 +220,8 @@ pub mod hackathon_betting {
         require!(name.len() <= NAME_MAX_LEN, BettingError::NameTooLong);
 
         let now = Clock::get()?.unix_timestamp;
+        // Cap cutoff_secs to 7 days to prevent u64→i64 cast overflow on absurdly large values.
+        require!(cutoff_secs <= 7 * 86_400, BettingError::InvalidTimestamp);
         let min_deadline = if cutoff_secs == 0 {
             now.saturating_add(1)
         } else {

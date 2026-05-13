@@ -514,11 +514,11 @@ function DepositManagementPanel({ hackathon, view }: { hackathon: HackathonEntry
     setBulkResult(null);
     try {
       await approveProjectPubkeys(approvalEligible.map((project) => project.pubkey));
-      setBulkResult(`Approved ${approvalEligible.length} builder submission${approvalEligible.length === 1 ? "" : "s"} on-chain.`);
+      setBulkResult(`Released ${approvalEligible.length} deposit${approvalEligible.length === 1 ? "" : "s"} on-chain.`);
       setMessages((current) => {
         const next = { ...current };
         for (const project of approvalEligible) {
-          next["approve_" + project.pubkey.toBase58()] = { ok: "Submission approved on-chain" };
+          next["approve_" + project.pubkey.toBase58()] = { ok: "Deposit released on-chain" };
         }
         return next;
       });
@@ -535,7 +535,7 @@ function DepositManagementPanel({ hackathon, view }: { hackathon: HackathonEntry
     setMessages((m) => ({ ...m, ["approve_" + projectPubkey]: {} }));
     try {
       await approveProjectPubkeys([new PublicKey(projectPubkey)]);
-      setMessages((m) => ({ ...m, ["approve_" + projectPubkey]: { ok: "Submission approved on-chain" } }));
+      setMessages((m) => ({ ...m, ["approve_" + projectPubkey]: { ok: "Deposit released on-chain" } }));
     } catch (e: any) {
       setMessages((m) => ({ ...m, ["approve_" + projectPubkey]: { err: e.message ?? "Failed" } }));
     } finally {
@@ -607,7 +607,7 @@ function DepositManagementPanel({ hackathon, view }: { hackathon: HackathonEntry
         <div style={{ marginBottom: "16px", borderRadius: "10px", border: "1px solid var(--c-emerald-border)", background: "var(--c-emerald-light)", padding: "14px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
             <div>
-              <p style={{ margin: "0 0 2px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>Approve declared builders</p>
+              <p style={{ margin: "0 0 2px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-emerald-text)" }}>Release builder deposits</p>
               <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--c-text-3)" }}>
                 Builder deposits unlock only after organizer approval. Eligible now: {approvalEligible.length}.
               </p>
@@ -619,8 +619,8 @@ function DepositManagementPanel({ hackathon, view }: { hackathon: HackathonEntry
               style={{ flexShrink: 0 }}
             >
               {busy === "bulk_approve"
-                ? "Approving…"
-                : approvalEligible.length === 0 ? "Nothing pending" : "Approve all declared"}
+                ? "Releasing…"
+                : approvalEligible.length === 0 ? "Nothing pending" : "Release all deposits"}
             </button>
           </div>
           {bulkResult && (
@@ -682,7 +682,7 @@ function DepositManagementPanel({ hackathon, view }: { hackathon: HackathonEntry
                         disabled={busy === "approve_" + pkStr}
                         className="ui-btn ui-btn-emerald ui-btn-xs"
                       >
-                        {busy === "approve_" + pkStr ? "…" : "Approve submission"}
+                        {busy === "approve_" + pkStr ? "…" : "Release deposit"}
                       </button>
                     )}
                     {view === "advanced" && canForfeit(p) && (
@@ -1578,7 +1578,7 @@ interface Submission {
   created_at: string;
 }
 
-type AdminPanelTab = "create" | "manage" | "resolutions" | "advanced" | "how-to";
+type AdminPanelTab = "create" | "manage" | "resolve" | "admin-guide" | "advanced";
 
 function AdminGuideSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -1941,6 +1941,7 @@ export default function AdminPage() {
   const { hackathons, loading, reload: reloadHackathons } = useHackathons();
   const [version, setVersion] = useState(0);
   const [adminPanelTab, setAdminPanelTab] = useState<AdminPanelTab>("manage");
+  const [advancedAllowed, setAdvancedAllowed] = useState<boolean | null>(null);
   const [adminSessionReady, setAdminSessionReady] = useState(false);
   const [adminSessionBusy, setAdminSessionBusy] = useState(false);
   const [adminSessionErr, setAdminSessionErr] = useState<string | null>(null);
@@ -1986,6 +1987,18 @@ export default function AdminPage() {
     void loadExistingSession();
     return () => { cancelled = true; };
   }, [publicKey?.toBase58(), Boolean(signMessage), isAdmin]);
+
+  useEffect(() => {
+    if (adminPanelTab !== "advanced" || !publicKey) { setAdvancedAllowed(null); return; }
+    setAdvancedAllowed(null);
+    fetch("/api/admin/advanced-access")
+      .then((r) => r.json())
+      .then((payload) => {
+        const wallets: string[] = payload.wallets ?? [];
+        setAdvancedAllowed(wallets.includes(publicKey.toBase58()));
+      })
+      .catch(() => setAdvancedAllowed(false));
+  }, [adminPanelTab, publicKey?.toBase58()]);
 
   async function startAdminSession() {
     if (!signMessage || !publicKey) {
@@ -2075,9 +2088,9 @@ export default function AdminPage() {
               {([
                 ...(isProtocolAdmin ? [{ id: "create" as const, label: "Create" }] : []),
                 { id: "manage" as const, label: "Manage" },
-                { id: "resolutions" as const, label: "Resolutions" },
+                { id: "resolve" as const, label: "Resolve" },
+                { id: "admin-guide" as const, label: "Admin Guide" },
                 { id: "advanced" as const, label: "Advanced" },
-                { id: "how-to" as const, label: "How to" },
               ] as Array<{ id: AdminPanelTab; label: string }>).map((tab, i, arr) => (
                 <button
                   key={tab.id}
@@ -2128,8 +2141,8 @@ export default function AdminPage() {
               />
             )}
 
-            {/* Resolutions tab */}
-            {adminPanelTab === "resolutions" && (
+            {/* Resolve tab */}
+            {adminPanelTab === "resolve" && (
               <PhaseGroupedHackathons
                 hackathons={visibleHackathons}
                 loading={loading}
@@ -2139,20 +2152,31 @@ export default function AdminPage() {
               />
             )}
 
-            {/* Advanced tab */}
-            {adminPanelTab === "advanced" && (
-              <PhaseGroupedHackathons
-                hackathons={visibleHackathons}
-                loading={loading}
-                version={version}
-                emptyLabel={isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
-                renderCard={(h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="advanced" />}
-              />
+            {/* Admin Guide tab */}
+            {adminPanelTab === "admin-guide" && (
+              <AdminHowToPanel canCreate={isProtocolAdmin} />
             )}
 
-            {/* How-to tab */}
-            {adminPanelTab === "how-to" && (
-              <AdminHowToPanel canCreate={isProtocolAdmin} />
+            {/* Advanced tab — gated by off-chain wallet whitelist */}
+            {adminPanelTab === "advanced" && (
+              advancedAllowed === null ? (
+                <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />
+              ) : !advancedAllowed ? (
+                <div style={{ borderRadius: "16px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "24px" }}>
+                  <p style={{ margin: 0, fontWeight: 700, color: "var(--c-red-text)" }}>Access restricted</p>
+                  <p style={{ margin: "6px 0 0", fontSize: "0.875rem", color: "var(--c-red-text)" }}>
+                    This wallet is not on the Advanced panel access list. Contact the super-admin to request access.
+                  </p>
+                </div>
+              ) : (
+                <PhaseGroupedHackathons
+                  hackathons={visibleHackathons}
+                  loading={loading}
+                  version={version}
+                  emptyLabel={isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
+                  renderCard={(h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="advanced" />}
+                />
+              )
             )}
           </div>
         )}

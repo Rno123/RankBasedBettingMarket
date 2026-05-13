@@ -403,6 +403,121 @@ function GlobalWhitelistPanel({
   );
 }
 
+// ── Advanced Panel Access ──────────────────────────────────────────────────────
+
+function AdvancedAccessPanel({ adminAuth }: { adminAuth: AdminApiAuth }) {
+  const { publicKey } = useWallet();
+  const [wallets, setWallets] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  const isSuperAdmin = publicKey?.toBase58() === PROTOCOL_ADMIN;
+
+  useEffect(() => {
+    fetch("/api/admin/advanced-access")
+      .then((r) => r.json())
+      .then((payload) => setWallets(payload.wallets ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [ok]);
+
+  async function addWallet() {
+    if (!adminAuth.ensureSession) return;
+    setErr(null); setOk(null); setBusy("add");
+    try {
+      await adminAuth.ensureSession();
+      const res = await fetch("/api/admin/advanced-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_address: input.trim() }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error ?? "Failed");
+      setOk(`Added ${input.trim().slice(0, 8)}…`);
+      setInput("");
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(null); }
+  }
+
+  async function removeWallet(addr: string) {
+    if (!adminAuth.ensureSession) return;
+    setErr(null); setOk(null); setBusy(addr);
+    try {
+      await adminAuth.ensureSession();
+      const res = await fetch("/api/admin/advanced-access", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_address: addr }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error ?? "Failed");
+      setOk(`Removed ${addr.slice(0, 8)}…`);
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <section className="ui-card" style={{ padding: "24px" }}>
+      <h2 style={{ margin: "0 0 4px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Advanced Panel Access</h2>
+      <p style={{ margin: "0 0 16px", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
+        Wallets on this list can access the Advanced tab in the Admin Panel. Only the super-admin can modify this list.
+      </p>
+      {!isSuperAdmin && (
+        <div style={{ marginBottom: "16px", borderRadius: "8px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "10px 14px", fontSize: "0.875rem", color: "var(--c-amber-text)" }}>
+          Connect the super-admin wallet to modify this list.
+        </div>
+      )}
+      <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+        <input
+          value={input}
+          onChange={(e) => { setInput(e.target.value); setErr(null); }}
+          placeholder="Wallet address to grant access…"
+          className="ui-input"
+          style={{ flex: 1, fontFamily: "monospace" }}
+          disabled={!isSuperAdmin}
+        />
+        <button
+          onClick={addWallet}
+          disabled={busy === "add" || !isSuperAdmin || !input.trim()}
+          className="ui-btn ui-btn-indigo ui-btn-sm"
+        >
+          {busy === "add" ? "…" : "Add"}
+        </button>
+      </div>
+      {err && <p style={{ marginBottom: "8px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
+      {ok && <p style={{ marginBottom: "8px", fontSize: "0.875rem", color: "var(--c-emerald-text)" }}>{ok}</p>}
+      <div>
+        <p style={{ margin: "0 0 8px", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-text-4)" }}>
+          Allowed wallets {loading ? "" : `(${wallets.length})`}
+        </p>
+        {loading ? (
+          <div className="ui-skeleton" style={{ height: "32px", borderRadius: "8px" }} />
+        ) : wallets.length === 0 ? (
+          <p style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>No wallets on the access list.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {wallets.map((addr) => (
+              <div key={addr} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", borderRadius: "8px", border: "1px solid var(--c-divider)", padding: "8px 12px" }}>
+                <code style={{ fontSize: "0.75rem", color: "var(--c-text-2)" }}>{addr}</code>
+                <button
+                  onClick={() => removeWallet(addr)}
+                  disabled={busy === addr || !isSuperAdmin}
+                  className="ui-btn ui-btn-outline-red ui-btn-xs"
+                >
+                  {busy === addr ? "…" : "Remove"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 const BPF_LOADER_UPGRADEABLE = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
 
 function getProgramDataAddress(): PublicKey {
@@ -821,6 +936,13 @@ export default function MasterPage() {
         {isProtocolAdmin && adminSessionReady && (
           <div style={{ marginTop: "24px" }}>
             <GlobalWhitelistPanel hackathons={hackathons} adminAuth={adminAuth} />
+          </div>
+        )}
+
+        {/* Advanced panel access — super-admin with active session */}
+        {isSuperAdmin && adminSessionReady && (
+          <div style={{ marginTop: "24px" }}>
+            <AdvancedAccessPanel adminAuth={adminAuth} />
           </div>
         )}
       </main>
