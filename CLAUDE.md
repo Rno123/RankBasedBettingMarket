@@ -14,7 +14,9 @@ A Solana-native hackathon conviction protocol (HackBet). Users back hackathon pr
 
 ## On-Chain Constants (authoritative — check `lib.rs` for any changes)
 ```
-SELL_CUTOFF_SECS        = 86_400          // staking locks 24 h before results
+// cutoff_secs is a per-hackathon parameter (0 = no early cutoff, max 86_400)
+// When 0: cutoff_timestamp == irl_hackathon_deadline_timestamp (shares decay over full duration)
+// When N: cutoff_timestamp == irl_hackathon_deadline_timestamp - N seconds
 UNSTAKE_PENALTY_BPS     = 300             // flat 3% penalty on early exit (always, no time decay)
 UNSTAKE_PROTOCOL_BPS    = 150             // 1.5% to fee recipient; 1.5% stays in pool
 EARLY_MULTIPLIER_BPS    = 15_000          // share multiplier at stake open (1.5×)

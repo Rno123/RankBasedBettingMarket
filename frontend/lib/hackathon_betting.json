@@ -334,14 +334,25 @@
     {
       "name": "finalize_resolve",
       "docs": [
-        "Computes effective tier percentages with Option B proportional cascade,",
+        "Computes effective tier percentages with per-project payout math,",
         "stores them as basis points in `effective_tier_pcts`, then sets",
         "`is_resolved = true`.",
         "",
-        "**Cascade rule:** If a tier has no ranked project in remaining_accounts,",
-        "its configured pool percentage is redistributed proportionally among all",
-        "tiers that do have projects.  Zero-staked ranked projects still occupy",
-        "their tier (the cascade is about tier representation, not stake size).",
+        "**Per-project math:** For tiers with `tier_expected_counts[t] > 0`, the",
+        "configured `tier_pcts[t]` is divided by the expected count to produce a",
+        "per-project share. The tier draws `per_project × actual_count`. Unused",
+        "allocation from under-filled tiers cascades proportionally to occupied",
+        "tiers. Tiers with expected count 0 are \"rest\" tiers that split whatever",
+        "pool % remains after all named tiers draw.",
+        "",
+        "**Oversubscription guard:** If a named tier (expected > 0) has more",
+        "payout-eligible projects than its expected count, finalization reverts",
+        "with `InvalidTierConfig`.",
+        "",
+        "Display-only projects (no deposit, or zero shares after refund) are",
+        "excluded from tier counts entirely. If no payout-eligible projects exist,",
+        "finalization reverts with `AllTiersEmpty` to prevent permanently locking",
+        "the prize pool.",
         "",
         "remaining_accounts: all registered ProjectAccounts for this hackathon."
       ],
@@ -371,9 +382,8 @@
       "name": "forfeit_deposit",
       "docs": [
         "Admin confiscates the deposit of a builder who registered but did not",
-        "actually submit.  50% of the deposit is added to the prize pool",
-        "(stays in escrow, distributed to backers at claim time).  50% is",
-        "transferred to the fee_recipient as protocol revenue."
+        "actually submit. The full deposit is transferred to the fee_recipient",
+        "as protocol revenue."
       ],
       "discriminator": [
         158,
@@ -441,7 +451,10 @@
         "Creates a HackathonState PDA and its USDC escrow token account.",
         "",
         "`tier_pcts` defines the pool allocation per winner tier (must sum to 100).",
-        "`tier_expected_counts` is stored for UI/validation only; does not affect math."
+        "`tier_expected_counts` defines expected project counts per tier. Used in",
+        "payout math — for named tiers (count > 0), each project draws",
+        "tier_pct / expected_count; for rest tiers (count == 0), splits what",
+        "remains after named tiers draw."
       ],
       "discriminator": [
         138,
@@ -1119,7 +1132,7 @@
       "docs": [
         "Builder places their own funds behind their project.",
         "Minimum: hackathon.deposit_amount (e.g. $10).",
-        "Maximum cumulative: MAX_SELF_STAKE ($2 000) — prevents whale builders",
+        "Maximum cumulative: MAX_SELF_STAKE ($250) — prevents whale builders",
         "from drowning out the crowd signal with their own stake.",
         "Uses the same UserStake PDA and escrow as regular stake so the builder",
         "participates in payout claims identically to any backer."
@@ -1322,8 +1335,8 @@
       "name": "submit_project",
       "docs": [
         "Builder declares on-chain that they have submitted their project.",
-        "Must be called before irl_hackathon_deadline_timestamp. Staking still locks at cutoff,",
-        "but builders keep the full build window to declare completion.",
+        "Must be called before the hackathon is resolved (is_resolved == false).",
+        "Staking still locks at cutoff, but builders can declare up until resolution.",
         "Sets builder_declared = true and records the timestamp.",
         "This records the builder-side declaration. Deposit refunds still require",
         "organizer approval via approve_submissions unless an explicit refund",
@@ -1776,7 +1789,7 @@
     {
       "code": 6026,
       "name": "SelfStakeExceedsMaximum",
-      "msg": "Self-stake would exceed the $2 000 maximum"
+      "msg": "Self-stake would exceed the $250 maximum"
     },
     {
       "code": 6027,
@@ -1826,7 +1839,7 @@
     {
       "code": 6036,
       "name": "SubmissionClosed",
-      "msg": "Submission window has closed — builder declarations must happen before results"
+      "msg": "Submission window has closed — builder declarations must happen before the hackathon is resolved"
     },
     {
       "code": 6037,

@@ -43,6 +43,8 @@ export default function Navbar() {
           ? pathname === "/devs" || pathname.startsWith("/dev")
           : href === "/how-to-use"
             ? pathname === "/how-to-use" || pathname.startsWith("/eli5")
+          : href === "/admin"
+            ? pathname === "/admin"
             : pathname === href || pathname.startsWith(`${href}/`);
     return {
       fontSize: "0.875rem",
@@ -86,6 +88,12 @@ export default function Navbar() {
             <Link href="/docs" style={navLinkStyle("/docs")}>Docs</Link>
             {showAdmin && (
               <Link href="/admin" style={navLinkStyle("/admin")}>Admin</Link>
+            )}
+            {showAdmin && (
+              <Link href="/admin/guide" style={navLinkStyle("/admin/guide")}>Admin Guide</Link>
+            )}
+            {showAdmin && (
+              <Link href="/admin/advanced" style={navLinkStyle("/admin/advanced")}>Advanced</Link>
             )}
             {showMaster && (
               <Link
@@ -164,6 +172,12 @@ export default function Navbar() {
             <Link href="/docs" style={{ ...navLinkStyle("/docs"), padding: "12px 12px", borderRadius: "8px", display: "block" }}>Docs</Link>
             {showAdmin && (
               <Link href="/admin" style={{ ...navLinkStyle("/admin"), padding: "12px 12px", borderRadius: "8px", display: "block" }}>Admin</Link>
+            )}
+            {showAdmin && (
+              <Link href="/admin/guide" style={{ ...navLinkStyle("/admin/guide"), padding: "12px 12px", borderRadius: "8px", display: "block" }}>Admin Guide</Link>
+            )}
+            {showAdmin && (
+              <Link href="/admin/advanced" style={{ ...navLinkStyle("/admin/advanced"), padding: "12px 12px", borderRadius: "8px", display: "block" }}>Advanced</Link>
             )}
             {showMaster && (
               <Link href="/master" style={{ fontSize: "0.875rem", fontWeight: 500, textDecoration: "none", color: "var(--c-amber-text)", padding: "12px 12px", borderRadius: "8px", display: "block" }}>

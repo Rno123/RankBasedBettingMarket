@@ -1578,130 +1578,7 @@ interface Submission {
   created_at: string;
 }
 
-type AdminPanelTab = "create" | "manage" | "resolve" | "admin-guide" | "advanced";
-
-function AdminGuideSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-      <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-text-4)" }}>
-        {title}
-      </p>
-      {children}
-    </div>
-  );
-}
-
-function AdminGuideStep({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", gap: "14px", alignItems: "flex-start" }}>
-      <div
-        style={{
-          flexShrink: 0,
-          display: "flex",
-          height: "32px",
-          width: "32px",
-          alignItems: "center",
-          justifyContent: "center",
-          borderRadius: "9999px",
-          background: "var(--card-bg-alt)",
-          color: "var(--c-indigo-text)",
-          fontSize: "0.875rem",
-          fontWeight: 800,
-        }}
-      >
-        {n}
-      </div>
-      <div>
-        <p style={{ margin: "2px 0 6px", fontSize: "0.95rem", fontWeight: 700, color: "var(--c-text)" }}>{title}</p>
-        <p style={{ margin: 0, fontSize: "0.875rem", lineHeight: 1.7, color: "var(--c-text-3)" }}>{children}</p>
-      </div>
-    </div>
-  );
-}
-
-function AdminGuideBullet({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
-      <span
-        style={{
-          marginTop: "8px",
-          height: "6px",
-          width: "6px",
-          flexShrink: 0,
-          borderRadius: "9999px",
-          background: "var(--c-indigo)",
-        }}
-      />
-      <p style={{ margin: 0, fontSize: "0.875rem", lineHeight: 1.7, color: "var(--c-text-3)" }}>{children}</p>
-    </div>
-  );
-}
-
-function AdminHowToPanel({ canCreate }: { canCreate: boolean }) {
-  return (
-    <section className="ui-card" style={{ padding: "24px" }}>
-      <div style={{ marginBottom: "24px" }}>
-        <h2 style={{ margin: "0 0 6px", fontSize: "1.125rem", fontWeight: 700, color: "var(--c-text)" }}>Admin How To</h2>
-        <p style={{ margin: 0, fontSize: "0.875rem", lineHeight: 1.7, color: "var(--c-text-3)" }}>
-          Use this page to run the organizer side of HackBet: create hackathons, approve submissions, manage staking access, and finalize results.
-        </p>
-      </div>
-
-      <div style={{ marginBottom: "24px", borderRadius: "16px", border: "1px solid var(--c-amber-border)", background: "var(--c-amber-light)", padding: "18px" }}>
-        <p style={{ margin: "0 0 6px", fontSize: "0.8rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--c-amber-text)" }}>
-          Your role
-        </p>
-        <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.7, color: "var(--c-text-2)" }}>
-          Protocol admins can create hackathons and manage every event. Wallets assigned as a hackathon&apos;s admin can manage that specific event&apos;s submissions, deposits, whitelist flow, and final resolution.
-        </p>
-        {!canCreate && (
-          <p style={{ margin: "10px 0 0", fontSize: "0.8125rem", lineHeight: 1.6, color: "var(--c-amber-text)" }}>
-            This wallet can manage assigned hackathons here, but it cannot create brand new hackathons.
-          </p>
-        )}
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-        <AdminGuideSection title="Create and configure">
-          <AdminGuideStep n={1} title="Create the hackathon">
-            Use the Create tab to set the hackathon name, results timing, prize tiers, builder deposit amount, protocol fee, and fee recipient.
-          </AdminGuideStep>
-          <AdminGuideStep n={2} title="Add metadata after creation">
-            Once the hackathon exists, expand its card below and add the official link and icon so the public page has the right presentation.
-          </AdminGuideStep>
-          <AdminGuideStep n={3} title="Decide the approval flow">
-            Review whether staking is open or gated, then monitor builder submissions and community access from the panels on this page.
-          </AdminGuideStep>
-        </AdminGuideSection>
-
-        <AdminGuideSection title="Run the event">
-          <AdminGuideBullet>Approve project submissions so builders become live, on-chain projects that can receive deposits and staking.</AdminGuideBullet>
-          <AdminGuideBullet>Use staker access tools to whitelist wallets for one hackathon or across all hackathons when needed.</AdminGuideBullet>
-          <AdminGuideBullet>For deposit-backed events, organizer approval is what unlocks the normal builder refund path after builder declaration.</AdminGuideBullet>
-          <AdminGuideBullet>Refund override is the exceptional path for cancellations, judging mistakes, or organizer exceptions.</AdminGuideBullet>
-        </AdminGuideSection>
-
-        <AdminGuideSection title="Resolve and close">
-          <AdminGuideStep n={1} title="Set ranks">
-            Enter project ranks inside the hackathon card. Rank 1 is the winner, and leaving a project at 0 keeps it unranked.
-          </AdminGuideStep>
-          <AdminGuideStep n={2} title="Finalize the results">
-            Finalizing resolution is the permanent step that opens claims for stakers and locks in the official on-chain outcome.
-          </AdminGuideStep>
-          <AdminGuideStep n={3} title="Handle post-event cleanup">
-            After resolution, only use deposit forfeits or refund overrides when the builder flow truly requires an exceptional intervention.
-          </AdminGuideStep>
-        </AdminGuideSection>
-
-        <AdminGuideSection title="Admin rights">
-          <AdminGuideBullet>The super-admin can delegate protocol admin rights to additional wallets from the Admin Delegation panel.</AdminGuideBullet>
-          <AdminGuideBullet>Delegated protocol admins can create hackathons and manage the full organizer workflow.</AdminGuideBullet>
-          <AdminGuideBullet>The wallet stored as the hackathon admin can manage that event even without global protocol-admin rights.</AdminGuideBullet>
-        </AdminGuideSection>
-      </div>
-    </section>
-  );
-}
+type AdminPanelTab = "create" | "manage" | "resolve";
 
 function SubmissionsSection({
   hackathons,
@@ -1941,7 +1818,6 @@ export default function AdminPage() {
   const { hackathons, loading, reload: reloadHackathons } = useHackathons();
   const [version, setVersion] = useState(0);
   const [adminPanelTab, setAdminPanelTab] = useState<AdminPanelTab>("manage");
-  const [advancedAllowed, setAdvancedAllowed] = useState<boolean | null>(null);
   const [adminSessionReady, setAdminSessionReady] = useState(false);
   const [adminSessionBusy, setAdminSessionBusy] = useState(false);
   const [adminSessionErr, setAdminSessionErr] = useState<string | null>(null);
@@ -1987,18 +1863,6 @@ export default function AdminPage() {
     void loadExistingSession();
     return () => { cancelled = true; };
   }, [publicKey?.toBase58(), Boolean(signMessage), isAdmin]);
-
-  useEffect(() => {
-    if (adminPanelTab !== "advanced" || !publicKey) { setAdvancedAllowed(null); return; }
-    setAdvancedAllowed(null);
-    fetch("/api/admin/advanced-access")
-      .then((r) => r.json())
-      .then((payload) => {
-        const wallets: string[] = payload.wallets ?? [];
-        setAdvancedAllowed(wallets.includes(publicKey.toBase58()));
-      })
-      .catch(() => setAdvancedAllowed(false));
-  }, [adminPanelTab, publicKey?.toBase58()]);
 
   async function startAdminSession() {
     if (!signMessage || !publicKey) {
@@ -2089,8 +1953,6 @@ export default function AdminPage() {
                 ...(isProtocolAdmin ? [{ id: "create" as const, label: "Create" }] : []),
                 { id: "manage" as const, label: "Manage" },
                 { id: "resolve" as const, label: "Resolve" },
-                { id: "admin-guide" as const, label: "Admin Guide" },
-                { id: "advanced" as const, label: "Advanced" },
               ] as Array<{ id: AdminPanelTab; label: string }>).map((tab, i, arr) => (
                 <button
                   key={tab.id}
@@ -2152,32 +2014,6 @@ export default function AdminPage() {
               />
             )}
 
-            {/* Admin Guide tab */}
-            {adminPanelTab === "admin-guide" && (
-              <AdminHowToPanel canCreate={isProtocolAdmin} />
-            )}
-
-            {/* Advanced tab — gated by off-chain wallet whitelist */}
-            {adminPanelTab === "advanced" && (
-              advancedAllowed === null ? (
-                <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />
-              ) : !advancedAllowed ? (
-                <div style={{ borderRadius: "16px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "24px" }}>
-                  <p style={{ margin: 0, fontWeight: 700, color: "var(--c-red-text)" }}>Access restricted</p>
-                  <p style={{ margin: "6px 0 0", fontSize: "0.875rem", color: "var(--c-red-text)" }}>
-                    This wallet is not on the Advanced panel access list. Contact the super-admin to request access.
-                  </p>
-                </div>
-              ) : (
-                <PhaseGroupedHackathons
-                  hackathons={visibleHackathons}
-                  loading={loading}
-                  version={version}
-                  emptyLabel={isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
-                  renderCard={(h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="advanced" />}
-                />
-              )
-            )}
           </div>
         )}
       </main>
