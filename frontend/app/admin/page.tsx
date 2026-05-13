@@ -975,13 +975,13 @@ function CreateHackathonPanel({
                 style={{ width: "16px", height: "16px", cursor: "pointer", flexShrink: 0, marginTop: "2px" }}
               />
               <div style={{ flex: 1 }}>
-                <label htmlFor="earlyCutoffToggle" style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--c-text)", cursor: "pointer" }}>Early cutoff</label>
+                <label htmlFor="earlyCutoffToggle" style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--c-text)", cursor: "pointer" }}>Staking cutoff</label>
                 <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
-                  Lock staking before the hackathon deadline. When unchecked, staking closes exactly at the deadline. Enable if you want a quiet period before results.
+                  Enable staking lock before the hackathon deadline.
                 </p>
                 {earlyCutoff && (
                   <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <label style={{ fontSize: "0.8125rem", color: "var(--c-text-2)", whiteSpace: "nowrap" }}>Lock staking</label>
+                    <label style={{ fontSize: "0.8125rem", color: "var(--c-text-2)", whiteSpace: "nowrap" }}>Staking cutoff</label>
                     <select
                       className="ui-input"
                       style={{ width: "100px" }}
@@ -989,7 +989,7 @@ function CreateHackathonPanel({
                       onChange={(e) => setCutoffHours(parseInt(e.target.value))}
                     >
                       {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => (
-                        <option key={h} value={h}>{h}h before deadline</option>
+                        <option key={h} value={h}>{h}h before results</option>
                       ))}
                     </select>
                   </div>
