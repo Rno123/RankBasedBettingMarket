@@ -40,7 +40,7 @@ The protocol is designed around three principles:
 
 ### The Lifecycle of a Hackathon
 
-![Lifecycle diagram showing four phases: 1) Open (stakers back projects, builders self-stake, time multiplier decays from 1.5x to 1.0x), 2) Cutoff (24h before results — staking locked, builders submit), 3) Pending (results announced, judges rank, admin calls resolve + finalize), 4) Resolved (winners claim payouts, builders claim deposit refunds).]
+![Lifecycle diagram showing four phases: 1) Open (stakers back projects, builders self-stake, time multiplier decays from 1.5x to 1.0x), 2) Cutoff (staking locked at configurable cutoff_timestamp, builders submit), 3) Pending (results announced, judges rank, admin calls resolve + finalize), 4) Resolved (winners claim payouts, builders claim deposit refunds).]
 *Placeholder: Four-phase lifecycle diagram with color-coded phases*
 
 #### Phase 1: Open Staking
@@ -50,10 +50,10 @@ The protocol is designed around three principles:
 - Early stakers earn up to 1.5x shares multiplier
 - Builders can self-stake to signal confidence
 
-#### Phase 2: Cutoff (24h before results)
-- All staking, self-staking, and unstaking is locked
+#### Phase 2: Cutoff
+- All staking, self-staking, and unstaking is locked at `cutoff_timestamp`
 - Builders must declare on-chain that they submitted
-- The 24-hour dead zone prevents last-minute manipulation
+- The dead zone between cutoff and results prevents last-minute manipulation
 
 #### Phase 3: Pending (results announced)
 - Organizer assigns ranks to projects via `resolve()`
@@ -383,7 +383,7 @@ Bob's 3% exit was rational for his uncertainty level. The $75 pool penalty he le
 | UNSTAKE_PROTOCOL_BPS | 150 (1.5%) | Portion of penalty sent to fee recipient; remainder stays in pool |
 | EARLY_MULTIPLIER_BPS | 15,000 (1.5×) | Share multiplier at hackathon start |
 | BASE_MULTIPLIER_BPS | 10,000 (1.0×) | Share multiplier at cutoff |
-| SELL_CUTOFF_SECS | 86,400 (24 h) | Staking lock before results |
+| cutoff_secs (per-hackathon) | 0–86,400 | Seconds before results that staking locks. 0 = no early cutoff (multiplier decays over full hackathon duration). Set by organizer at creation; max 24 h. |
 | DEFAULT_PROTOCOL_FEE_BPS | 150 (1.5%) | Fee deducted from claim payouts |
 | DEFAULT_DEPOSIT_AMOUNT | $10 USDC | Builder commitment deposit |
 | MAX_TIERS | 8 | Maximum winner tiers |
@@ -429,11 +429,11 @@ The protocol has undergone internal adversarial review. Key protections:
 | **Per-project cascade** | When a named tier has fewer ranked projects than expected, the unused slots' bps redistributes to occupied tiers proportionally to their drawn amounts |
 | **effective_tier_pcts** | Final per-tier bps allocation (0–10,000) after cascade, stored at `finalize_resolve` |
 | **tier_c_totals** | Actual project count per tier, snapshotted at `finalize_resolve`; used as N in the claim formula |
-| **Cutoff** | 24 hours before results — all staking/unstaking locks |
+| **Cutoff** | The `cutoff_timestamp` set by the organizer — all staking/unstaking locks at this point. Configurable 0–24 h before results; `cutoff_secs=0` means the multiplier decays over the full hackathon duration and cutoff equals the results deadline. |
 | **Self-stake** | A builder staking on their own project to signal confidence |
 | **Builder deposit** | Commitment deposit paid by builders to prevent spam registrations |
 | **Parlay / Slip** | Multi-project stake in a single transaction |
 
 ---
 
-*Document version: 1.1 — Last updated: May 2026*
+*Document version: 1.2 — Last updated: May 2026*

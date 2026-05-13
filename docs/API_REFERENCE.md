@@ -1,10 +1,9 @@
 # HackBet API & Smart Contract Reference
 
-**Program ID (devnet):** `5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd`
-**Network:** Solana (devnet → mainnet)
-**Protocol Admin:** `5mxHcMPWZwspnvnDurm9kaqBkNsPjot549f8QhTkcMfP`
-**Deployer:** `Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD`
-**USDC Mint (devnet):** `Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr`
+**Program ID (mainnet):** `5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd`
+**Network:** Solana Mainnet-Beta
+**Protocol Admin / Upgrade Authority:** `Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD`
+**USDC Mint (mainnet):** `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`
 
 ---
 
@@ -16,9 +15,9 @@
 |-------|--------|
 | **Auth** | Protocol admin (hardcoded or delegated via ProtocolAdminEntry PDA) |
 | **PDAs created** | `HackathonState` at `[hackathon, admin, name]`, Escrow ATA at `[escrow, hackathon]` |
-| **Params** | `name: String` (≤50 bytes), `irl_hackathon_deadline_timestamp: i64`, `tier_pcts: Vec<u8>` (sum=100, len 1–8), `tier_expected_counts: Vec<u8>` (len must match), `fee_recipient: Pubkey`, `protocol_fee_bps: u16` (≤3000), `deposit_amount: u64` (0 = no deposit), `requires_approval: bool`, `open_staking: bool` |
-| **Constraints** | `irl_hackathon_deadline_timestamp > now + 86400`, `protocol_fee_bps <= 3000` |
-| **Client** | `program.methods.initializeHackathon(name, irlHackathonDeadlineTimestamp, tierPcts, tierExpectedCounts, feeRecipient, protocolFeeBps, depositAmount, requiresApproval, openStaking).accounts({ admin, hackathon, escrow, usdcMint, tokenProgram, systemProgram }).remainingAccounts([protocolAdminPda])` |
+| **Params** | `name: String` (≤50 bytes), `irl_hackathon_deadline_timestamp: i64`, `tier_pcts: Vec<u8>` (sum=100, len 1–8), `tier_expected_counts: Vec<u8>` (len must match), `fee_recipient: Pubkey`, `protocol_fee_bps: u16` (≤3000), `deposit_amount: u64` (0 = no deposit), `requires_approval: bool`, `open_staking: bool`, `cutoff_secs: u64` (0–86400; 0 = cutoff equals results deadline) |
+| **Constraints** | `cutoff_secs <= 86400`; `irl_hackathon_deadline_timestamp > now + max(1, cutoff_secs)`; `protocol_fee_bps <= 3000` |
+| **Client** | `program.methods.initializeHackathon(name, irlHackathonDeadlineTimestamp, tierPcts, tierExpectedCounts, feeRecipient, protocolFeeBps, depositAmount, requiresApproval, openStaking, new BN(cutoffSecs)).accounts({ admin, hackathon, escrow, usdcMint, tokenProgram, systemProgram }).remainingAccounts([protocolAdminPda])` |
 
 ### 4.2 `register_project`
 
@@ -300,6 +299,35 @@ Creates an admin session cookie (HMAC-signed, httpOnly, SameSite strict).
 ### `DELETE /api/admin/session`
 
 Clears the admin session cookie.
+
+### `GET /api/admin/advanced-access`
+
+Returns the list of wallet addresses whitelisted for Advanced panel access.
+
+| Field | Detail |
+|-------|--------|
+| **Auth** | Public (no auth required) |
+| **Response** | `{ wallets: string[] }` ordered by creation date |
+
+### `POST /api/admin/advanced-access`
+
+Adds a wallet to the Advanced panel access list.
+
+| Field | Detail |
+|-------|--------|
+| **Auth** | Signed headers; wallet must be `PROTOCOL_ADMIN` (super-admin only) |
+| **Body** | `{ wallet_address: string }` |
+| **Response** | `{ success: true }` |
+
+### `DELETE /api/admin/advanced-access`
+
+Removes a wallet from the Advanced panel access list.
+
+| Field | Detail |
+|-------|--------|
+| **Auth** | Signed headers; wallet must be `PROTOCOL_ADMIN` (super-admin only) |
+| **Body** | `{ wallet_address: string }` |
+| **Response** | `{ success: true }` |
 
 ---
 

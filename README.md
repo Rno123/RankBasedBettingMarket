@@ -25,7 +25,7 @@ It's not a betting market with odds. It's a **conviction signal**: the crowd com
 3. **Wait** for the hackathon deadline and judge results
 4. **Claim** your share of the pool if your projects placed
 
-The earlier you stake, the more shares you earn per dollar — from **1.5× at open** down to **1.0× at cutoff** (24 hours before results). Early conviction is rewarded.
+The earlier you stake, the more shares you earn per dollar — from **1.5× at open** down to **1.0× at the staking cutoff**. Early conviction is rewarded.
 
 ### For builders
 
@@ -51,7 +51,7 @@ If you change your mind before the cutoff, you can unstake with a flat **3% pena
 | Early multiplier | 1.5× → 1.0× (decays to cutoff) |
 | Unstake penalty | 3% (flat) |
 | Protocol fee on payouts | 1.5% |
-| Cutoff before results | 24 hours |
+| Staking cutoff | Configurable per hackathon (0–24 h before results; default: full duration) |
 | Deposit refund window | 14 days after results |
 
 ---
@@ -91,6 +91,7 @@ Solana Program ─── HackathonState, ProjectAccount, UserStake PDAs
 Mainnet USDC (EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v)
 
 Supabase ─── hackathon_metadata · project_metadata · github_stats
+              project_submissions · whitelist_requests · advanced_panel_access
 ```
 
 ---

@@ -1,42 +1,36 @@
-# HackBet Mainnet Deployment Plan
+# HackBet Mainnet Deployment
 
-**Target: Solana Mainnet-Beta**
-**Date: May 2026**
-**Cap: $250 USDC per wallet per project**
+**Network:** Solana Mainnet-Beta  
+**Program ID:** `5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd`  
+**Deployed:** May 2026  
+**Last upgrade:** May 13 2026 (added configurable `cutoff_secs`, tx `w5uNbsoFDdEQCTaMX1Nr8EfKoMThzY6A82wfD3WqYgqcxPbvgKKHYHUrgWXJWy3m3FjvYdNDzEgA1qnHCFwphKU`)  
+**Cap:** $250 USDC per wallet per project
 
 ---
 
 ## 1. Pre-Deployment Checklist
 
-### 1.1 Program Changes Since Devnet
+### 1.1 Program Changes (all deployed)
 
 - [x] Wallet cap: $2,000 → $250 (`MAX_STAKE_PER_WALLET = 250_000_000`)
 - [x] Self-stake cap: $2,000 → $250 (`MAX_SELF_STAKE = 250_000_000`)
 - [x] `forfeit_deposit` gate: `!submitted` only (removed `builder_declared` check)
+- [x] Configurable `cutoff_secs: u64` added to `initialize_hackathon` (0 = no early cutoff, max 86400)
+- [x] Removed `SELL_CUTOFF_SECS` constant from lib.rs
 - [x] Frontend cap labels updated to `$250 USDC`
 - [x] Frontend constants match on-chain constants
 - [x] TypeScript clean, Rust compiles
 
-### 1.2 Constants to Update
+### 1.2 Constants (deployed values)
 
-In `frontend/lib/constants.ts`:
+`frontend/lib/constants.ts` — all set to mainnet:
 
 ```typescript
-// Change these three lines for mainnet:
-export const PROGRAM_ID = new PublicKey("<MAINNET_PROGRAM_ID>");
-export const RPC_URL = "https://<chainstack-or-helius-endpoint>";
+export const PROGRAM_ID = new PublicKey("5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd");
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "<chainstack-endpoint>";
 export const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
-```
-
-In `hackathon-betting/programs/hackathon-betting/src/lib.rs`:
-
-```rust
-// Update PROGRAM_ID via anchor build (generates new keypair)
-// PROTOCOL_ADMIN stays the same (multisig or hardware wallet)
-declare_id!("<MAINNET_PROGRAM_ID>");
-
-// Verify mainnet USDC mint is correct:
-// EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+export const PROTOCOL_ADMIN = "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD";
+export const DEPLOYER = "Cqrzur6cQ7MjY7jq92WwfqsDFPdDXfyXknfJsMnBXjkD";
 ```
 
 ### 1.3 Pre-Launch Verification
@@ -129,6 +123,18 @@ supabase/migrations/20260428_non_destructive_rls_and_metadata_sync.sql
 supabase/migrations/20260429_fix_rls_security.sql
 supabase/migrations/20260429_project_submissions_schema_reconcile.sql
 supabase/migrations/20260430_project_name_capture.sql
+```
+
+Create the Advanced panel access table (run in Supabase SQL editor):
+
+```sql
+CREATE TABLE IF NOT EXISTS advanced_panel_access (
+  wallet_address TEXT PRIMARY KEY,
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE advanced_panel_access ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read" ON advanced_panel_access FOR SELECT USING (true);
+-- INSERT/DELETE are restricted to the service role key (used by API routes).
 ```
 
 ### 4.2 Environment Variables
