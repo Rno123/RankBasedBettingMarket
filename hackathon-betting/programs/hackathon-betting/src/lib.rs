@@ -220,8 +220,8 @@ pub mod hackathon_betting {
         require!(name.len() <= NAME_MAX_LEN, BettingError::NameTooLong);
 
         let now = Clock::get()?.unix_timestamp;
-        // Cap cutoff_secs to 7 days to prevent u64→i64 cast overflow on absurdly large values.
-        require!(cutoff_secs <= 7 * 86_400, BettingError::InvalidTimestamp);
+        // Cap cutoff_secs to 1 day to prevent u64→i64 cast overflow on absurdly large values.
+        require!(cutoff_secs <= 86_400, BettingError::InvalidTimestamp);
         let min_deadline = if cutoff_secs == 0 {
             now.saturating_add(1)
         } else {
