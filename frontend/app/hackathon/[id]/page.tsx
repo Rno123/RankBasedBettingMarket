@@ -329,7 +329,7 @@ export default function HackathonPage({
                 <>Staking closes in <span style={{ fontWeight: 600, color: "var(--c-amber-text)" }}>{timeUntil(hackathon.cutoffTimestamp)}</span></>
               )}
               {status === "cutoff" && (
-                <>Results in <span style={{ fontWeight: 600, color: "var(--c-sky-text)" }}>{timeUntil(hackathon.irlHackathonDeadlineTimestamp)}</span></>
+                <>Hackathon ends in <span style={{ fontWeight: 600, color: "var(--c-sky-text)" }}>{timeUntil(hackathon.irlHackathonDeadlineTimestamp)}</span></>
               )}
             </div>
           )}

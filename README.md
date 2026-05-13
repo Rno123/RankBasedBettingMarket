@@ -107,9 +107,13 @@ Supabase ─── hackathon_metadata · project_metadata · github_stats
 
 ## Roadmap
 
-- [ ] Merkle-tree project approval (off-chain verification, on-chain inclusion proof)
+- [ ] Trustless oracle — organizer signs rankings off-chain; anyone submits on-chain via Ed25519 verification
+- [ ] BuilderPassport PDA — cross-hackathon reputation: completion rate, wins, calibration score
+- [ ] /discover — sponsor and investor dashboard filtering builders by conviction metrics
+- [ ] Calibration score — `(returned - staked) / staked` lifetime; false-signal protection
+- [ ] On-chain progress milestones — builders emit state transitions ("demo ready", "submitted") on-chain
 - [ ] Twitter/X analytics integration for builder profiles
-- [ ] On-chain milestone tracking for phased builder payouts
+- [ ] Merkle-tree project approval (off-chain verification, on-chain inclusion proof)
 - [ ] Address Lookup Tables for hackathons with 35+ projects
 
 ---
