@@ -276,6 +276,7 @@ async function newHackathon(
   depositAmount = 0,
   requiresApproval = false,
   openStaking = true,
+  cutoffSecs = 86_400,
 ): Promise<Fix> {
   // PROTOCOL_ADMIN == adminKp (loaded from ~/.config/solana/id.json).
   // ctx.payer is bankrun's internal payer and does NOT equal PROTOCOL_ADMIN.
@@ -296,6 +297,7 @@ async function newHackathon(
       new BN(depositAmount),
       requiresApproval,
       openStaking,
+      new BN(cutoffSecs),
     )
     .accounts({ admin: admin.publicKey, hackathon, escrow, usdcMint: mint,
                 tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
@@ -608,6 +610,25 @@ describe("hackathon-betting — Bankrun suite", () => {
       }
     });
 
+    it("cutoff_secs=0 sets cutoff_timestamp == deadline (no early cutoff)", async () => {
+      setClock(ctx, T0);
+      const fix = await newHackathon(ctx, program, T0 + 200_000,
+        DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS, undefined, 0, 0, false, true, 0);
+      const h = await program.account.hackathonState.fetch(fix.hackathon);
+      assert.equal(h.cutoffTimestamp.toNumber(), h.irlHackathonDeadlineTimestamp.toNumber());
+    });
+
+    it("cutoff_secs=0 rejects deadline in the past", async () => {
+      setClock(ctx, T0);
+      try {
+        await newHackathon(ctx, program, T0, DEFAULT_TIER_PCTS, DEFAULT_TIER_COUNTS,
+          undefined, 0, 0, false, true, 0);
+        assert.fail("should have rejected deadline not in the future");
+      } catch (e: any) {
+        assert.include(e.message, "InvalidTimestamp");
+      }
+    });
+
     it("rejects protocol_fee_bps > 3000 (M-02: InvalidFee)", async () => {
       setClock(ctx, T0);
       const mint = await createMint(ctx);
@@ -618,7 +639,7 @@ describe("hackathon-betting — Bankrun suite", () => {
           name, new BN(RESULTS_TS),
           Buffer.from([55, 30, 15]), Buffer.from([1, 0, 0]),
           Keypair.generate().publicKey,
-          3001, new BN(0), false, false,
+          3001, new BN(0), false, false, new BN(86_400),
         )
         .accounts({ admin: adminKp.publicKey, hackathon,
                     escrow: escrowPda(hackathon), usdcMint: mint,
@@ -2445,6 +2466,7 @@ describe("hackathon-betting — Bankrun suite", () => {
         new BN(0),
         false,
         false,
+        new BN(86_400),
       )
         .accounts({
           admin: delegate.publicKey,

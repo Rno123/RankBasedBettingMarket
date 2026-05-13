@@ -216,14 +216,19 @@ pub mod hackathon_betting {
         deposit_amount: u64,
         requires_approval: bool,
         open_staking: bool,
+        cutoff_secs: u64,
     ) -> Result<()> {
         protocol_admin_auth_offset(&ctx.accounts.admin.key(), ctx.remaining_accounts)?;
         require!(name.len() <= NAME_MAX_LEN, BettingError::NameTooLong);
 
         let now = Clock::get()?.unix_timestamp;
-        // Require irl_hackathon_deadline_timestamp far enough in the future that the cutoff window is open.
+        let min_deadline = if cutoff_secs == 0 {
+            now.saturating_add(1)
+        } else {
+            now.saturating_add(cutoff_secs as i64)
+        };
         require!(
-            irl_hackathon_deadline_timestamp > now.saturating_add(SELL_CUTOFF_SECS),
+            irl_hackathon_deadline_timestamp > min_deadline,
             BettingError::InvalidTimestamp,
         );
 
@@ -245,15 +250,21 @@ pub mod hackathon_betting {
             t_counts[i] = tier_expected_counts[i];
         }
 
+        let cutoff_timestamp = if cutoff_secs == 0 {
+            irl_hackathon_deadline_timestamp
+        } else {
+            irl_hackathon_deadline_timestamp
+                .checked_sub(cutoff_secs as i64)
+                .ok_or(BettingError::Overflow)?
+        };
+
         let h = &mut ctx.accounts.hackathon;
         h.admin = ctx.accounts.admin.key();
         h.usdc_mint = ctx.accounts.usdc_mint.key();
         h.name = name;
         h.start_timestamp = now;
         h.irl_hackathon_deadline_timestamp = irl_hackathon_deadline_timestamp;
-        h.cutoff_timestamp = irl_hackathon_deadline_timestamp
-            .checked_sub(SELL_CUTOFF_SECS)
-            .ok_or(BettingError::Overflow)?;
+        h.cutoff_timestamp = cutoff_timestamp;
         h.total_pool = 0;
         h.is_resolved = false;
         h.tier_count = n as u8;

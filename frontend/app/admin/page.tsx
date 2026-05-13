@@ -749,6 +749,8 @@ function CreateHackathonPanel({
   const [ok, setOk] = useState<string | null>(null);
   const [openRegistration, setOpenRegistration] = useState(true);
   const [openStaking, setOpenStaking] = useState(true);
+  const [earlyCutoff, setEarlyCutoff] = useState(false);
+  const [cutoffHours, setCutoffHours] = useState(24);
 
   function parseResultsDateInput(value: string): ResultsDateParse {
     const date = new Date(value);
@@ -822,7 +824,7 @@ function CreateHackathonPanel({
       const hackathon = hackathonPda(publicKey, trimmedName);
       const escrow = escrowPda(hackathon);
       await (program.methods as any)
-        .initializeHackathon(trimmedName, new BN(resultsTs), Buffer.from(pcts), Buffer.from(counts), feeRecipient, feeBps, depositLamports, !openRegistration, openStaking)
+        .initializeHackathon(trimmedName, new BN(resultsTs), Buffer.from(pcts), Buffer.from(counts), feeRecipient, feeBps, depositLamports, !openRegistration, openStaking, new BN(earlyCutoff ? cutoffHours * 3_600 : 0))
         .accounts({ admin: publicKey, hackathon, escrow, usdcMint: USDC_MINT, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId })
         .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey))
         .rpc();
@@ -961,6 +963,38 @@ function CreateHackathonPanel({
               <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
                 Builders register their project on-chain directly — no admin review step. When unchecked, builders submit for review and an admin must approve before the project appears on-chain. Leave checked if you&apos;re unsure what this means.
               </p>
+            </div>
+          </div>
+          <div style={{ borderRadius: "12px", border: "1px solid var(--c-divider)", background: "var(--card-bg-alt)", padding: "12px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+              <input
+                type="checkbox"
+                id="earlyCutoffToggle"
+                checked={earlyCutoff}
+                onChange={(e) => setEarlyCutoff(e.target.checked)}
+                style={{ width: "16px", height: "16px", cursor: "pointer", flexShrink: 0, marginTop: "2px" }}
+              />
+              <div style={{ flex: 1 }}>
+                <label htmlFor="earlyCutoffToggle" style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--c-text)", cursor: "pointer" }}>Early cutoff</label>
+                <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
+                  Lock staking before the hackathon deadline. When unchecked, staking closes exactly at the deadline. Enable if you want a quiet period before results.
+                </p>
+                {earlyCutoff && (
+                  <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <label style={{ fontSize: "0.8125rem", color: "var(--c-text-2)", whiteSpace: "nowrap" }}>Lock staking</label>
+                    <select
+                      className="ui-input"
+                      style={{ width: "100px" }}
+                      value={cutoffHours}
+                      onChange={(e) => setCutoffHours(parseInt(e.target.value))}
+                    >
+                      {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => (
+                        <option key={h} value={h}>{h}h before deadline</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

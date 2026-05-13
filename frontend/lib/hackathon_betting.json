@@ -560,6 +560,10 @@
         {
           "name": "open_staking",
           "type": "bool"
+        },
+        {
+          "name": "cutoff_secs",
+          "type": "u64"
         }
       ]
     },
