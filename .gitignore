@@ -13,3 +13,13 @@ __pycache__/
 
 # Solana / Anchor (covered by nested .gitignores too)
 test-ledger/
+
+# Credentials — never commit these
+*wallet*.json
+deploy-wallet.json
+*-wallet.json
+*.key
+*token*.txt
+.env
+.env.local
+.env.*

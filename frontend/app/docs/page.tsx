@@ -162,23 +162,21 @@ function SectionOverview() {
     <section id="overview" style={sectionStyle}>
       <h2 style={h2Style}>Overview</h2>
       <p style={pStyle}>
-        <strong>HackBet</strong> is a Solana-native conviction pool protocol built for hackathons. Participants
+        <strong>HackBet</strong> is a Solana-native staking pool protocol built for hackathons. Participants
         stake USDC behind hackathon projects before results are announced. When the official judges publish
-        rankings, the total pool is redistributed to backers of well-ranked projects using a formula that
-        rewards both early conviction and diversification.
+        rankings, the total pool is redistributed to backers of ranked projects using a formula that
+        rewards early conviction and optimal selections.
       </p>
       <div style={calloutStyle("info")}>
-        HackBet is <strong>not</strong> a prediction market. There are no orderbooks, no counterparties, and no
-        binary outcomes. It is a rank-weighted, crowd-adjusted conviction pool.
+        HackBet is <strong>not</strong> a binary-outcome prediction market. Instead, HackBet adopts pari-mutuels betting mechanism.
       </div>
       <h3 style={h3Style}>Key stakeholders</h3>
       <Table
         head={["Role", "Description"]}
         rows={[
           ["Protocol Admin", "Controls global settings: creates hackathons, whitelists stakers, resolves outcomes."],
-          ["Builder", "Registers a project, pays a refundable deposit, and optionally self-stakes to signal conviction."],
+          ["Builder", "Registers a project, pays a refundable deposit, and self-stakes to signal conviction."],
           ["Staker", "Backs one or more projects with USDC. Earns a share of the pool proportional to rank, stake, and timing."],
-          ["Fee Recipient", "Receives the protocol fee (default 1.5%) on each successful claim, and 1.5% of each early-exit penalty."],
         ]}
       />
       <h3 style={h3Style}>Where the protocol lives</h3>
@@ -187,8 +185,7 @@ function SectionOverview() {
       </p>
       <code style={codeStyle}>5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd</code>
       <p style={{ ...pStyle, marginTop: "0.25rem" }}>
-        All funds are held in a per-hackathon USDC escrow PDA. No admin key can drain funds directly — only
-        resolution-gated claim instructions can move tokens to stakers.
+        All funds are held in a per-hackathon USDC escrow PDA. Only resolution-gated claim instructions can move USDC tokens.
       </p>
     </section>
   );
@@ -197,7 +194,7 @@ function SectionOverview() {
 function SectionLifecycle() {
   return (
     <section id="lifecycle" style={sectionStyle}>
-      <h2 style={h2Style}>Protocol Lifecycle</h2>
+      <h2 style={h2Style}>Hackathon Lifecycle</h2>
       <p style={pStyle}>
         Each hackathon follows a strict on-chain state machine. The diagram below shows the full flow from
         creation to payout.
@@ -205,13 +202,13 @@ function SectionLifecycle() {
 
       <div style={{ position: "relative", margin: "1.5rem 0" }}>
         {[
-          { tag: "orange", label: "1. Initialize Hackathon", body: "Admin calls initialize_hackathon with name, USDC mint, tier percentages, deposit amount, and timestamps. Creates the HackathonState PDA and escrow token account." },
-          { tag: "orange", label: "2. Register Projects", body: "Builders call register_project with their GitHub URL. PDA is seeded with sha256(github_url) — duplicate URLs revert automatically. If requires_approval is set, admin must whitelist first." },
-          { tag: "sky",    label: "3. Staking Window", body: "Stakers call stake() to deposit USDC into escrow. Shares are computed at stake time using the time-weighted multiplier (1.5× early → 1.0× at cutoff). UserStake PDAs are initialized." },
-          { tag: "amber",  label: "4. Cutoff (−24 h)", body: "irl_hackathon_deadline_timestamp − 86 400 seconds. All staking locks. Unstaking with a 3% penalty remains available until cutoff. At and after cutoff, unstaking is fully disabled." },
-          { tag: "amber",  label: "5. Resolve", body: "Admin calls resolve_project for each project to assign its rank (1-indexed, 0 = unranked). This is reversible until finalize_resolve is called." },
-          { tag: "red",    label: "6. Finalize Resolve", body: "Admin calls finalize_resolve once all ranks are set. This snapshots tier_c_totals and effective_tier_pcts onto HackathonState — the values that claim will use. Irreversible." },
-          { tag: "emerald",label: "7. Claim", body: "Each staker calls claim() with their UserStake PDA. Payout is computed from snapshotted values — no iteration over remaining_accounts. Protocol fee is deducted at this point." },
+          { tag: "orange", label: "1. Initialize Hackathon", body: "Admin calls initialize_hackathon with name, ranking, deposit amount, and deadlines. This creates the HackathonState PDA and escrow token account." },
+          { tag: "orange", label: "2. Register Projects", body: "Builders call register_project with their GitHub URL. PDA is seeded with sha256(github_url). If requires_approval is set, admin must approve submissions first." },
+          { tag: "sky",    label: "3. Staking Window", body: "Stakers call stake() to deposit USDC into escrow. Shares are computed at stake time using the time-weighted multiplier (1.5× early → 1.0× at cutoff)." },
+          { tag: "amber",  label: "4. Cutoff (−24 h)", body: "If a staking cutoff was assigned (up to 24h before actual deadline), all staking locks by cutoff. Stakers may also choose to unstake, incurring a 3% penalty, before cutoff." },
+          { tag: "amber",  label: "5. Resolve", body: "Results are published and admin assigns rank to winning projects. This is reversible until finalize_resolve is called." },
+          { tag: "red",    label: "6. Finalize Resolve", body: "Admin calls finalize_resolve once all ranks are set. This finalizes rankings, and prize pools, on-chain irreversibly." },
+          { tag: "emerald",label: "7. Claim", body: "Builders and stakers with winning claims are now eligible to claim their winnings, if any. Protocol fee is deducted at this point." },
         ].map(({ tag, label, body }, i) => (
           <div key={i} style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -249,29 +246,23 @@ function SectionStaking() {
       <Table
         head={["Constraint", "Value"]}
         rows={[
-          ["Max stake per wallet per project", "$250 USDC (250,000,000 μUSDC)"],
-          ["Max builder self-stake", "$250 USDC (250,000,000 μUSDC)"],
-          ["Builder self-stake requires", "Project must have deposit paid and be declared"],
-          ["Staking window closes", "irl_hackathon_deadline_timestamp − 86,400 s (24 hours before results)"],
+          ["Max stake per wallet per project", "$250 USDC"],
+          ["Max builder self-stake", "$250 USDC"],
+          ["Staking requires", "Project must have deposit paid and be declared"],
+          ["Staking window closes", "Up to 24 hours before actual hackathon deadline, set by admin"],
         ]}
       />
-      <div style={calloutStyle("warn")}>
-        Amounts are always stored in <strong>micro-USDC</strong> (6 decimal places). 1 USDC = 1,000,000 μUSDC.
-        All on-chain math uses integer arithmetic — no floats.
-      </div>
 
       <h3 style={h3Style}>Unstaking</h3>
       <p style={pStyle}>
         A staker can exit their position at any time before the cutoff, subject to a flat 3% penalty on the
-        full staked amount. There is no time-based decay — the penalty is the same whether you exit one minute
-        or one month after staking.
+        amount unstaked. Note that a user can only unstake the full amount and not partially.
       </p>
       <code style={codeStyle}>{`penalty          = stake_amount × 300 / 10_000   // 3% flat
 to_protocol      = stake_amount × 150 / 10_000   // 1.5% → fee recipient
 stays_in_pool    = penalty − to_protocol          // 1.5% stays in escrow`}</code>
       <p style={pStyle}>
-        The staker receives <IC>stake_amount − penalty</IC>. After cutoff (<IC>now ≥ cutoff_timestamp</IC>),
-        unstaking is fully disabled — positions are locked until claim.
+        The staker receives <IC>stake_amount − penalty</IC>. After cutoff, unstaking is fully disabled — positions are locked until claim.
       </p>
     </section>
   );
@@ -290,8 +281,7 @@ elapsed   = clamp(now − start_timestamp, 0, window)
 mult_bps  = 15_000 − floor(5_000 × elapsed / window)  // 15000 → 10000
 shares    = floor(amount × mult_bps / 10_000)`}</code>
       <p style={pStyle}>
-        The multiplier decreases linearly from <IC>1.5×</IC> at the hackathon start to <IC>1.0×</IC> at the
-        cutoff. Stakers who commit early receive proportionally more shares for the same USDC amount.
+        The multiplier decreases linearly from <IC>1.5×</IC> at the project submission to <IC>1.0×</IC> at the cutoff. Stakers who commit early receive proportionally more shares for the same USDC amount.
       </p>
 
       <h3 style={h3Style}>Example</h3>
@@ -324,14 +314,17 @@ function SectionPayout() {
 
       <h3 style={h3Style}>Stage 1 — Tier allocation</h3>
       <p style={pStyle}>
+      <IC>[12, 88]</IC> means the rank-1 project gets 12%
         The admin configures up to 8 tiers at hackathon creation, each with a percentage
-        (must sum to 100). For example: <IC>[12, 88]</IC> means the rank-1 project gets 12%
-        of the pool, and 22 rank-2 projects share 88% equally (4% each).
+        (must sum to 100).
       </p>
+      <div style={calloutStyle("info")}>
+      Using Colosseum Frontier 2026 as an example: With one grand prize of 30,000 USDC and 22 side-track prizes of 10,000 USDC, we can emulate 1 Tier 1 share of 12% and 22 Tier 2 shares of 4% each:
+      <IC>[12, 88]</IC> means the rank-1 project gets 12% of the pool, and 22 rank-2 projects share 88% equally (4% each).
+      </div>
       <p style={pStyle}>
-        At <IC>finalize_resolve</IC>, empty tiers (no projects assigned that rank) have their
-        allocation redistributed proportionally to occupied tiers. The resulting
-        <IC>effective_tier_pcts</IC> are stored on <IC>HackathonState</IC>.
+        At <IC>finalize_resolve</IC>, if there are empty tiers (aka projects assigned that rank didn't register on HackBet), those tiers have their
+        allocation redistributed proportionally to occupied tiers.
       </p>
 
       <h3 style={h3Style}>Stage 2 — Equal split (within tier)</h3>
@@ -342,9 +335,7 @@ function SectionPayout() {
       </p>
       <code style={codeStyle}>{`N = hackathon.tier_c_totals[tier]   // project count, snapshotted
 
-	payout =   user_shares
-	         × effective_tier_pcts[tier]
-	         × total_pool
+	payout =   user_shares × effective_tier_pcts[tier] × total_pool
 	         ──────────────────────────────────────────
 	         project.total_shares × N × 10_000`}</code>
       <p style={pStyle}>
@@ -355,22 +346,46 @@ staker_receives  = payout − fee`}</code>
 
       <h3 style={h3Style}>Worked example</h3>
       <p style={{ ...pStyle, marginBottom: "0.5rem" }}>
-        Config: 1st = 12%, 2nd = 88% (22 expected). Pool = $1,000. Fee = 1.5%.
+        Same Frontier example as before: 1st = 12%, 2nd = 88% (22 expected). Pool = $1,000. Fee = 1.5%.
         Alice stakes $200 on Project A (1st), Bob stakes $200 on Project B (2nd).
         Both stake Day 0 (1.5× multiplier = 300 shares each).
       </p>
       <Table
         head={["Project", "Rank", "Per-project", "User Shares / Total", "Gross Payout", "Net (−1.5%)"]}
         rows={[
-          ["A", "1st", "60% ($600)", "300 / 300", "$600", "$591"],
-          ["B", "2nd", "20% ($200)", "300 / 300", "$200", "$197"],
+          ["A", "1st", "12% ($120)", "300 / 300", "$120", "$118.2"],
+          ["B", "2nd", "4% ($40)", "300 / 300", "$40", "$39.4"],
         ]}
       />
       <div style={calloutStyle("info")}>
-        Tier 1 draws 12% × 1 project = 1,200 bps. Tier 2 draws 4% × 1 project = 400 bps.
-        The unused 8,400 bps cascades 3:1 to the occupied tiers — 1st draws 3× more
-        per project (12%) than 2nd (4%), so it gets 3× more cascade. Final: 60% vs 20%.
-        Higher rank always earns more per project.
+        This assumes that there are 21 other Tier 2 projects that registered. What if these are the only two projects that registered and won?
+      </div>
+      <Table
+        head={["Project", "Rank", "Per-project", "User Shares / Total", "Gross Payout", "Net (−1.5%)"]}
+        rows={[
+          ["A", "1st", "75% ($750)", "300 / 300", "$750", "$738.75"],
+          ["B", "2nd", "25% ($250)", "300 / 300", "$250", "$246.25"],
+        ]}
+      />
+      <div style={calloutStyle("info")}>
+      Tier 1 draws 12% × 1 project = 1,200 bps. Tier 2 draws 4% × 1 project = 400 bps.
+      The unused 8,400 bps (84%) cascades 3:1 to the occupied tiers — 1st draws 3× more
+      per project (12%) than 2nd (4%), so it gets 3× more cascade. Final: 75% vs 25%.
+      Higher rank always earns more per project. What if there are 5 other Tier 2 projects?
+      </div>
+      <Table
+        head={["Project", "Rank", "Per-project", "User Shares / Total", "Gross Payout", "Net (−1.5%)"]}
+        rows={[
+          ["A", "1st", "37.5% ($375)", "300 / 300", "$375", "$369.37"],
+          ["B", "2nd", "12.5% ($125)", "300 / 300", "$125", "$123.12"],
+          ["C", "2nd", "12.5% ($125)", "300 / 300", "$125", "$123.12"],
+          ["D", "2nd", "12.5% ($125)", "300 / 300", "$125", "$123.12"],
+          ["E", "2nd", "12.5% ($125)", "300 / 300", "$125", "$123.12"],
+          ["F", "2nd", "12.5% ($125)", "300 / 300", "$125", "$123.12"],
+        ]}
+      />
+      <div style={calloutStyle("info")}>
+      Same as before, except this time, the unused 6,800 bps (68%) cascades 3:1 to the occupied tiers. Final: 37.5% vs 12.5%.
       </div>
     </section>
   );
@@ -387,7 +402,6 @@ function SectionConstants() {
       <Table
         head={["Constant", "Value", "Description"]}
         rows={[
-          [<IC>SELL_CUTOFF_SECS</IC>, "86,400", "Staking locks 24 h before irl_hackathon_deadline_timestamp"],
           [<IC>UNSTAKE_PENALTY_BPS</IC>, "300 (3%)", "Flat early-exit penalty on full stake"],
           [<IC>UNSTAKE_PROTOCOL_BPS</IC>, "150 (1.5%)", "Portion of penalty sent to fee_recipient"],
           [<IC>EARLY_MULTIPLIER_BPS</IC>, "15,000 (1.5×)", "Share multiplier at hackathon start"],
@@ -397,7 +411,6 @@ function SectionConstants() {
           [<IC>DEFAULT_PROTOCOL_FEE_BPS</IC>, "150 (1.5%)", "Protocol fee deducted at claim"],
           [<IC>DEFAULT_DEPOSIT_AMOUNT</IC>, "10,000,000", "$10 USDC builder commitment deposit"],
           [<IC>MAX_TIERS</IC>, "8", "Maximum number of rank tiers per hackathon"],
-          [<IC>PROTOCOL_ADMIN</IC>, "Cqrz…BXjkD", "Only wallet that can initialize hackathons"],
         ]}
       />
       <p style={pStyle}>
@@ -507,39 +520,14 @@ function SectionClaimArch() {
     <section id="claim-arch" style={sectionStyle}>
       <h2 style={h2Style}>Claim Architecture</h2>
       <p style={pStyle}>
-        Early versions of the protocol computed <IC>C_total_t</IC> inside the <IC>claim</IC> instruction
-        by iterating all project accounts passed as <IC>remaining_accounts</IC>. This had two problems:
+        When <IC>finalize_resolve</IC> is called, the program counts the number of ranked projects
+        in each tier and stores those counts on <IC>HackathonState</IC>. When a staker calls{" "}
+        <IC>claim</IC>, it reads the stored count directly — no iteration required.
       </p>
-      <ul style={{ ...pStyle, paddingLeft: "1.25rem" }}>
-        <li>CU cost scaled linearly with the number of projects (O(N)).</li>
-        <li>A malicious caller could pass a crafted <IC>remaining_accounts</IC> list that manipulated the
-          denominator and inflated their payout (Audit finding C-01).</li>
-      </ul>
-
-      <h3 style={h3Style}>The fix (C-01)</h3>
       <p style={pStyle}>
-        <IC>finalize_resolve</IC> now iterates all projects and snapshots the per-tier project
-        count into <IC>hackathon.tier_c_totals[t]</IC> (equal split — no sqrt weighting).
-        The <IC>claim</IC> instruction reads this value directly from
-        <IC>HackathonState</IC> — no <IC>remaining_accounts</IC> needed.
+        This means claim compute cost is flat regardless of how many projects are in the hackathon.
+        The payout denominator is set at resolution time and cannot be manipulated by the caller.
       </p>
-      <code style={codeStyle}>{`// finalize_resolve — runs once, O(N):
-for each project p in tier t:
-        tier_c_totals[t] += 1   // count projects per tier (equal split)
-
-// claim — O(1), caller-manipulation-proof:
-let N = hackathon.tier_c_totals[project.rank − 1]`}</code>
-
-      <h3 style={h3Style}>CU benchmark (Bankrun, post-fix)</h3>
-      <Table
-        head={["N projects", "Claim CU"]}
-        rows={[
-          ["5",  "18,111"],
-          ["10", "18,111"],
-          ["20", "18,111"],
-        ]}
-      />
-      <p style={pStyle}>Flat CU — independent of the number of projects in the hackathon.</p>
     </section>
   );
 }
@@ -548,40 +536,35 @@ function SectionFees() {
   return (
     <section id="fees" style={sectionStyle}>
       <h2 style={h2Style}>Fee Architecture</h2>
-      <p style={pStyle}>The protocol charges fees at two distinct events:</p>
+      <p style={pStyle}>The protocol collects fees at three points:</p>
+      <Table
+        head={["Event", "Amount", "Where it goes"]}
+        rows={[
+          ["Unstake (early exit)", "3% of stake", "1.5% to fee recipient, 1.5% stays in prize pool"],
+          ["Claim (winning payout)", "1.5% of gross payout (default)", "fee recipient"],
+          ["Builder deposit (no submission)", "$10 USDC (default)", "fee recipient"],
+        ]}
+      />
 
-      <h3 style={h3Style}>Early-exit penalty (unstake)</h3>
+      <h3 style={h3Style}>Unstake penalty</h3>
       <p style={pStyle}>
-        Applied whenever a staker withdraws before the cutoff. The full 3% is split: 1.5% leaves
-        the escrow and goes to <IC>fee_recipient</IC>; the remaining 1.5% stays in the escrow and
-        becomes part of the prize pool for remaining stakers.
+        Stakers who exit before the cutoff forfeit 3% of their stake. Half leaves the escrow and
+        goes to the fee recipient; the other half stays in the pool and is distributed to remaining
+        stakers at resolution.
       </p>
-      <code style={codeStyle}>{`penalty          = amount × 300 / 10_000   // 3%
-to_fee_recipient = amount × 150 / 10_000   // 1.5% exits escrow
-stays_in_pool    = penalty − to_fee_recipient`}</code>
 
-      <h3 style={h3Style}>Protocol fee (claim)</h3>
+      <h3 style={h3Style}>Protocol fee</h3>
       <p style={pStyle}>
-        Deducted from each winning staker's gross payout at claim time.
-      </p>
-      <code style={codeStyle}>{`fee             = gross_payout × protocol_fee_bps / 10_000   // default 1.5%
-staker_receives = gross_payout − fee`}</code>
-      <p style={pStyle}>
-        <IC>protocol_fee_bps</IC> is set per-hackathon at initialization and capped at 3,000 (30%)
-        by the program. If 0, no fee is deducted and no transfer to <IC>fee_recipient</IC> occurs.
+        Deducted from each winning payout at claim time. The rate is set per-hackathon at
+        initialization (default 1.5%, maximum 30%). If set to 0, no fee is charged.
       </p>
 
       <h3 style={h3Style}>Builder deposit</h3>
       <p style={pStyle}>
-        Builders pay a configurable deposit (default $10 USDC) when registering. This commitment
-        deposit is added to the prize pool and refundable only if the project is formally submitted
-        and the admin enables refunds. If the builder fails to submit, the deposit is forfeited to
-        the pool.
+        Builders pay a deposit (default $10 USDC) when registering. It is refundable if the project
+        is formally submitted and the admin enables refunds. If the builder never submits, the admin
+        can forfeit the deposit to the fee recipient after a post-deadline grace period.
       </p>
-      <div style={calloutStyle("warn")}>
-        If <IC>deposit_forfeited = true</IC>, <IC>claim_deposit_refund</IC> will revert. This is
-        enforced on-chain (Audit finding H-01 fix).
-      </div>
     </section>
   );
 }
@@ -754,8 +737,8 @@ export default function DocsPage() {
                 HACK<span style={{ color: "var(--c-indigo-text)" }}>BET</span> Protocol Reference
               </h1>
               <p style={{ ...pStyle, fontSize: "1rem", color: "var(--c-text-3)", maxWidth: "640px" }}>
-                Complete technical reference for the HackBet rank-weighted conviction pool protocol.
-                Covers staking mechanics, payout formulas, on-chain account structures, and admin operations.
+                Technical documentation for the HackBet rank-weighted staking pool protocol.
+                Covers staking mechanics, payout formulas and on-chain account structures.
               </p>
               <div style={{ height: "1px", background: "var(--c-divider)", margin: "1.5rem 0" }} />
             </div>

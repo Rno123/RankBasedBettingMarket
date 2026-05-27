@@ -674,6 +674,20 @@ function DepositManagementPanel({ hackathon, view }: { hackathon: HackathonEntry
                           : "Waiting on builder declaration"}
                       {p.isRefundEnabled ? " · Exceptional refund ON" : ""}
                     </p>
+                    <div style={{ display: "flex", gap: "4px", marginTop: "5px", flexWrap: "wrap" }}>
+                      {p.builderDeclared && (
+                        <span title="Builder declared submission" style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", background: "var(--c-amber-light)", color: "var(--c-amber-text)", border: "1px solid var(--c-amber-border)" }}>⚑ Declared</span>
+                      )}
+                      {p.submitted && (
+                        <span title="Organizer approved submission" style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>⚑ Approved</span>
+                      )}
+                      {p.depositRefunded && (
+                        <span title="Deposit refunded to builder" style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>✓ Refunded</span>
+                      )}
+                      {p.depositForfeited && (
+                        <span title="Deposit forfeited to protocol" style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", background: "var(--c-red-light)", color: "var(--c-red-text)", border: "1px solid var(--c-red-border)" }}>✗ Forfeited</span>
+                      )}
+                    </div>
                   </div>
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                     {view === "resolutions" && p.builderDeclared && !p.submitted && !p.depositForfeited && !p.depositRefunded && (

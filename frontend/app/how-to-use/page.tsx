@@ -28,41 +28,41 @@ const ROLE_GUIDES: RoleGuide[] = [
     accentBorder: "var(--c-emerald-border)",
     accentText: "var(--c-emerald-text)",
     ecosystemBody:
-      "Submit projects for review, pay commitment deposit, and self-stake (optional) to show conviction in your own build.",
+      "Submit projects for review, pay commitment deposit, and self-stake to show conviction in your own project.",
     roleBody:
-      "Builders bring projects into the market. Your repo is registered on-chain (may be subject to approval), and then becomes something the community can back before the hackathon ends.",
+      "Builders bring projects into the market. Your repo is registered on-chain, and then becomes something the community can back before the hackathon ends.",
     ctaHref: "/devs",
     ctaLabel: "Open builder portal",
     steps: [
       {
         title: "Sign in and connect your wallet",
-        body: "Use the Builders portal to sign in, then connect the Solana wallet that will be tied to your project on-chain.",
+        body: "Use the Builders' tab to sign in, then connect the Solana wallet that will be tied to your project on-chain.",
       },
       {
         title: "Select an ongoing hackathon you intend to participate in",
-        body: "Choose an active hackathon, submit your GitHub repository, and wait for organizer approval if that event uses manual review.",
+        body: "Choose an active hackathon and register your project by submitting your GitHub repository (may be subject to approval).",
       },
       {
         title: "Pay the builder deposit",
-        body: "To prevent moral hazard, builders are required to pay a refundable commitment deposit. Your project will be ineligible for staking if the deposit is not paid.",
+        body: "To prevent spam, builders are required to pay a refundable commitment deposit. Projects without deposits are ineligible for staking.",
       },
       {
         title: "Self-stake if you want to signal conviction",
-        body: "Builders can back their own project. That self-stake is public and visible next to community backing.",
+        body: "Builders can back their own project. Self-stake amount is public and verifiable, along with community backing.",
       },
       {
         title: "Mark the project submitted",
-        body: "Once you've submitted your hackathon build, mark it submitted before results are posted so the organizer can approve it for the deposit-refund path.",
+        body: "Once you've submitted your project, mark it submitted before results are posted so the organizer can release your deposit refund.",
       },
       {
         title: "Claim your refund after organizer approval",
-        body: "After the hackathon results are resolved, the hackathon admin will unlock the refund function for builders who've submitted projects.",
+        body: "After the hackathon results are published, the refund function will be unlocked for eligible builders.",
       },
     ],
     notes: [
       "Projects can be submitted without deposit, but only those with a deposit are included in the staking pool.",
-      "The hackathon organizer controls the deposit refund path. Reach out to them, or HackBet 'Contact Us' if there's a mistake.",
-      "After hackathon resolution, the crowd-versus-results comparison stays visible on the hackathon page.",
+      "The hackathon organizer controls the deposit refund function. Reach out if you think there's a mistake.",
+      "It is possible, but not encouraged, to submit a project on behalf of other builders."
     ],
   },
   {
@@ -84,25 +84,24 @@ const ROLE_GUIDES: RoleGuide[] = [
       },
       {
         title: "Connect a wallet with USDC",
-        body: "Your wallet should be on the right network, hold USDC, and be whitelisted if the hackathon uses whitelisted staking access.",
+        body: "Your wallet should be on the right network and hold USDC. Some hackathons may require you to be whitelisted.",
       },
       {
         title: "Pick a project and place your stake",
-        body: "Make a simple parlay bet, or choose to back a single project only. The devil is in the details (read our documentation).",
+        body: "Make a simple parlay bet, or choose to back a single project only.",
       },
       {
         title: "Watch the cutoff and final resolution",
-        body: "Staking closes 24h before hackathon ends. Organizers then finalize the rankings, resolve the outcomes for the hackathon and open claims.",
+        body: "Staking may close up to 24h before hackathon ends. Organizers then finalize the rankings, publish outcomes and open claims.",
       },
       {
         title: "Claim winning payouts",
-        body: "If your backed projects land in winning ranks, claim your payout from the hackathon detail page or your portfolio page.",
+        body: "If your backed projects places, claim your payout from the hackathon page or your portfolio page.",
       },
     ],
     notes: [
       "Earlier staking carries a stronger signal (up to 1.5x weight at project's initialization).",
-      "Builders can also self-stake. Self-staking is indifferentiable from normal staking but it signals builder conviction.",
-      "Whitelist-gated hackathons require organizer approval of wallets before you can stake.",
+      "Hackathons can be whitelist-gated, meaning only whitelisted wallets are allowed to stake.",
       "Payouts can vary from initial estimate at entry. For more information, read our documentation.",
       "Stake withdrawal incurs a penalty fee of 3%."
     ],
@@ -296,7 +295,7 @@ export default function HowToUsePage() {
             </div>
 
             <div style={{ borderTop: "1px solid var(--c-divider)", paddingTop: "22px" }}>
-              <SectionEyebrow>Things to know</SectionEyebrow>
+              <SectionEyebrow>IMPORTANT</SectionEyebrow>
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 {activeGuide.notes.map((note) => (
                   <NoteRow key={note}>{note}</NoteRow>

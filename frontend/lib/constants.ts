@@ -4,7 +4,7 @@ export const PROGRAM_ID = new PublicKey(
   "5QyJgZfUCLKZnoxSMu9ejraQ9365HrwBmn9WVPnUayDd",
 );
 
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "https://solana-mainnet.core.chainstack.com/ee9830caf07eb2cecf49973a15a78495";
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "https://api.mainnet-beta.solana.com";
 
 export const TOKEN_DECIMALS = 6; // USDC has 6 decimals
 
