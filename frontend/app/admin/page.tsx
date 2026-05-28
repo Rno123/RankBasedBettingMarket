@@ -1132,6 +1132,17 @@ function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathon
         {projects.map((p) => (
           <div key={p.pubkey.toBase58()} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.875rem", color: "var(--c-text-3)" }}>{p.githubUrl.replace("https://github.com/", "")}</span>
+            <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+              {!p.builderDeclared && (
+                <span title="Registered but not yet declared" style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", background: "var(--c-divider-2)", color: "var(--c-text-4)", border: "1px solid var(--c-divider)" }}>⚑ Registered</span>
+              )}
+              {p.builderDeclared && !p.submitted && (
+                <span title="Builder declared submission" style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", background: "var(--c-amber-light)", color: "var(--c-amber-text)", border: "1px solid var(--c-amber-border)" }}>⚑ Declared</span>
+              )}
+              {p.submitted && (
+                <span title="Organizer approved submission" style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>⚑ Approved</span>
+              )}
+            </div>
             <input type="number" min="0" placeholder="rank" className="ui-input-sm" style={{ width: "80px" }} value={ranks[p.pubkey.toBase58()] ?? ""} onChange={(e) => setRanks((r) => ({ ...r, [p.pubkey.toBase58()]: e.target.value }))} />
           </div>
         ))}
