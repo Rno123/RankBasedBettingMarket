@@ -7,7 +7,9 @@ export default function CrowdVsJudges({ projects }: { projects: ProjectInfo[] })
   const ranked = projects.filter((p) => p.rank > 0);
   if (ranked.length === 0) return null;
 
-  const byStake = [...ranked].sort((a, b) => Number(b.totalStaked - a.totalStaked));
+  const byStake = [...ranked]
+    .filter((p) => p.totalStaked > 0n)
+    .sort((a, b) => Number(b.totalStaked - a.totalStaked));
   const crowdRankMap = new Map<string, number>();
   byStake.forEach((p, i) => crowdRankMap.set(p.pubkey.toBase58(), i + 1));
 
@@ -29,10 +31,10 @@ export default function CrowdVsJudges({ projects }: { projects: ProjectInfo[] })
         </div>
         {rows.map((p) => {
           const judgeRank = p.rank;
-          const crowdRank = crowdRankMap.get(p.pubkey.toBase58()) ?? 0;
-          const delta = crowdRank - judgeRank;
+          const crowdRank = crowdRankMap.get(p.pubkey.toBase58()) ?? null;
+          const delta = crowdRank !== null ? crowdRank - judgeRank : null;
           const exact = delta === 0;
-          const close = Math.abs(delta) <= 1;
+          const close = delta !== null && Math.abs(delta) <= 1;
 
           return (
             <div
@@ -55,21 +57,31 @@ export default function CrowdVsJudges({ projects }: { projects: ProjectInfo[] })
               </div>
 
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "2px" }}>
-                <span style={{ display: "flex", height: "28px", width: "28px", alignItems: "center", justifyContent: "center", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 900, ...rankBadgeStyle(crowdRank) }}>
-                  #{crowdRank}
-                </span>
-                {!exact && (
-                  <span
-                    style={{ fontSize: "0.6875rem", fontWeight: 700, color: delta < 0 ? "var(--c-emerald-text)" : "var(--c-red-text)" }}
-                    title={delta < 0 ? "Crowd ranked higher than judges" : "Crowd ranked lower than judges"}
-                  >
-                    {delta < 0 ? `▲${Math.abs(delta)}` : `▼${delta}`}
-                  </span>
+                {crowdRank !== null ? (
+                  <>
+                    <span style={{ display: "flex", height: "28px", width: "28px", alignItems: "center", justifyContent: "center", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 900, ...rankBadgeStyle(crowdRank) }}>
+                      #{crowdRank}
+                    </span>
+                    {!exact && delta !== null && (
+                      <span
+                        style={{ fontSize: "0.6875rem", fontWeight: 700, color: delta < 0 ? "var(--c-emerald-text)" : "var(--c-red-text)" }}
+                        title={delta < 0 ? "Crowd ranked higher than judges" : "Crowd ranked lower than judges"}
+                      >
+                        {delta < 0 ? `▲${Math.abs(delta)}` : `▼${delta}`}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span style={{ fontSize: "0.875rem", color: "var(--c-text-4)" }}>—</span>
                 )}
               </div>
 
               <div style={{ display: "flex", justifyContent: "center" }}>
-                {exact ? (
+                {crowdRank === null ? (
+                  <span style={{ borderRadius: "9999px", background: "var(--c-divider-2)", padding: "2px 6px", fontSize: "0.6875rem", fontWeight: 600, color: "var(--c-text-4)", whiteSpace: "nowrap" }}>
+                    —
+                  </span>
+                ) : exact ? (
                   <span style={{ borderRadius: "9999px", background: "var(--c-emerald-light)", padding: "2px 6px", fontSize: "0.6875rem", fontWeight: 600, color: "var(--c-emerald-text)", whiteSpace: "nowrap" }}>
                     ✓
                   </span>
@@ -89,16 +101,17 @@ export default function CrowdVsJudges({ projects }: { projects: ProjectInfo[] })
       </div>
 
       {(() => {
-        const exactCount = rows.filter(
-          (p) => (crowdRankMap.get(p.pubkey.toBase58()) ?? 0) === p.rank,
+        const stakedRows = rows.filter((p) => crowdRankMap.has(p.pubkey.toBase58()));
+        const exactCount = stakedRows.filter(
+          (p) => crowdRankMap.get(p.pubkey.toBase58()) === p.rank,
         ).length;
         return (
           <p style={{ marginTop: "12px", textAlign: "center", fontSize: "0.75rem", color: "var(--c-text-4)" }}>
             Crowd got{" "}
             <span style={{ fontWeight: 700, color: "var(--c-text-2)" }}>{exactCount}</span>{" "}
             of{" "}
-            <span style={{ fontWeight: 700, color: "var(--c-text-2)" }}>{rows.length}</span>{" "}
-            placements exactly right
+            <span style={{ fontWeight: 700, color: "var(--c-text-2)" }}>{stakedRows.length}</span>{" "}
+            backed placements exactly right
           </p>
         );
       })()}
