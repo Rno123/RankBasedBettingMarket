@@ -5,7 +5,8 @@ import { PROGRAM_ID, HIDDEN_HACKATHONS, USDC_MINT } from "@/lib/constants";
 
 // ProjectAccount discriminator = sha256("account:ProjectAccount")[:8]
 const PROJECT_DISCRIMINATOR = "X1htXkgi8yH";
-const TTL = 30_000;
+// Short TTL so admin state changes (resolve/unresolve) propagate quickly.
+const TTL = 5_000;
 
 let cache: { data: unknown; at: number } | null = null;
 
@@ -181,5 +182,5 @@ export async function GET() {
 }
 
 function headers() {
-  return { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" } };
+  return { headers: { "Cache-Control": "no-store" } };
 }
