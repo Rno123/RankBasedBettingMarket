@@ -1074,7 +1074,7 @@ function BuilderProjectCard({
   const MAX_SELF_STAKE = 250_000_000n;
   const nowSecs = Math.floor(Date.now() / 1000);
   const cutoffPassed = hackathon ? nowSecs >= hackathon.cutoffTimestamp : true;
-  const resultsPassed = hackathon ? nowSecs >= hackathon.irlHackathonDeadlineTimestamp : true;
+  const resultsPassed = hackathon ? hackathon.isResolved : true;
   const selfStakeDisabledLabel = cutoffPassed
     ? "Staking closed — cutoff has passed"
     : hasDeposit
@@ -1269,7 +1269,7 @@ function BuilderProjectCard({
                   {busy === "submit" ? "…" : "Mark submitted"}
                 </button>
                 {resultsPassed ? (
-                  <span className="ui-tooltip">Results timestamp has passed — submission window is closed</span>
+                  <span className="ui-tooltip">Hackathon has been resolved — submission window is closed</span>
                 ) : hasDeposit && !project.depositAmountPaid ? (
                   <span className="ui-tooltip">Pay the deposit first to declare submission</span>
                 ) : null}
