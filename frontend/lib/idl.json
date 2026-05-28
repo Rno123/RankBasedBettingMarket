@@ -74,6 +74,37 @@
       "args": []
     },
     {
+      "name": "admin_unresolve",
+      "docs": [
+        "Rolls back a finalized resolution so ranks can be corrected.",
+        "Clears is_resolved, effective_tier_pcts, and tier_c_totals.",
+        "After calling, re-run resolve() for any projects needing correction,",
+        "then call finalize_resolve() again.",
+        "Safety: only callable before any stake has been claimed."
+      ],
+      "discriminator": [
+        62,
+        224,
+        61,
+        121,
+        192,
+        63,
+        128,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "approve_submissions",
       "docs": [
         "Organizer (hackathon admin) marks a batch of projects as submitted.",

@@ -1052,6 +1052,52 @@ function CreateHackathonPanel({
 
 // ── Resolve + Finalize ────────────────────────────────────────────────────────
 
+function UnresolvePanel({ hackathon, onUnresolved }: { hackathon: ReturnType<typeof useHackathons>["hackathons"][0]; onUnresolved: () => void }) {
+  const { publicKey } = useWallet();
+  const anchorWallet = useAnchorWallet();
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function handleUnresolve() {
+    if (!publicKey || !anchorWallet) return;
+    setBusy(true); setErr(null);
+    try {
+      const program = getProgram(anchorWallet);
+      await (program.methods as any)
+        .adminUnresolve()
+        .accounts({ admin: publicKey, hackathon: hackathon.pubkey })
+        .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey, hackathon.admin))
+        .rpc();
+      setConfirm(false);
+      onUnresolved();
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "16px" }}>
+      <p style={{ margin: "0 0 10px", fontSize: "0.875rem", color: "var(--c-text-4)" }}>
+        ✓ Hackathon resolved. Stakers can now claim.
+      </p>
+      {!confirm ? (
+        <button onClick={() => setConfirm(true)} className="ui-btn ui-btn-outline ui-btn-sm" style={{ fontSize: "0.75rem" }}>
+          Emergency: undo resolution
+        </button>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", borderRadius: "12px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "8px 12px" }}>
+          <span style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--c-red-text)" }}>
+            This resets ranks — re-resolve and finalize after. Confirm?
+          </span>
+          <button onClick={handleUnresolve} disabled={busy} className="ui-btn ui-btn-red ui-btn-xs">{busy ? "…" : "Yes, undo"}</button>
+          <button onClick={() => setConfirm(false)} className="ui-btn ui-btn-outline ui-btn-xs">Cancel</button>
+        </div>
+      )}
+      {err && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
+    </div>
+  );
+}
+
 function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathons>["hackathons"][0] }) {
   const { publicKey } = useWallet();
   const anchorWallet = useAnchorWallet();
@@ -1543,10 +1589,12 @@ function HackathonAdminCard({
   hackathon,
   adminAuth,
   view,
+  onReload,
 }: {
   hackathon: HackathonEntry;
   adminAuth: AdminApiAuth;
   view: "manage" | "resolutions" | "advanced";
+  onReload?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -1567,7 +1615,7 @@ function HackathonAdminCard({
             <>
               <DepositManagementPanel hackathon={hackathon} view="resolutions" />
               {!hackathon.isResolved && <ResolvePanel hackathon={hackathon} />}
-              {hackathon.isResolved && <p style={{ marginTop: "16px", fontSize: "0.875rem", color: "var(--c-text-4)" }}>Hackathon resolved. Stakers can now claim.</p>}
+              {hackathon.isResolved && <UnresolvePanel hackathon={hackathon} onUnresolved={() => onReload?.()} />}
             </>
           )}
           {view === "advanced" && (
@@ -2038,7 +2086,7 @@ export default function AdminPage() {
                 loading={loading}
                 version={version}
                 emptyLabel={isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
-                renderCard={(h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="resolutions" />}
+                renderCard={(h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="resolutions" onReload={reloadHackathons} />}
               />
             )}
 
