@@ -513,8 +513,8 @@ html.dark .ambient-glow { display: block; }
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
-  background: var(--c-text);
-  color: var(--card-bg);
+  background: #1a1a1a;
+  color: #f4f1ea;
   font-size: 0.6875rem;
   font-weight: 500;
   padding: 4px 8px;
