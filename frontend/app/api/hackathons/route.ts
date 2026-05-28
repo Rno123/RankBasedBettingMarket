@@ -130,7 +130,7 @@ export async function GET() {
     const connection = getConnection();
 
     const [hackathonAccounts, projectSlices] = await Promise.all([
-      (program.account as any).hackathonState.all([{ dataSize: 306 }]),
+      (program.account as any).hackathonState.all([{ dataSize: 314 }]),
       connection.getProgramAccounts(PROGRAM_ID, {
         filters: [{ memcmp: { offset: 0, bytes: PROJECT_DISCRIMINATOR } }],
         dataSlice: { offset: 8, length: 32 },

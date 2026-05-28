@@ -754,6 +754,40 @@
       "args": []
     },
     {
+      "name": "migrate_hackathon_v4",
+      "discriminator": [
+        112,
+        52,
+        217,
+        44,
+        66,
+        128,
+        101,
+        183
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Any signer can pay for the rent increase; safe because the instruction",
+            "only operates on accounts that are exactly 306 bytes (v3 layout size)",
+            "and owned by this program."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "migrate_project_v1",
       "discriminator": [
         108,
@@ -2028,6 +2062,10 @@
           {
             "name": "open_staking",
             "type": "bool"
+          },
+          {
+            "name": "resolved_at",
+            "type": "i64"
           }
         ]
       }
