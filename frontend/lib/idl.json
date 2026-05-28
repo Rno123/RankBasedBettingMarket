@@ -74,6 +74,42 @@
       "args": []
     },
     {
+      "name": "admin_unrank_project",
+      "docs": [
+        "Removes a project's rank (sets to 0) and decrements hackathon.ranked_count.",
+        "Must be called after admin_unresolve (requires !is_resolved).",
+        "Use this when a project was mistakenly ranked and should be display-only."
+      ],
+      "discriminator": [
+        10,
+        154,
+        255,
+        133,
+        8,
+        147,
+        45,
+        37
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "hackathon",
+          "writable": true,
+          "relations": [
+            "project"
+          ]
+        },
+        {
+          "name": "project",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "admin_unresolve",
       "docs": [
         "Rolls back a finalized resolution so ranks can be corrected.",

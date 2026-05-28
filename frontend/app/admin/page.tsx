@@ -1146,6 +1146,22 @@ function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathon
     finally { setBusy(false); }
   }
 
+  async function handleUnrankProject(project: (typeof projects)[number]) {
+    if (!publicKey || !anchorWallet) return;
+    setBusy(true); setErr(null);
+    try {
+      const program = getProgram(anchorWallet);
+      await (program.methods as any)
+        .adminUnrankProject()
+        .accounts({ admin: publicKey, hackathon: hackathon.pubkey, project: project.pubkey })
+        .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey, hackathon.admin))
+        .rpc();
+      setRanks((r) => { const next = { ...r }; delete next[project.pubkey.toBase58()]; return next; });
+      reloadProjects();
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(false); }
+  }
+
   async function handleFinalize() {
     if (!publicKey || !anchorWallet) return;
     const hasRanked = projects.some((p) => p.rank > 0) ||
@@ -1190,6 +1206,14 @@ function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathon
               )}
             </div>
             <input type="number" min="0" placeholder="rank" className="ui-input-sm" style={{ width: "80px" }} value={ranks[p.pubkey.toBase58()] ?? ""} onChange={(e) => setRanks((r) => ({ ...r, [p.pubkey.toBase58()]: e.target.value }))} />
+            {p.rank > 0 && (
+              <button
+                title="Remove rank (unplace project)"
+                onClick={() => handleUnrankProject(p)}
+                disabled={busy || !publicKey}
+                style={{ flexShrink: 0, padding: "2px 6px", borderRadius: "4px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", color: "var(--c-red-text)", fontSize: "0.75rem", cursor: "pointer", lineHeight: 1 }}
+              >×</button>
+            )}
           </div>
         ))}
       </div>
