@@ -1050,6 +1050,55 @@ function CreateHackathonPanel({
   );
 }
 
+// ── Emergency admin controls (super-admin only, shown in Advanced tab) ────────
+
+function UnrankPanel({ hackathon }: { hackathon: ReturnType<typeof useHackathons>["hackathons"][0] }) {
+  const { publicKey } = useWallet();
+  const anchorWallet = useAnchorWallet();
+  const { projects, reload: reloadProjects } = useProjects(hackathon.pubkey);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const ranked = projects.filter((p) => p.rank > 0);
+  if (ranked.length === 0) return null;
+
+  async function handleUnrank(project: (typeof projects)[number]) {
+    if (!publicKey || !anchorWallet) return;
+    setBusy(project.pubkey.toBase58()); setErr(null);
+    try {
+      const program = getProgram(anchorWallet);
+      await (program.methods as any)
+        .adminUnrankProject()
+        .accounts({ admin: publicKey, hackathon: hackathon.pubkey, project: project.pubkey })
+        .rpc();
+      reloadProjects();
+    } catch (e: any) { setErr(e.message ?? "Failed"); }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <div style={{ marginTop: "16px", borderTop: "1px solid var(--c-divider-2)", paddingTop: "16px" }}>
+      <p style={{ margin: "0 0 8px", fontSize: "0.875rem", fontWeight: 600, color: "var(--c-text-2)" }}>Remove project rank</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        {ranked.map((p) => (
+          <div key={p.pubkey.toBase58()} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.875rem", color: "var(--c-text-3)" }}>
+              {p.githubUrl.replace("https://github.com/", "")}
+            </span>
+            <span style={{ fontSize: "0.75rem", color: "var(--c-text-4)", flexShrink: 0 }}>rank {p.rank}</span>
+            <button
+              onClick={() => handleUnrank(p)}
+              disabled={!!busy || !publicKey}
+              className="ui-btn ui-btn-red ui-btn-xs"
+            >{busy === p.pubkey.toBase58() ? "…" : "Remove"}</button>
+          </div>
+        ))}
+      </div>
+      {err && <p style={{ marginTop: "8px", fontSize: "0.875rem", color: "var(--c-red-text)" }}>{err}</p>}
+    </div>
+  );
+}
+
 // ── Resolve + Finalize ────────────────────────────────────────────────────────
 
 function UnresolvePanel({ hackathon, onUnresolved }: { hackathon: ReturnType<typeof useHackathons>["hackathons"][0]; onUnresolved: () => void }) {
@@ -1067,7 +1116,6 @@ function UnresolvePanel({ hackathon, onUnresolved }: { hackathon: ReturnType<typ
       await (program.methods as any)
         .adminUnresolve()
         .accounts({ admin: publicKey, hackathon: hackathon.pubkey })
-        .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey, hackathon.admin))
         .rpc();
       setConfirm(false);
       onUnresolved();
@@ -1146,22 +1194,6 @@ function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathon
     finally { setBusy(false); }
   }
 
-  async function handleUnrankProject(project: (typeof projects)[number]) {
-    if (!publicKey || !anchorWallet) return;
-    setBusy(true); setErr(null);
-    try {
-      const program = getProgram(anchorWallet);
-      await (program.methods as any)
-        .adminUnrankProject()
-        .accounts({ admin: publicKey, hackathon: hackathon.pubkey, project: project.pubkey })
-        .remainingAccounts(getProtocolAdminRemainingAccounts(publicKey, hackathon.admin))
-        .rpc();
-      setRanks((r) => { const next = { ...r }; delete next[project.pubkey.toBase58()]; return next; });
-      reloadProjects();
-    } catch (e: any) { setErr(e.message ?? "Failed"); }
-    finally { setBusy(false); }
-  }
-
   async function handleFinalize() {
     if (!publicKey || !anchorWallet) return;
     const hasRanked = projects.some((p) => p.rank > 0) ||
@@ -1206,14 +1238,6 @@ function ResolvePanel({ hackathon }: { hackathon: ReturnType<typeof useHackathon
               )}
             </div>
             <input type="number" min="0" placeholder="rank" className="ui-input-sm" style={{ width: "80px" }} value={ranks[p.pubkey.toBase58()] ?? ""} onChange={(e) => setRanks((r) => ({ ...r, [p.pubkey.toBase58()]: e.target.value }))} />
-            {p.rank > 0 && (
-              <button
-                title="Remove rank (unplace project)"
-                onClick={() => handleUnrankProject(p)}
-                disabled={busy || !publicKey}
-                style={{ flexShrink: 0, padding: "2px 6px", borderRadius: "4px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", color: "var(--c-red-text)", fontSize: "0.75rem", cursor: "pointer", lineHeight: 1 }}
-              >×</button>
-            )}
           </div>
         ))}
       </div>
@@ -1620,6 +1644,7 @@ function HackathonAdminCard({
   view: "manage" | "resolutions" | "advanced";
   onReload?: () => void;
 }) {
+  const { publicKey } = useWallet();
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="ui-card">
@@ -1639,7 +1664,7 @@ function HackathonAdminCard({
             <>
               <DepositManagementPanel hackathon={hackathon} view="resolutions" />
               {!hackathon.isResolved && <ResolvePanel hackathon={hackathon} />}
-              {hackathon.isResolved && <UnresolvePanel hackathon={hackathon} onUnresolved={() => onReload?.()} />}
+              {hackathon.isResolved && <p style={{ marginTop: "16px", fontSize: "0.875rem", color: "var(--c-text-4)" }}>Hackathon resolved. Stakers can now claim.</p>}
             </>
           )}
           {view === "advanced" && (
@@ -1652,6 +1677,12 @@ function HackathonAdminCard({
               />
               <HackathonWhitelistPanel hackathon={hackathon} />
               <DepositManagementPanel hackathon={hackathon} view="advanced" />
+              {onReload && publicKey?.toBase58() === PROTOCOL_ADMIN && (
+                <>
+                  {hackathon.isResolved && <UnresolvePanel hackathon={hackathon} onUnresolved={onReload} />}
+                  {!hackathon.isResolved && <UnrankPanel hackathon={hackathon} />}
+                </>
+              )}
             </>
           )}
         </div>
@@ -1678,7 +1709,7 @@ interface Submission {
   created_at: string;
 }
 
-type AdminPanelTab = "create" | "manage" | "resolve";
+type AdminPanelTab = "create" | "manage" | "resolve" | "advanced";
 
 function SubmissionsSection({
   hackathons,
@@ -2053,6 +2084,7 @@ export default function AdminPage() {
                 ...(isProtocolAdmin ? [{ id: "create" as const, label: "Create" }] : []),
                 { id: "manage" as const, label: "Manage" },
                 { id: "resolve" as const, label: "Resolve" },
+                ...(isSuperAdmin ? [{ id: "advanced" as const, label: "Advanced" }] : []),
               ] as Array<{ id: AdminPanelTab; label: string }>).map((tab, i, arr) => (
                 <button
                   key={tab.id}
@@ -2111,6 +2143,17 @@ export default function AdminPage() {
                 version={version}
                 emptyLabel={isProtocolAdmin ? "No hackathons yet." : "No hackathons assigned to this wallet."}
                 renderCard={(h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="resolutions" onReload={reloadHackathons} />}
+              />
+            )}
+
+            {/* Advanced tab — super-admin only */}
+            {adminPanelTab === "advanced" && isSuperAdmin && (
+              <PhaseGroupedHackathons
+                hackathons={visibleHackathons}
+                loading={loading}
+                version={version}
+                emptyLabel="No hackathons yet."
+                renderCard={(h) => <HackathonAdminCard key={h.pubkey.toBase58()} hackathon={h} adminAuth={adminAuth} view="advanced" onReload={reloadHackathons} />}
               />
             )}
 
