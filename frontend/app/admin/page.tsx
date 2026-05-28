@@ -675,6 +675,9 @@ function DepositManagementPanel({ hackathon, view }: { hackathon: HackathonEntry
                       {p.isRefundEnabled ? " · Exceptional refund ON" : ""}
                     </p>
                     <div style={{ display: "flex", gap: "4px", marginTop: "5px", flexWrap: "wrap" }}>
+                      {!p.builderDeclared && (
+                        <span title="Registered but not yet declared" style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", background: "var(--c-divider-2)", color: "var(--c-text-4)", border: "1px solid var(--c-divider)" }}>⚑ Registered</span>
+                      )}
                       {p.builderDeclared && (
                         <span title="Builder declared submission" style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", background: "var(--c-amber-light)", color: "var(--c-amber-text)", border: "1px solid var(--c-amber-border)" }}>⚑ Declared</span>
                       )}

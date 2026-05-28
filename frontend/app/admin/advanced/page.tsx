@@ -509,7 +509,7 @@ export default function AdvancedPage() {
         {isAdmin && adminSessionReady && (
           advancedAllowed === null ? (
             <div className="ui-skeleton" style={{ height: "64px", borderRadius: "16px" }} />
-          ) : !advancedAllowed ? (
+          ) : !advancedAllowed && !isSuperAdmin ? (
             <div style={{ borderRadius: "16px", border: "1px solid var(--c-red-border)", background: "var(--c-red-light)", padding: "24px" }}>
               <p style={{ margin: 0, fontWeight: 700, color: "var(--c-red-text)" }}>Access restricted</p>
               <p style={{ margin: "6px 0 0", fontSize: "0.875rem", color: "var(--c-red-text)" }}>
